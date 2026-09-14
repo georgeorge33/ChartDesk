@@ -236,7 +236,10 @@ private struct ChartRow: View {
                         Text(chart.airportCode)
                             .fontWeight(.medium)
                     }
+                    // Same tint as the tab it lives under, so a glance down the list reads
+                    // as the same colour coding rather than two unrelated schemes.
                     Text(chart.category.shortName)
+                        .foregroundStyle(chart.category.tint)
                     if let runway = chart.runway {
                         Text("RWY \(runway)")
                     }

@@ -10,6 +10,9 @@
   REF — matching how Navigraph Charts colours the same tab strip. The selected tab fills
   with its own colour rather than a single accent. A segmented `Picker` paints every
   segment the same, so the strip is now built by hand.
+- The category label under each chart in the list takes the same tint, so the list and the tabs
+  read as one colour scheme rather than two. Most visible in the pinned list, where categories
+  mix.
 
 ## 0.12.0
 
