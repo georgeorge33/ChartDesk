@@ -196,10 +196,19 @@ Chartdesk itself never touches the network — it only reads what that leaves in
 `~/Library/Application Support/Chartdesk/taxi/`.
 
 The first time you plan a route on a given chart it asks you to line the plate up with the
-ground: pick a runway and click its two thresholds. That's the whole calibration — the
-coordinates come from the imported data, so you never type one. Two clicks on the Boston
-ground chart place all 2,237 imported vertices to within 0.15 m. While the planner is open
-the taxi network is drawn faintly over the plate so you can see the fit rather than trust it.
+ground: click a couple of taxiway intersections, and Chartdesk works out the rest. The
+coordinates come from the imported data, so you never type one, and it suggests which crossing
+to click next — always the one furthest from what you've already placed.
+
+Crossings rather than runway thresholds because they're the same point on both the chart and
+the map data. OpenStreetMap's runway geometry runs to the physical end of the pavement while a
+chart marks the displaced threshold, and those differ.
+
+Two points is the minimum, but place a third. Two always fit *exactly*, so the error it reports
+is zero no matter how badly you clicked — at Boston, two points with 15 m of click slop are
+29 m out at the worst corner of the field while claiming 0.0 m. A fourth point brings that to
+10 m and reports it honestly. The network is drawn faintly over the plate as you go, so you can
+see the fit rather than trust it.
 
 After each press, taxiways that don't connect to the one you chose are dimmed — 31 buttons
 become a handful. They stay pressable, because map data is imperfect and a legitimate turn

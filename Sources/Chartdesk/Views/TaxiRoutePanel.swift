@@ -62,12 +62,12 @@ struct TaxiRoutePanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("This chart hasn't been lined up with the ground yet.")
                     .font(.callout)
-                Text("Two clicks on a runway's thresholds is enough.")
+                Text("Click two taxiway crossings and it works the rest out.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Calibrate…") { planner.beginCalibration(runway: nil) }
+            Button("Calibrate…") { planner.beginCalibration() }
                 .buttonStyle(.borderedProminent)
             closeButton
         }
@@ -76,40 +76,67 @@ struct TaxiRoutePanel: View {
     private var calibrating: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Picker("Runway", selection: Binding(
-                    get: { planner.calibrationRunway ?? "" },
-                    set: { planner.beginCalibration(runway: $0) })) {
-                    ForEach(planner.graph?.runwayNames ?? [], id: \.self) { name in
-                        Text(name).tag(name)
+                Picker("Crossing", selection: Binding(
+                    get: { planner.calibrationTarget ?? planner.graph?.intersections.first },
+                    set: { planner.calibrationTarget = $0 })) {
+                    ForEach(planner.graph?.intersections ?? []) { crossing in
+                        Text(crossing.label).tag(Optional(crossing))
                     }
                 }
                 .labelsHidden()
-                .frame(width: 130)
+                .frame(width: 128)
 
                 Text(planner.calibrationPrompt)
                     .font(.callout)
+
                 Spacer(minLength: 0)
+
+                Button {
+                    planner.removeLastCalibrationPoint()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(planner.pendingAnchors.isEmpty ? Color.secondary : Color.ngAccentText)
+                .disabled(planner.pendingAnchors.isEmpty)
+                .help("Undo the last point")
+
                 Button("Cancel") { planner.cancelCalibration() }
+
+                Button("Done") { planner.commitCalibration(chartID: chartID ?? "") }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!planner.canCommitCalibration || chartID == nil)
             }
 
-            HStack(spacing: 6) {
-                ForEach(0..<2, id: \.self) { index in
-                    Circle()
-                        .fill(index < planner.pendingAnchors.count ? Color.ngAccentText : Color.ngSeparator)
-                        .frame(width: 8, height: 8)
+            HStack(spacing: 8) {
+                ForEach(Array(planner.pendingAnchors.enumerated()), id: \.offset) { _, anchor in
+                    Text(anchor.label)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.ngAccent, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .foregroundStyle(.white)
                 }
-                Text("Zoom in first — the closer you click to the real threshold, the better every route lands.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if planner.pendingAnchors.count < 2 {
+                    Text("Two points minimum. Zoom in first — the closer you click, the better every route lands.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
             }
 
             if let note = planner.calibrationNote {
                 Text(note)
                     .font(.caption)
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(noteColour(note))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Warnings read as warnings; a plain measurement does not.
+    private func noteColour(_ note: String) -> Color {
+        note.hasPrefix("Off by") || note.hasPrefix("Lined up") ? .secondary : .orange
     }
 
     // MARK: - Builder
@@ -261,7 +288,7 @@ struct TaxiRoutePanel: View {
 
             Button("Recalibrate") {
                 planner.removeCalibration(chartID)
-                planner.beginCalibration(runway: nil)
+                planner.beginCalibration()
             }
             .buttonStyle(.plain)
             .font(.caption)

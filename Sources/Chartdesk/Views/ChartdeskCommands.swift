@@ -245,7 +245,7 @@ struct ChartdeskCommands: Commands {
             Button("Recalibrate This Chart…") {
                 planner.removeCalibration(browser.selectedChartID)
                 planner.isPlanning = true
-                planner.beginCalibration(runway: nil)
+                planner.beginCalibration()
             }
             .disabled(chart == nil || !planner.isCalibrated(browser.selectedChartID))
         }

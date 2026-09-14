@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Coordinates
 
-struct Coordinate: Codable, Equatable {
+struct Coordinate: Codable, Hashable {
     var latitude: Double
     var longitude: Double
 }
@@ -73,6 +73,20 @@ struct TaxiNetwork: Decodable {
     }
 }
 
+// MARK: - Intersections
+
+/// Where two named taxiways cross. These are what a chart is calibrated against: a runway's
+/// OpenStreetMap geometry runs to the physical end of the pavement, while the chart marks the
+/// displaced threshold, and those are not the same point. Two centrelines crossing are.
+struct TaxiIntersection: Identifiable, Hashable {
+    let first: String
+    let second: String
+    let coordinate: Coordinate
+
+    var id: String { "\(first)|\(second)" }
+    var label: String { "\(first) × \(second)" }
+}
+
 // MARK: - Routing
 
 struct RouteLeg: Equatable {
@@ -141,6 +155,7 @@ final class TaxiGraph {
     private(set) var designators: [String] = []
     private(set) var runwayNames: [String] = []
     private(set) var adjacency: [String: Set<String>] = [:]
+    private(set) var intersections: [TaxiIntersection] = []
 
     init(_ network: TaxiNetwork) {
         self.network = network
@@ -184,6 +199,82 @@ final class TaxiGraph {
         designators = nodesByDesignator.keys.sorted(by: TaxiGraph.naturalOrder)
         runwayNames = runwayNodes.keys.sorted(by: TaxiGraph.naturalOrder)
         buildAdjacency()
+        buildIntersections()
+    }
+
+    /// Only crossings that can be pointed at without ambiguity are offered.
+    ///
+    /// A stub meets its parent more than once — A1 touches A at both ends — so "A × A1" does
+    /// not identify a place. Those pairs are dropped rather than disambiguated: at Boston that
+    /// costs 7 of 44 and leaves 37, which is far more than a calibration needs.
+    private func buildIntersections() {
+        var namesAtNode: [Int: Set<String>] = [:]
+        for way in network.edges where !(way.lane ?? false) {
+            guard let ref = way.refs.first else { continue }
+            for node in way.n { namesAtNode[node, default: []].insert(ref) }
+        }
+
+        var nodesForPair: [String: [Int]] = [:]
+        for (node, names) in namesAtNode where names.count > 1 {
+            let sorted = names.sorted(by: TaxiGraph.naturalOrder)
+            for i in 0..<sorted.count {
+                for j in (i + 1)..<sorted.count {
+                    nodesForPair["\(sorted[i])|\(sorted[j])", default: []].append(node)
+                }
+            }
+        }
+
+        intersections = nodesForPair.compactMap { key, nodes in
+            guard nodes.count == 1,
+                  let coordinate = network.coordinate(nodes[0]) else { return nil }
+            let parts = key.split(separator: "|").map(String.init)
+            guard parts.count == 2 else { return nil }
+            return TaxiIntersection(first: parts[0], second: parts[1], coordinate: coordinate)
+        }
+        .sorted {
+            $0.first == $1.first
+                ? TaxiGraph.naturalOrder($0.second, $1.second)
+                : TaxiGraph.naturalOrder($0.first, $1.first)
+        }
+    }
+
+    /// The crossing furthest from everything picked so far. A fit is only as well conditioned
+    /// as its points are spread out, so the panel suggests rather than leaving it to chance.
+    func suggestedIntersection(avoiding taken: [Coordinate]) -> TaxiIntersection? {
+        guard !intersections.isEmpty else { return nil }
+        guard !taken.isEmpty else {
+            // Nothing placed yet: start at one end of the field rather than the middle.
+            let centre = centreOfField()
+            return intersections.max {
+                TaxiGraph.metres(between: centre, and: $0.coordinate)
+                    < TaxiGraph.metres(between: centre, and: $1.coordinate)
+            }
+        }
+        return intersections.max { left, right in
+            let l = taken.map { TaxiGraph.metres(between: $0, and: left.coordinate) }.min() ?? 0
+            let r = taken.map { TaxiGraph.metres(between: $0, and: right.coordinate) }.min() ?? 0
+            return l < r
+        }
+    }
+
+    private func centreOfField() -> Coordinate {
+        let points = intersections.map(\.coordinate)
+        guard !points.isEmpty else { return Coordinate(latitude: 0, longitude: 0) }
+        return Coordinate(
+            latitude: points.map(\.latitude).reduce(0, +) / Double(points.count),
+            longitude: points.map(\.longitude).reduce(0, +) / Double(points.count)
+        )
+    }
+
+    /// How far apart the airport's own features are, for judging whether two picked points
+    /// are far enough apart to pin down a scale.
+    var extentMetres: Double {
+        let points = network.nodes.compactMap { row -> Coordinate? in
+            row.count == 2 ? Coordinate(latitude: row[0], longitude: row[1]) : nil
+        }
+        guard let west = points.min(by: { $0.longitude < $1.longitude }),
+              let east = points.max(by: { $0.longitude < $1.longitude }) else { return 3000 }
+        return max(TaxiGraph.metres(between: west, and: east), 500)
     }
 
     private func connect(_ path: [Int], ref: String?, isLane: Bool) {

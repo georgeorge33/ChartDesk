@@ -50,9 +50,12 @@ final class TaxiRouteStore: ObservableObject {
 
     // MARK: Calibration in progress
 
-    @Published var calibrationRunway: String?
+    @Published var calibrationTarget: TaxiIntersection?
     @Published private(set) var pendingAnchors: [GeoAnchor] = []
     @Published private(set) var calibrationNote: String?
+    /// The fit as it stands. Kept separate from the saved one so the overlay can snap into
+    /// place after the second point and be judged before anything is committed.
+    @Published private(set) var draftFit: ChartGeoreference?
 
     init() {
         georeferences = GeoreferenceStore.load()
@@ -185,95 +188,115 @@ final class TaxiRouteStore: ObservableObject {
     /// Every piece of pavement, faintly, so a calibration can be judged against the printing
     /// underneath it rather than trusted on a number.
     func networkPolylines(for chartID: String?) -> [[CGPoint]] {
-        guard let graph = graph, let geo = georeference(for: chartID) else { return [] }
+        guard let graph = graph else { return [] }
+        guard let geo = draftFit ?? georeference(for: chartID) else { return [] }
         return graph.allPolylines.map { $0.map(geo.chartPoint) }
+    }
+
+    /// Where each placed point landed, so they can be marked on the plate while calibrating.
+    func calibrationMarks() -> [CGPoint] {
+        pendingAnchors.map(\.chart)
     }
 
     // MARK: - Calibration
 
-    func beginCalibration(runway: String?) {
+    func beginCalibration() {
         guard let graph = graph else { return }
-        calibrationRunway = runway ?? graph.runwayNames.first
         pendingAnchors = []
+        draftFit = nil
         calibrationNote = nil
+        calibrationTarget = graph.suggestedIntersection(avoiding: [])
         isCalibrating = true
     }
 
     func cancelCalibration() {
         isCalibrating = false
         pendingAnchors = []
+        draftFit = nil
         calibrationNote = nil
     }
 
     var calibrationPrompt: String {
-        guard let runway = calibrationRunway else { return "Pick a runway to calibrate against." }
-        let ends = TaxiRouteStore.ends(of: runway)
-        switch pendingAnchors.count {
-        case 0: return "Click the \(ends.0) threshold on the chart."
-        case 1: return "Now click the \(ends.1) threshold."
-        default: return "Both ends marked."
+        guard let target = calibrationTarget else {
+            return "This airport has no taxiway crossings that can be identified without ambiguity."
         }
+        return pendingAnchors.isEmpty
+            ? "Click where \(target.label) cross."
+            : "Click \(target.label)."
     }
 
-    /// "4L/22R" -> ("4L", "22R"). The two ends are what the user is asked to click.
-    static func ends(of runway: String) -> (String, String) {
-        let parts = runway.split(separator: "/").map(String.init)
-        return parts.count == 2 ? (parts[0], parts[1]) : (runway, "other end")
-    }
+    var canCommitCalibration: Bool { draftFit != nil }
 
-    /// Records a click. The ground position comes from the runway's own geometry, so the
-    /// user never types a coordinate.
+    /// Records a click. The ground position comes from the crossing's own geometry, so no
+    /// coordinate is ever typed.
     func addCalibrationPoint(_ point: CGPoint, chartID: String, aspect: Double) {
-        guard isCalibrating,
-              let graph = graph,
-              let runway = calibrationRunway,
-              let shape = graph.network.runways.first(where: { $0.ref == runway }),
-              let head = shape.n.first.flatMap(graph.network.coordinate),
-              let tail = shape.n.last.flatMap(graph.network.coordinate) else { return }
+        guard isCalibrating, let graph = graph, let target = calibrationTarget else { return }
 
-        let ends = TaxiRouteStore.ends(of: runway)
-        let index = pendingAnchors.count
-        guard index < 2 else { return }
-
-        let anchor = GeoAnchor(coordinate: index == 0 ? head : tail,
-                               chart: point,
-                               label: "\(runway) \(index == 0 ? ends.0 : ends.1) threshold")
-        pendingAnchors.append(anchor)
-
-        guard pendingAnchors.count == 2 else { return }
-        finishCalibration(chartID: chartID, aspect: aspect)
+        pendingAnchors.append(GeoAnchor(coordinate: target.coordinate,
+                                        chart: point,
+                                        label: target.label))
+        refit(aspect: aspect)
+        calibrationTarget = graph.suggestedIntersection(avoiding: pendingAnchors.map(\.coordinate))
     }
 
-    private func finishCalibration(chartID: String, aspect: Double) {
-        guard let graph = graph, let icao = airport else { return }
+    func removeLastCalibrationPoint() {
+        guard !pendingAnchors.isEmpty else { return }
+        pendingAnchors.removeLast()
+        if pendingAnchors.count < 2 { draftFit = nil }
+        refit(aspect: draftFit?.aspect ?? 1)
+    }
+
+    private func refit(aspect: Double) {
+        guard let graph = graph, let icao = airport, pendingAnchors.count >= 2 else {
+            draftFit = nil
+            calibrationNote = nil
+            return
+        }
 
         guard let fitted = ChartGeoreference.fit(icao: icao, anchors: pendingAnchors, aspect: aspect) else {
-            calibrationNote = "Those two points are too close together to work out a scale. Try again."
-            pendingAnchors = []
+            draftFit = nil
+            calibrationNote = "Those points are too close together to work out a scale."
             return
         }
 
-        let extent = TaxiRouteStore.extentMetres(of: graph)
-        if let complaint = fitted.plausibility(coveringMetres: extent) {
+        if let complaint = fitted.plausibility(coveringMetres: graph.extentMetres) {
+            draftFit = nil
             calibrationNote = complaint
-            pendingAnchors = []
             return
         }
 
-        georeferences[chartID] = fitted
+        draftFit = fitted
+        calibrationNote = quality(for: fitted, extent: graph.extentMetres)
+    }
+
+    /// Two points always fit perfectly, so a residual of zero says nothing. Saying that out
+    /// loud matters more than showing a reassuring number.
+    private func quality(for fit: ChartGeoreference, extent: Double) -> String {
+        var spread = 0.0
+        for a in pendingAnchors {
+            for b in pendingAnchors {
+                spread = max(spread, TaxiGraph.metres(between: a.coordinate, and: b.coordinate))
+            }
+        }
+
+        if spread < extent * 0.25 {
+            return "Those points are close together — pick one further away so the scale is pinned down."
+        }
+        if pendingAnchors.count == 2 {
+            return "Lined up. Two points always fit exactly, so add a third to check it."
+        }
+        return String(format: "Off by %.1f m on average across %d points.",
+                      fit.rmsMetres, pendingAnchors.count)
+    }
+
+    func commitCalibration(chartID: String) {
+        guard let fit = draftFit else { return }
+        georeferences[chartID] = fit
         GeoreferenceStore.save(georeferences)
         isCalibrating = false
         pendingAnchors = []
+        draftFit = nil
         calibrationNote = nil
-    }
-
-    private static func extentMetres(of graph: TaxiGraph) -> Double {
-        let points = graph.network.nodes.compactMap { row -> Coordinate? in
-            row.count == 2 ? Coordinate(latitude: row[0], longitude: row[1]) : nil
-        }
-        guard let west = points.min(by: { $0.longitude < $1.longitude }),
-              let east = points.max(by: { $0.longitude < $1.longitude }) else { return 3000 }
-        return max(TaxiGraph.metres(between: west, and: east), 500)
     }
 
     // MARK: - Handing the route to the annotation layer

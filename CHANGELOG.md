@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.10.1
+
+**Calibrating against taxiway crossings**
+
+- A chart is now lined up by clicking **taxiway intersections** rather than runway thresholds.
+  This is more accurate, not just more convenient: OpenStreetMap's runway geometry runs to the
+  physical end of the pavement, while a chart marks the *displaced* threshold, and those are
+  not the same point. Two centrelines crossing are the same point on both.
+- Only crossings that identify a place without ambiguity are offered. A stub meets its parent
+  twice — A1 touches A at both ends — so "A × A1" does not name a spot. At Boston that rules
+  out 7 pairs and leaves 37.
+- Chartdesk suggests which crossing to click next, always the one furthest from what you have
+  already placed, because a fit is only as well conditioned as its points are spread out. At
+  Boston the first two suggestions are 2.7 km apart, half the width of the field.
+- **You can now place more than two points**, and the fit updates as you go. This matters more
+  than it sounds. Two points always fit *exactly*, so the reported error is zero however badly
+  you clicked: with 15 m of click error, two points are 29 m out at the worst vertex and the
+  app would have said 0.0 m. Four points bring that to 10 m and report 5.5 m. The panel now
+  says so rather than showing a reassuring zero.
+- The whole taxi network snaps into place over the plate as soon as the second point lands, so
+  a calibration is judged against the printing underneath it before it is saved.
+- Points can be undone one at a time, and nothing is stored until you press Done.
+- Calibrations made in 0.10.0 are unaffected — a saved calibration is a fitted transform, not
+  a record of how it was made.
+
 ## 0.10.0
 
 **Taxi routes on the ground chart**
