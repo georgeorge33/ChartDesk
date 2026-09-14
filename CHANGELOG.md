@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.2
+## 0.11.0
 
 **Moving the window**
 
