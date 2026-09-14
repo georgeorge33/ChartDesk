@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.9.5
+
+**Taxi routes on the ground chart**
+
+- New **Markup → Plan Taxi Route…** (⇧⌘T) and a toolbar button. Build a clearance by pressing
+  taxiways rather than typing them, and watch it draw on the plate as you go.
+- Buttons rather than a text field on purpose. Boston has both a gate A1 and a taxiway A1,
+  which any typed grammar would have to disambiguate; separate controls cannot be ambiguous.
+  You also cannot press a taxiway that is not in the data, so "no such taxiway" stops being a
+  possible outcome.
+- After each press, the taxiways that do not connect to the one you chose are dimmed — at
+  Boston that takes 31 buttons down to a handful, and at Heathrow 84 down to a handful. They
+  stay pressable, because imperfect map data must never make a legitimate turn unreachable.
+- Finish on a runway and the route ends on it. Routes travel the taxiways you picked, in the
+  order you picked them, with unnamed pavement bridging the gaps.
+- Any taxiway the route had to use that you did not ask for is named underneath it. A route
+  the data chose is not the same as a route you chose, and the difference is worth seeing.
+- **Draw on chart** turns the route into ordinary marks, so it persists, exports, prints,
+  undoes and erases exactly like something drawn by hand.
+
+**Lining a chart up with the ground**
+
+- A chart is calibrated by clicking the two thresholds of any runway. The ground positions
+  come from the imported data, so no coordinate is ever typed.
+- The fit is a similarity — rotation, uniform scale and translation — rather than a full
+  affine. Ground charts are conformal at airport scale, and a similarity cannot shear the
+  airport into a wrong shape to chase a mis-clicked point. On Boston's chart, two clicks
+  place all 2,237 imported vertices to within 0.15 m.
+- While the planner is open the whole taxi network is drawn faintly over the plate, so a
+  calibration can be checked against the printing underneath rather than trusted on a number.
+- A fit that would make the airport far larger or far smaller than the chart is rejected with
+  a reason rather than saved.
+- Calibrations are stored per chart and follow the plate through rotation, like marks do.
+
+**Importing airport data**
+
+- New `Tools/taxi_import.py`, which fetches an airport's taxiways, taxilanes, runways, gates
+  and holding positions from OpenStreetMap and caches them as JSON:
+
+      python3 Tools/taxi_import.py KBOS
+
+- Chartdesk itself still makes no network connections. It only reads what the importer
+  leaves in `~/Library/Application Support/Chartdesk/taxi/`.
+- The importer asks for the aerodrome boundary *and* a radius around it, then merges the two.
+  Neither is sufficient alone: the boundary is precise but at Boston is drawn tightly enough
+  to exclude every apron taxilane, which is exactly the pavement that joins a gate to the
+  taxiways. Disconnected clusters are reported afterwards, so a neighbouring airfield
+  arriving with the radius pass is visible rather than silent.
+- Designators are trimmed to what a pilot would say. Heathrow names its taxiways "Taxiway A"
+  in OpenStreetMap and Dublin has "F1 (Temp Closed)"; nobody reads back "taxiway alpha one
+  temp closed".
+- Gates are offered as a starting point, but at most airports the apron lead-ins are not
+  mapped at all, so the stand does not join the taxi network. Where that is the case the gap
+  is drawn as a thin straight line and labelled approximate rather than passed off as
+  surveyed pavement.
+
+**Internal**
+
+- Imported ways are split at every node they share with another way, because a shared node is
+  exactly where an aircraft could turn off.
+- The route search is a layered Dijkstra whose state carries whether the current taxiway has
+  been *travelled*, not merely reached. Without that flag the search reaches a taxiway and
+  advances without ever using it, which looks plausible and is wrong.
+- Unnamed pavement costs a little more than a named taxiway; a taxiway that was not requested
+  costs a great deal more but is not forbidden, because OpenStreetMap occasionally leaves a
+  designator off the one segment that joins two others.
+
 ## 0.9.4
 
 **Marking up charts**

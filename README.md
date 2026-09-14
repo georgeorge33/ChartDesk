@@ -147,6 +147,7 @@ negative instead.
 | `⌃1`–`⌃6` | pen, highlighter, arrow, box, text, eraser |
 | `⌘Z` `⇧⌘Z` | undo / redo a mark |
 | `⇧⌘M` | hide or show marks |
+| `⇧⌘T` | plan a taxi route |
 
 Export and print use whatever you're looking at, including the rotation, the night-mode
 treatment and anything you've drawn on — handy for a paper copy of an approach in the
@@ -179,6 +180,42 @@ Your chart files are never written to. Marks live in
 
 ---
 
+## Taxi routes
+
+Press **⇧⌘T** on a ground chart and build a clearance by tapping taxiways — no typing. The
+route draws on the plate as you go, and **Draw on chart** commits it as an ordinary mark, so
+it exports and prints with everything else.
+
+The airport's layout comes from OpenStreetMap and has to be fetched once per airport:
+
+```sh
+python3 Tools/taxi_import.py KBOS
+```
+
+Chartdesk itself never touches the network — it only reads what that leaves in
+`~/Library/Application Support/Chartdesk/taxi/`.
+
+The first time you plan a route on a given chart it asks you to line the plate up with the
+ground: pick a runway and click its two thresholds. That's the whole calibration — the
+coordinates come from the imported data, so you never type one. Two clicks on the Boston
+ground chart place all 2,237 imported vertices to within 0.15 m. While the planner is open
+the taxi network is drawn faintly over the plate so you can see the fit rather than trust it.
+
+After each press, taxiways that don't connect to the one you chose are dimmed — 31 buttons
+become a handful. They stay pressable, because map data is imperfect and a legitimate turn
+should never be unreachable. Finish on a runway and the route ends there. If the route had to
+use a taxiway you didn't ask for, it says so underneath.
+
+Gates are offered as a starting point, but most airports don't have their apron lead-ins
+mapped, so the stand doesn't join the taxi network. Where that happens the gap is drawn thin
+and straight and labelled approximate rather than passed off as real pavement.
+
+> [!CAUTION]
+> Routes are drawn from community map data, not from an official aerodrome survey. Check them
+> against the plate. For flight simulation use only.
+
+---
+
 ## Rearranging the toolbar
 
 Right-click the toolbar and choose **Customize Toolbar…** — or View ▸ Customize Toolbar…, or
@@ -198,6 +235,8 @@ menu switches the bar between icon-only and icon-and-text.
 | Folder permission, pins, recents, view settings | preferences for `local.chartdesk.app` |
 | Manual category moves | `~/Library/Application Support/Chartdesk/category-overrides.json` |
 | Marks drawn on charts | `~/Library/Application Support/Chartdesk/annotations.json` |
+| Chart calibrations | `~/Library/Application Support/Chartdesk/georeference.json` |
+| Imported airport layouts | `~/Library/Application Support/Chartdesk/taxi/` |
 | Toolbar arrangement | preferences for `local.chartdesk.app` |
 | Your charts | untouched, wherever you put them |
 
