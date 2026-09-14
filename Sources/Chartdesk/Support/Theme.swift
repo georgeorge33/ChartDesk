@@ -27,6 +27,23 @@ enum Theme {
     static let accentText       = rgb(0x30B8F0)
     /// Backdrop behind a chart.
     static let canvas           = rgb(0x000810)
+
+    /// A tint per chart category, matching the colour coding Navigraph Charts uses on its own
+    /// tab strip. Bright enough to read as a label on the navy, and dark text sits on top of
+    /// them when a tab is selected.
+    static func category(_ category: ChartCategory) -> NSColor {
+        switch category {
+        case .arrival:   return rgb(0x5BD98A)
+        case .approach:  return rgb(0xF5A33C)
+        case .airport:   return rgb(0x30B8F0)
+        case .departure: return rgb(0xB98BF5)
+        case .reference: return rgb(0xC2D0DE)
+        }
+    }
+}
+
+extension ChartCategory {
+    var tint: Color { Color(nsColor: Theme.category(self)) }
 }
 
 extension Color {

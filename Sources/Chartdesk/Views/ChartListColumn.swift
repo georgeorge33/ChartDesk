@@ -88,15 +88,8 @@ struct ChartListColumn: View {
             }
 
             if !isPinnedList {
-                Picker("Category", selection: $browser.category) {
-                    ForEach(ChartCategory.displayOrder) { category in
-                        Text(category.shortName).tag(category)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .disabled(selectedAirport == nil)
-                .help("Airport, Departure, Arrival, Approach and Reference charts")
+                CategoryStrip(selection: $browser.category, isEnabled: selectedAirport != nil)
+                    .help("Airport, Departure, Arrival, Approach and Reference charts")
             }
 
             MacSearchField(text: $browser.chartQuery,
@@ -269,5 +262,59 @@ private struct ChartRow: View {
         .onHover { hovering in
             isHovering = hovering
         }
+    }
+}
+
+// MARK: - Category strip
+
+/// The tab strip, one colour per chart type.
+///
+/// Hand-built rather than a segmented `Picker`, which paints every segment the same and gives
+/// no way in to tint them individually.
+private struct CategoryStrip: View {
+
+    @Binding var selection: ChartCategory
+    let isEnabled: Bool
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ChartCategory.displayOrder) { category in
+                tab(category)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.ngPanelRaised)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.ngSeparator, lineWidth: 1)
+                )
+        )
+        .opacity(isEnabled ? 1 : 0.45)
+        .disabled(!isEnabled)
+    }
+
+    private func tab(_ category: ChartCategory) -> some View {
+        let chosen = selection == category
+        return Button {
+            selection = category
+        } label: {
+            Text(category.shortName)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 21)
+                // Dark text on the filled pill: the tints are bright, so the window colour is
+                // what stays legible on top of them.
+                .foregroundStyle(chosen ? Color.ngWindow : category.tint)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(chosen ? category.tint : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(category.displayName)
+        .help(category.displayName)
     }
 }

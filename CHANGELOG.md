@@ -6,6 +6,10 @@
   MSFS web flight planner. There is nothing to select on those rows, so they do the next most
   useful thing instead.
 - Role badges read ORIG, DEST and ALTN rather than ORI, DES and ALT.
+- The category tabs are colour coded — green ARR, orange APP, blue APT, purple DEP, pale
+  REF — matching how Navigraph Charts colours the same tab strip. The selected tab fills
+  with its own colour rather than a single accent. A segmented `Picker` paints every
+  segment the same, so the strip is now built by hand.
 
 ## 0.12.0
 
