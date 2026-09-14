@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.5
+## 0.10.0
 
 **Taxi routes on the ground chart**
 
