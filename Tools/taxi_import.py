@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Fetch an airport's taxi network from OpenStreetMap and cache it for Chartdesk.
+"""DEPRECATED — scheduled for removal in Chartdesk 1.0.
+
+Taxi routing did not work well enough in practice to keep, and this importer exists only
+to feed it. It still works; it is simply no longer maintained.
+
+Fetch an airport's taxi network from OpenStreetMap and cache it for Chartdesk.
 
     Tools/taxi_import.py KBOS                 one airport
     Tools/taxi_import.py KBOS EGLL EIDW       several

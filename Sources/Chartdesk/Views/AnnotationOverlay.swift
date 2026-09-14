@@ -10,6 +10,9 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
 
     override var isFlipped: Bool { true }
 
+    /// A drag here draws, erases or aligns; it must never move the window.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     var annotations: [Annotation] = [] {
         didSet { if annotations != oldValue { needsDisplay = true } }
     }
@@ -41,6 +44,8 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
 
     var onDraw: ((Annotation) -> Void)?
     var onErase: ((UUID) -> Void)?
+
+    // DEPRECATED (1.0): everything from here to `onAlignZoom` belongs to taxi routing.
 
     /// A route being assembled: drawn live so each button press extends the line on the
     /// plate, rather than only appearing once it is committed.

@@ -11,6 +11,7 @@ struct ChartdeskApp: App {
     @StateObject private var viewer = ChartViewerController()
     @StateObject private var updater = UpdateController()
     @StateObject private var annotations = AnnotationStore()
+    // DEPRECATED (1.0): taxi routing.
     @StateObject private var planner = TaxiRouteStore()
 
     var body: some Scene {

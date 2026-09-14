@@ -156,6 +156,7 @@ struct ChartDetailView: View {
         .onChange(of: renderKey) { _ in refresh() }
     }
 
+    // DEPRECATED (1.0): taxi routing.
     /// The faint whole-network overlay is only worth showing while the planner is open, and
     /// only once there is a calibration to judge.
     private func referenceLines(for chartID: String) -> [[CGPoint]] {
@@ -260,6 +261,7 @@ struct ChartDetailView: View {
             .help(annotations.isAnnotating ? "Stop drawing on this chart" : "Draw on this chart")
         }
 
+        // DEPRECATED (1.0): taxi routing.
         ToolbarItem(id: "route", placement: .primaryAction) {
             Button {
                 planner.isPlanning.toggle()

@@ -115,6 +115,11 @@ final class ChartViewerController: ObservableObject {
 
 /// Keeps the chart centred when it is smaller than the window instead of pinning it to a corner.
 final class CenteringClipView: NSClipView {
+
+    /// The window is movable by its background, so every view over the plate has to say that
+    /// a drag on it belongs to the chart rather than to the window.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
         var rect = super.constrainBoundsRect(proposedBounds)
         guard let document = documentView else { return rect }
@@ -132,6 +137,7 @@ final class CenteringClipView: NSClipView {
 /// Top-left origin, so a chart that is taller than the window opens at the top of the plate.
 final class FlippedImageView: NSImageView {
     override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 }
 
 /// The scroll view's document: the plate, with the annotation layer pinned exactly on top of
@@ -140,6 +146,7 @@ final class FlippedImageView: NSImageView {
 final class ChartDocumentView: NSView {
 
     override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     let imageView = FlippedImageView()
     let overlay = AnnotationOverlayView()
@@ -171,6 +178,11 @@ final class ChartDocumentView: NSView {
     }
 }
 
+/// A scroll view that does not hand its drags to the window.
+final class ChartScrollView: NSScrollView {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 // MARK: - Canvas
 
 struct ChartCanvas: NSViewRepresentable {
@@ -192,6 +204,7 @@ struct ChartCanvas: NSViewRepresentable {
     let onDraw: (Annotation) -> Void
     let onErase: (UUID) -> Void
 
+    // DEPRECATED (1.0): the taxi-routing pass-through, down to `onAlignZoom`.
     let preview: [[CGPoint]]
     let reference: [[CGPoint]]
     let isCalibrating: Bool
@@ -207,7 +220,7 @@ struct ChartCanvas: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = ChartScrollView()
 
         let clipView = CenteringClipView()
         clipView.drawsBackground = true

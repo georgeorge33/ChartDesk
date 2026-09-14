@@ -236,6 +236,7 @@ struct ChartdeskCommands: Commands {
 
             Divider()
 
+            // DEPRECATED (1.0): taxi routing.
             Button(planner.isPlanning ? "Close Taxi Route" : "Plan Taxi Route…") {
                 planner.isPlanning.toggle()
             }

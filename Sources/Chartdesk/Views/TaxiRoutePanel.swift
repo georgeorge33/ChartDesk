@@ -1,3 +1,10 @@
+// DEPRECATED — scheduled for removal in 1.0.
+//
+// Taxi routing did not work well enough in practice to keep: the drag-to-align calibration is
+// fiddly and the drawn routes are not dependable enough to read a clearance from. It still
+// ships and still works, so existing calibrations and drawn routes are left alone, but nothing
+// new should be built on it and it is no longer maintained.
+
 import SwiftUI
 
 /// The route builder that floats over the plate: press taxiways rather than type them.

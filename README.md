@@ -182,6 +182,13 @@ Your chart files are never written to. Marks live in
 
 ## Taxi routes
 
+> [!WARNING]
+> **Deprecated — scheduled for removal in 1.0.** Calibrating a chart is fiddly in practice and
+> the drawn routes aren't dependable enough to read a clearance from. It still works and is
+> still shipped, and any route already drawn onto a chart is an ordinary mark that will survive
+> the removal, but don't build anything on it.
+
+
 Press **⇧⌘T** on a ground chart and build a clearance by tapping taxiways — no typing. The
 route draws on the plate as you go, and **Draw on chart** commits it as an ordinary mark, so
 it exports and prints with everything else.

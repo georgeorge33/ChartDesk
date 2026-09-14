@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.2
+
+**Moving the window**
+
+- The window can now be dragged from anywhere in the toolbar that isn't a button, rather than
+  only the narrow gap between the title and the controls. The title, the subtitle and the whole
+  empty run between them all work.
+- Every view over the plate opts out, so a drag on the chart still pans, draws or aligns
+  exactly as before rather than picking the window up.
+
+**Taxi routing is deprecated**
+
+- Taxi routing and chart calibration are **scheduled for removal in 1.0**. In practice the
+  drag-to-align calibration is fiddly and the drawn routes are not dependable enough to read a
+  clearance from, which is not a good basis for something used while flying.
+- Nothing is removed or disabled in this release. It still works, existing calibrations and
+  drawn routes are untouched, and routes already committed to a chart are ordinary marks — they
+  will keep working after the code goes.
+- Every file and section involved now carries a `DEPRECATED` marker naming 1.0, so it is
+  obvious what goes and what stays: `TaxiNetwork.swift`, `TaxiRouteStore.swift`,
+  `Georeference.swift`, `TaxiRoutePanel.swift`, `Tools/taxi_import.py`, and the marked sections
+  of the canvas, overlay, commands and detail view.
+- Annotations, the customisable toolbar and everything else are unaffected.
+
 ## 0.10.1
 
 **Lining a chart up by dragging it**

@@ -28,6 +28,7 @@ struct ContentView: View {
                 WelcomeView()
             }
         }
+        .background(WindowDragEnabler())
         .onAppear {
             restoreSelection()
             updater.checkOnLaunchIfWanted()
