@@ -6,7 +6,11 @@ plate on the right.
 
 Requires macOS 13 or later. SwiftUI + AppKit, no dependencies, no network access.
 
----
+> [!NOTE]
+> This app is created fully with Claude Opus 5 Max.
+
+> [!CAUTION]
+> For flight simulation use. Not for real-world navigation.
 
 ## Build
 
@@ -203,5 +207,5 @@ Usually a truncated download or a `.png` that's secretly something else.
 token tables in `ChartNameParser.swift` for a pattern.
 
 ---
-
-For flight simulation use. Not for real-world navigation.
+> [!CAUTION]
+> **For flight simulation use. Not for real-world navigation.**
