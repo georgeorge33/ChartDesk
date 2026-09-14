@@ -249,7 +249,7 @@ private struct FlightAirportRow: View {
                 .onHover { inside in
                     inside ? NSCursor.pointingHand.push() : NSCursor.pop()
                 }
-                .help("\(field.icao) isn't in your library — open it in the MSFS flight planner")
+                .help("\(field.icao) isn't in your library — open the MSFS flight planner")
         } else {
             row.help(name ?? field.icao)
         }
@@ -299,8 +299,7 @@ private struct FlightAirportRow: View {
     }
 
     private func openInPlanner() {
-        guard let url = URL(string: "https://planner.flightsimulator.com/airport/\(field.icao)")
-        else { return }
+        guard let url = URL(string: "https://planner.flightsimulator.com") else { return }
         NSWorkspace.shared.open(url)
     }
 }
