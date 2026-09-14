@@ -1,4 +1,21 @@
+import AppKit
 import SwiftUI
+
+/// Opens AppKit's own toolbar customisation sheet for the chart window. SwiftUI builds the
+/// palette from the identified items in `ChartDetailView`; there is no API to present it, so
+/// the window is asked directly.
+enum ToolbarCustomization {
+    static func present() {
+        let candidates = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.windows
+        for window in candidates {
+            guard let toolbar = window.toolbar, toolbar.allowsUserCustomization else { continue }
+            window.makeKeyAndOrderFront(nil)
+            toolbar.runCustomizationPalette(nil)
+            return
+        }
+        NSSound.beep()
+    }
+}
 
 struct ChartdeskCommands: Commands {
 
@@ -6,6 +23,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var browser: BrowserState
     @ObservedObject var viewer: ChartViewerController
     @ObservedObject var updater: UpdateController
+    @ObservedObject var marks: AnnotationStore
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -54,7 +72,7 @@ struct ChartdeskCommands: Commands {
             .disabled(chart == nil)
 
             Button("Export Chart as PNG…") {
-                if let chart = chart { ChartActions.exportPNG(chart, state: browser) }
+                if let chart = chart { ChartActions.exportPNG(chart, state: browser, marks: marks) }
             }
             .keyboardShortcut("e", modifiers: .command)
             .disabled(chart == nil)
@@ -62,14 +80,36 @@ struct ChartdeskCommands: Commands {
 
         CommandGroup(replacing: .printItem) {
             Button("Print Chart…") {
-                if let chart = chart { ChartActions.printChart(chart, state: browser) }
+                if let chart = chart { ChartActions.printChart(chart, state: browser, marks: marks) }
             }
             .keyboardShortcut("p", modifiers: .command)
             .disabled(chart == nil)
         }
 
+        // Edit — the only undoable thing in Chartdesk is marking up a chart, so the standard
+        // pair is pointed at that rather than left doing nothing.
+        CommandGroup(replacing: .undoRedo) {
+            Button("Undo Mark") {
+                marks.undo(browser.selectedChartID)
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!marks.canUndo(browser.selectedChartID))
+
+            Button("Redo Mark") {
+                marks.redo(browser.selectedChartID)
+            }
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .disabled(!marks.canRedo(browser.selectedChartID))
+        }
+
         // View
         CommandGroup(after: .toolbar) {
+            Divider()
+
+            Button("Customize Toolbar…") {
+                ToolbarCustomization.present()
+            }
+
             Divider()
 
             Button("Zoom In") { viewer.zoomIn() }
@@ -144,7 +184,7 @@ struct ChartdeskCommands: Commands {
             .disabled(chart == nil)
 
             Button("Copy Chart Image") {
-                if let chart = chart { ChartActions.copyToPasteboard(chart, state: browser) }
+                if let chart = chart { ChartActions.copyToPasteboard(chart, state: browser, marks: marks) }
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .disabled(chart == nil)
@@ -160,6 +200,38 @@ struct ChartdeskCommands: Commands {
                 NotificationCenter.default.post(name: .focusChartSearch, object: nil)
             }
             .keyboardShortcut("f", modifiers: [.command, .option])
+        }
+
+        // Markup
+        CommandMenu("Markup") {
+            Button(marks.isAnnotating ? "Stop Annotating" : "Annotate Chart") {
+                marks.isAnnotating.toggle()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .disabled(chart == nil)
+
+            Divider()
+
+            ForEach(Array(AnnotationTool.allCases.enumerated()), id: \.element) { index, tool in
+                Button(marks.tool == tool ? "✓ \(tool.displayName)" : tool.displayName) {
+                    marks.tool = tool
+                    marks.isAnnotating = true
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .control)
+                .disabled(chart == nil)
+            }
+
+            Divider()
+
+            Button(marks.showMarks ? "Hide Marks" : "Show Marks") {
+                marks.showMarks.toggle()
+            }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+
+            Button("Clear Marks on This Chart") {
+                marks.clear(browser.selectedChartID)
+            }
+            .disabled(!marks.hasMarks(for: browser.selectedChartID))
         }
 
         CommandGroup(replacing: .help) { }

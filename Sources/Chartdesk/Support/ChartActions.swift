@@ -3,24 +3,32 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// Side-effecting actions for a single chart. Everything here renders the chart exactly as it
-/// appears on screen, so a night-mode or rotated chart prints and exports the way it looks.
+/// appears on screen, so a night-mode, rotated or annotated chart prints and exports the way
+/// it looks.
 enum ChartActions {
 
-    static func renderedImage(for chart: Chart, state: BrowserState, completion: @escaping (NSImage) -> Void) {
+    static func renderedImage(for chart: Chart,
+                              state: BrowserState,
+                              marks: AnnotationStore,
+                              completion: @escaping (NSImage) -> Void) {
         let night = state.nightMode
         let desaturate = state.desaturateNight
         let rotation = state.rotation
+        // Read on the caller's thread: the store belongs to the UI. Marks that are currently
+        // hidden stay out of the copy, which keeps "what you see is what you get" honest.
+        let annotations = marks.visibleMarks(for: chart.id)
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = ChartImageStore.shared.image(url: chart.url,
                                                       night: night,
                                                       desaturate: desaturate,
                                                       rotation: rotation)
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let image): completion(image)
-                case .failure: NSSound.beep()
-                }
+            switch result {
+            case .success(let loaded):
+                let composed = AnnotationRenderer.burnIn(annotations, over: loaded, rotation: rotation)
+                DispatchQueue.main.async { completion(composed) }
+            case .failure:
+                DispatchQueue.main.async { NSSound.beep() }
             }
         }
     }
@@ -33,16 +41,16 @@ enum ChartActions {
         NSWorkspace.shared.open(chart.url)
     }
 
-    static func copyToPasteboard(_ chart: Chart, state: BrowserState) {
-        renderedImage(for: chart, state: state) { image in
+    static func copyToPasteboard(_ chart: Chart, state: BrowserState, marks: AnnotationStore) {
+        renderedImage(for: chart, state: state, marks: marks) { image in
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.writeObjects([image])
         }
     }
 
-    static func exportPNG(_ chart: Chart, state: BrowserState) {
-        renderedImage(for: chart, state: state) { image in
+    static func exportPNG(_ chart: Chart, state: BrowserState, marks: AnnotationStore) {
+        renderedImage(for: chart, state: state, marks: marks) { image in
             let panel = NSSavePanel()
             panel.allowedContentTypes = [UTType.png]
             panel.nameFieldStringValue = "\(chart.airportCode) \(chart.title).png"
@@ -63,8 +71,8 @@ enum ChartActions {
         }
     }
 
-    static func printChart(_ chart: Chart, state: BrowserState) {
-        renderedImage(for: chart, state: state) { image in
+    static func printChart(_ chart: Chart, state: BrowserState, marks: AnnotationStore) {
+        renderedImage(for: chart, state: state, marks: marks) { image in
             guard let info = NSPrintInfo.shared.copy() as? NSPrintInfo else { return }
             info.orientation = image.size.width >= image.size.height ? .landscape : .portrait
             info.horizontalPagination = .fit

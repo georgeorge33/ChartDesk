@@ -134,6 +134,43 @@ final class FlippedImageView: NSImageView {
     override var isFlipped: Bool { true }
 }
 
+/// The scroll view's document: the plate, with the annotation layer pinned exactly on top of
+/// it. Both are the size of the image in points, so a mark recorded at 30% across the chart
+/// lands at 30% across at any zoom.
+final class ChartDocumentView: NSView {
+
+    override var isFlipped: Bool { true }
+
+    let imageView = FlippedImageView()
+    let overlay = AnnotationOverlayView()
+
+    init() {
+        super.init(frame: .zero)
+
+        imageView.imageScaling = .scaleAxesIndependently
+        imageView.imageAlignment = .alignCenter
+        imageView.animates = false
+        imageView.isEditable = false
+        imageView.autoresizingMask = [.width, .height]
+        overlay.autoresizingMask = [.width, .height]
+
+        addSubview(imageView)
+        addSubview(overlay, positioned: .above, relativeTo: imageView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    func resize(to size: CGSize) {
+        frame = NSRect(origin: .zero, size: size)
+        imageView.frame = bounds
+        overlay.frame = bounds
+        overlay.needsDisplay = true
+    }
+}
+
 // MARK: - Canvas
 
 struct ChartCanvas: NSViewRepresentable {
@@ -144,6 +181,16 @@ struct ChartCanvas: NSViewRepresentable {
     let background: NSColor
     let fitOnOpen: Bool
     let controller: ChartViewerController
+
+    let annotations: [Annotation]
+    let chartKey: String
+    let rotation: Int
+    let isAnnotating: Bool
+    let tool: AnnotationTool
+    let color: AnnotationColor
+    let width: AnnotationWidth
+    let onDraw: (Annotation) -> Void
+    let onErase: (UUID) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller, fitOnOpen: fitOnOpen)
@@ -168,20 +215,17 @@ struct ChartCanvas: NSViewRepresentable {
         scrollView.maxMagnification = 20
         scrollView.usesPredominantAxisScrolling = false
 
-        let imageView = FlippedImageView()
-        imageView.imageScaling = .scaleAxesIndependently
-        imageView.imageAlignment = .alignCenter
-        imageView.animates = false
-        imageView.isEditable = false
-        imageView.frame = .zero
-        scrollView.documentView = imageView
+        let document = ChartDocumentView()
+        scrollView.documentView = document
 
+        // Attached to the image rather than the document view: while annotate mode is on the
+        // overlay is the view under the pointer, so a double-click draws instead of zooming.
         let doubleClick = NSClickGestureRecognizer(target: context.coordinator,
                                                    action: #selector(Coordinator.handleDoubleClick(_:)))
         doubleClick.numberOfClicksRequired = 2
-        imageView.addGestureRecognizer(doubleClick)
+        document.imageView.addGestureRecognizer(doubleClick)
 
-        context.coordinator.configure(scrollView: scrollView, imageView: imageView)
+        context.coordinator.configure(scrollView: scrollView, document: document)
         return scrollView
     }
 
@@ -192,6 +236,17 @@ struct ChartCanvas: NSViewRepresentable {
             (nsView.contentView as? CenteringClipView)?.backgroundColor = background
         }
         context.coordinator.apply(image: image, resetKey: resetKey)
+
+        guard let overlay = (nsView.documentView as? ChartDocumentView)?.overlay else { return }
+        overlay.chartKey = chartKey
+        overlay.annotations = annotations
+        overlay.rotation = rotation
+        overlay.isActive = isAnnotating
+        overlay.tool = tool
+        overlay.color = color
+        overlay.width = width
+        overlay.onDraw = onDraw
+        overlay.onErase = onErase
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
@@ -203,7 +258,7 @@ struct ChartCanvas: NSViewRepresentable {
         var fitOnOpen: Bool
 
         private weak var scrollView: NSScrollView?
-        private weak var imageView: NSImageView?
+        private weak var document: ChartDocumentView?
         private var appliedImage: NSImage?
         private var currentResetKey = ""
         private var pendingFit = true
@@ -215,9 +270,9 @@ struct ChartCanvas: NSViewRepresentable {
             super.init()
         }
 
-        func configure(scrollView: NSScrollView, imageView: NSImageView) {
+        func configure(scrollView: NSScrollView, document: ChartDocumentView) {
             self.scrollView = scrollView
-            self.imageView = imageView
+            self.document = document
             controller.attach(scrollView)
 
             magnifyObserver = NotificationCenter.default.addObserver(
@@ -238,21 +293,21 @@ struct ChartCanvas: NSViewRepresentable {
         }
 
         func apply(image: NSImage?, resetKey: String) {
-            guard let imageView = imageView else { return }
+            guard let document = document else { return }
 
             if resetKey != currentResetKey {
                 currentResetKey = resetKey
                 pendingFit = true
                 appliedImage = nil
-                imageView.image = nil
-                imageView.frame = .zero
+                document.imageView.image = nil
+                document.resize(to: .zero)
             }
 
             guard let image = image, image !== appliedImage else { return }
 
             appliedImage = image
-            imageView.image = image
-            imageView.frame = NSRect(origin: .zero, size: image.size)
+            document.imageView.image = image
+            document.resize(to: image.size)
 
             if pendingFit {
                 pendingFit = false

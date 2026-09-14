@@ -9,6 +9,7 @@ struct ChartListColumn: View {
 
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
+    @EnvironmentObject private var annotations: AnnotationStore
 
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
@@ -145,8 +146,11 @@ struct ChartListColumn: View {
             Divider()
             Button("Reveal in Finder") { ChartActions.reveal(chart) }
             Button("Open in Preview") { ChartActions.openExternally(chart) }
-            Button("Copy Image") { ChartActions.copyToPasteboard(chart, state: browser) }
-            Button("Export as PNG…") { ChartActions.exportPNG(chart, state: browser) }
+            Button("Copy Image") { ChartActions.copyToPasteboard(chart, state: browser, marks: annotations) }
+            Button("Export as PNG…") { ChartActions.exportPNG(chart, state: browser, marks: annotations) }
+            if annotations.hasMarks(for: chart.id) {
+                Button("Clear Marks") { annotations.clear(chart.id) }
+            }
             Divider()
             Menu("Move to Category") {
                 ForEach(ChartCategory.displayOrder) { category in

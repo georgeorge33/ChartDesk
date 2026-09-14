@@ -108,8 +108,8 @@ Runways are pulled out of things like `IAC ILS Z RWY 27R`, `ILS25L` or `RNP 09R`
 badge. Approaches sort by runway number then L/C/R, so 09L comes before 09R before 10.
 
 Anything filed in the wrong tab: **right-click ▸ Move to Category**. The correction is saved to
-`~/Library/Application Support/Chartdesk/categories.json` and survives rescans, renames of the
-app, and reboots. Settings ▸ General ▸ Reset Categories clears them all.
+`~/Library/Application Support/Chartdesk/category-overrides.json` and survives rescans, renames
+of the app, and reboots. Settings ▸ General ▸ Reset Categories clears them all.
 
 If a whole batch of your files lands in the wrong place, the token tables are near the top of
 `Sources/Chartdesk/Model/ChartNameParser.swift` — they're plain string lists, so adding your own
@@ -143,9 +143,51 @@ negative instead.
 | `⇧⌘N` | night mode |
 | `⇧⌘R` `⇧⌘L` | rotate right / left |
 | `⇧⌘C` `⌘E` `⌘P` | copy image, export PNG, print |
+| `⇧⌘A` | annotate |
+| `⌃1`–`⌃6` | pen, highlighter, arrow, box, text, eraser |
+| `⌘Z` `⇧⌘Z` | undo / redo a mark |
+| `⇧⌘M` | hide or show marks |
 
-Export and print use whatever you're looking at, including the rotation and night-mode
-treatment — handy for a paper copy of an approach in the orientation you actually fly it.
+Export and print use whatever you're looking at, including the rotation, the night-mode
+treatment and anything you've drawn on — handy for a paper copy of an approach in the
+orientation you actually fly it.
+
+---
+
+## Marking up a chart
+
+**⇧⌘A**, or the pencil in the toolbar, turns on annotate mode and puts a palette at the
+bottom of the canvas. Five tools — pen, highlighter, arrow, box and text — in eight colours
+and three weights, plus an eraser that removes whatever you click or drag across. `⌃1` to
+`⌃6` switch tools, `⌘Z` undoes, `⎋` leaves.
+
+Marks belong to the chart, not to the window. They are saved as you draw, survive a rescan
+and a relaunch, and follow the plate when you rotate it — a note written beside runway 27
+stays beside runway 27 at any rotation. Text labels stay horizontal through a rotation, since
+a sideways note is no use to anybody.
+
+Copying, exporting and printing all burn the marks in, at the chart's own resolution.
+**⇧⌘M** hides every mark and leaves them out of copies and printouts without deleting
+anything.
+
+Weights are a share of the chart's width rather than a fixed number of pixels, so *Medium*
+looks the same on a small plate and a large one. Settings ▸ Markup sets what new marks start
+with, and clears the lot if you want to start over.
+
+Your chart files are never written to. Marks live in
+`~/Library/Application Support/Chartdesk/annotations.json`.
+
+---
+
+## Rearranging the toolbar
+
+Right-click the toolbar and choose **Customize Toolbar…** — or View ▸ Customize Toolbar…, or
+Settings ▸ General ▸ Toolbar. Drag buttons on and off and into whatever order suits you.
+
+Nineteen buttons are available; nine are on the bar to start with. Rotate left, reset
+rotation, actual size, show/hide marks, undo mark, clear marks, reveal in Finder, copy image,
+export as PNG and print are all sitting in the sheet waiting to be dragged out. The same
+menu switches the bar between icon-only and icon-and-text.
 
 ---
 
@@ -154,10 +196,12 @@ treatment — handy for a paper copy of an approach in the orientation you actua
 | | |
 |---|---|
 | Folder permission, pins, recents, view settings | preferences for `local.chartdesk.app` |
-| Manual category moves | `~/Library/Application Support/Chartdesk/categories.json` |
+| Manual category moves | `~/Library/Application Support/Chartdesk/category-overrides.json` |
+| Marks drawn on charts | `~/Library/Application Support/Chartdesk/annotations.json` |
+| Toolbar arrangement | preferences for `local.chartdesk.app` |
 | Your charts | untouched, wherever you put them |
 
-To start completely fresh: `defaults delete local.chartdesk.app` and delete that JSON file.
+To start completely fresh: `defaults delete local.chartdesk.app` and delete those JSON files.
 
 ---
 

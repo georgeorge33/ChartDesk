@@ -7,8 +7,10 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             ViewingSettingsView()
                 .tabItem { Label("Viewing", systemImage: "eye") }
+            MarkupSettingsView()
+                .tabItem { Label("Markup", systemImage: "pencil.tip.crop.circle") }
         }
-        .frame(width: 520, height: 340)
+        .frame(width: 540, height: 400)
     }
 }
 
@@ -51,6 +53,17 @@ private struct GeneralSettingsView: View {
                 Text("Updating uses the GitHub CLI, because the repository is private.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Toolbar") {
+                HStack {
+                    Text("Add, remove or rearrange the buttons above the chart.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Customize…") { ToolbarCustomization.present() }
+                }
             }
 
             Section("Stored Corrections") {
@@ -106,5 +119,70 @@ private struct ViewingSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct MarkupSettingsView: View {
+
+    @EnvironmentObject private var annotations: AnnotationStore
+
+    var body: some View {
+        Form {
+            Section("New Marks") {
+                Picker("Tool", selection: $annotations.tool) {
+                    ForEach(AnnotationTool.drawing) { tool in
+                        Text(tool.displayName).tag(tool)
+                    }
+                }
+                Picker("Colour", selection: $annotations.color) {
+                    ForEach(AnnotationColor.allCases) { color in
+                        Text(color.displayName).tag(color)
+                    }
+                }
+                Picker("Weight", selection: $annotations.width) {
+                    ForEach(AnnotationWidth.allCases) { width in
+                        Text(width.displayName).tag(width)
+                    }
+                }
+                Text("Weights are set as a share of the chart's width, so the same choice looks equally thick on a small plate and a large one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Showing Marks") {
+                Toggle("Draw marks over charts", isOn: $annotations.showMarks)
+                Text("Turning this off hides every mark and leaves them out of copies, exports and printouts. Nothing is deleted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Stored Marks") {
+                HStack {
+                    Text(summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                HStack {
+                    Button("Clear All Marks") { annotations.clearAll() }
+                        .disabled(annotations.totalCount == 0)
+                    Spacer()
+                }
+                Text("Marks live in ~/Library/Application Support/Chartdesk/annotations.json. Your chart files are never written to.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var summary: String {
+        let total = annotations.totalCount
+        guard total > 0 else { return "No marks yet" }
+        let charts = annotations.chartCount
+        return "\(total) \(total == 1 ? "mark" : "marks") on \(charts) \(charts == 1 ? "chart" : "charts")"
     }
 }

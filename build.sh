@@ -287,10 +287,25 @@ fi
 # --- Signature -------------------------------------------------------------
 step "Signing (ad-hoc)"
 # codesign refuses a bundle carrying Finder info or a resource fork, and iCloud Drive adds
-# exactly that to anything under a synced Desktop or Documents folder. Strip it first.
-xattr -cr "$APP" 2>/dev/null || true
+# exactly that to anything under a synced Desktop or Documents folder.
+#
+# `xattr -cr` is not enough on its own: it leaves com.apple.FinderInfo on the bundle
+# directory itself, which is the one codesign actually trips over. So that attribute is also
+# deleted by name. iCloud can re-stamp it between the strip and the signature, hence the
+# retry rather than a straight failure.
+strip_detritus() {
+	xattr -cr "$APP" 2>/dev/null || true
+	find "$APP" -exec xattr -d com.apple.FinderInfo {} \; 2>/dev/null || true
+	find "$APP" -exec xattr -d com.apple.ResourceFork {} \; 2>/dev/null || true
+	find "$APP" -name '._*' -delete 2>/dev/null || true
+}
+
+strip_detritus
 if ! codesign --force --sign - "$APP" 2>/dev/null; then
-	warn "Ad-hoc signing failed; the app may be refused on Apple silicon."
+	strip_detritus
+	if ! codesign --force --sign - "$APP" 2>/dev/null; then
+		warn "Ad-hoc signing failed; the app may be refused on Apple silicon."
+	fi
 fi
 
 step "Built ${APP}"

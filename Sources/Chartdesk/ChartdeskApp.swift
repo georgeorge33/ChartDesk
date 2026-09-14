@@ -10,6 +10,7 @@ struct ChartdeskApp: App {
     @StateObject private var browser = BrowserState()
     @StateObject private var viewer = ChartViewerController()
     @StateObject private var updater = UpdateController()
+    @StateObject private var annotations = AnnotationStore()
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,7 @@ struct ChartdeskApp: App {
                 .environmentObject(browser)
                 .environmentObject(viewer)
                 .environmentObject(updater)
+                .environmentObject(annotations)
                 .frame(minWidth: 940, minHeight: 620)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
@@ -26,7 +28,11 @@ struct ChartdeskApp: App {
         .windowToolbarStyle(.unified)
         .windowResizability(.contentMinSize)
         .commands {
-            ChartdeskCommands(library: library, browser: browser, viewer: viewer, updater: updater)
+            ChartdeskCommands(library: library,
+                              browser: browser,
+                              viewer: viewer,
+                              updater: updater,
+                              marks: annotations)
         }
 
         Window("Performance", id: "performance") {
@@ -42,6 +48,7 @@ struct ChartdeskApp: App {
                 .environmentObject(library)
                 .environmentObject(browser)
                 .environmentObject(updater)
+                .environmentObject(annotations)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }
