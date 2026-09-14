@@ -24,6 +24,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var viewer: ChartViewerController
     @ObservedObject var updater: UpdateController
     @ObservedObject var marks: AnnotationStore
+    @ObservedObject var planner: TaxiRouteStore
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -232,6 +233,21 @@ struct ChartdeskCommands: Commands {
                 marks.clear(browser.selectedChartID)
             }
             .disabled(!marks.hasMarks(for: browser.selectedChartID))
+
+            Divider()
+
+            Button(planner.isPlanning ? "Close Taxi Route" : "Plan Taxi Route…") {
+                planner.isPlanning.toggle()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(chart == nil)
+
+            Button("Recalibrate This Chart…") {
+                planner.removeCalibration(browser.selectedChartID)
+                planner.isPlanning = true
+                planner.beginCalibration(runway: nil)
+            }
+            .disabled(chart == nil || !planner.isCalibrated(browser.selectedChartID))
         }
 
         CommandGroup(replacing: .help) { }

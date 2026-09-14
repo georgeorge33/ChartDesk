@@ -42,6 +42,29 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     var onDraw: ((Annotation) -> Void)?
     var onErase: ((UUID) -> Void)?
 
+    /// A route being assembled: drawn live so each button press extends the line on the
+    /// plate, rather than only appearing once it is committed.
+    var preview: [[CGPoint]] = [] {
+        didSet { if preview != oldValue { needsDisplay = true } }
+    }
+
+    /// The whole imported taxi network, faintly. The only honest way to check a calibration
+    /// is to see whether the data lands on the pavement printed underneath it.
+    var reference: [[CGPoint]] = [] {
+        didSet { if reference != oldValue { needsDisplay = true } }
+    }
+
+    /// While calibrating, a click reports where it landed instead of drawing anything.
+    var isCalibrating = false {
+        didSet {
+            guard isCalibrating != oldValue else { return }
+            if isCalibrating { cancelTextEditor() }
+            refreshCursor()
+        }
+    }
+
+    var onCalibrationClick: ((CGPoint) -> Void)?
+
     /// The stroke under the pointer right now. Held here rather than in the store so a drag
     /// in progress costs no SwiftUI updates and no disk writes.
     private var live: Annotation?
@@ -51,10 +74,14 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Mouse
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        isActive ? super.hitTest(point) : nil
+        (isActive || isCalibrating) ? super.hitTest(point) : nil
     }
 
     override func mouseDown(with event: NSEvent) {
+        if isCalibrating {
+            onCalibrationClick?(stored(convert(event.locationInWindow, from: nil)))
+            return
+        }
         guard isActive else { return super.mouseDown(with: event) }
 
         // Clicking away from a label being typed keeps it, the way a text box usually behaves.
@@ -131,9 +158,51 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        drawReference()
         AnnotationRenderer.draw(annotations, size: bounds.size, rotation: rotation)
         if let live = live, !live.isEmpty {
             AnnotationRenderer.draw(live, size: bounds.size, rotation: rotation)
+        }
+        drawPreview()
+    }
+
+    /// Normalised, unrotated points — the same convention marks use — turned into view
+    /// coordinates for the plate as it is currently shown.
+    private func viewPath(_ line: [CGPoint]) -> NSBezierPath? {
+        guard line.count > 1 else { return nil }
+        let path = NSBezierPath()
+        for (index, point) in line.enumerated() {
+            let shown = AnnotationGeometry.display(point, rotation: rotation)
+            let where_ = NSPoint(x: shown.x * bounds.width, y: shown.y * bounds.height)
+            index == 0 ? path.move(to: where_) : path.line(to: where_)
+        }
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        return path
+    }
+
+    private func drawReference() {
+        guard !reference.isEmpty else { return }
+        let width = max(bounds.width * 0.0012, 0.6)
+        NSColor(srgbRed: 0.19, green: 0.72, blue: 0.94, alpha: 0.30).setStroke()
+        for line in reference {
+            guard let path = viewPath(line) else { continue }
+            path.lineWidth = width
+            path.stroke()
+        }
+    }
+
+    private func drawPreview() {
+        guard !preview.isEmpty else { return }
+        let width = max(bounds.width * 0.0045, 1.5)
+        for line in preview {
+            guard let path = viewPath(line) else { continue }
+            path.lineWidth = width * 5
+            NSColor(srgbRed: 1.0, green: 0.82, blue: 0.12, alpha: 0.34).setStroke()
+            path.stroke()
+            path.lineWidth = width
+            NSColor(srgbRed: 1.0, green: 0.72, blue: 0.05, alpha: 0.95).setStroke()
+            path.stroke()
         }
     }
 
@@ -200,6 +269,7 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Cursor
 
     override func resetCursorRects() {
+        if isCalibrating { return addCursorRect(bounds, cursor: .crosshair) }
         guard isActive else { return super.resetCursorRects() }
         addCursorRect(bounds, cursor: tool == .text ? .iBeam : .crosshair)
     }

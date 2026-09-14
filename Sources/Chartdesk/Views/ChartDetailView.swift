@@ -63,6 +63,7 @@ struct ChartDetailView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var viewer: ChartViewerController
     @EnvironmentObject private var annotations: AnnotationStore
+    @EnvironmentObject private var planner: TaxiRouteStore
     @StateObject private var model = ChartRenderModel()
 
     private var chart: Chart? {
@@ -104,7 +105,16 @@ struct ChartDetailView: View {
                             color: annotations.color,
                             width: annotations.width,
                             onDraw: { mark in annotations.add(mark, to: chart.id) },
-                            onErase: { identifier in annotations.remove(identifier, from: chart.id) })
+                            onErase: { identifier in annotations.remove(identifier, from: chart.id) },
+                            preview: planner.polylines(for: chart.id),
+                            reference: referenceLines(for: chart.id),
+                            isCalibrating: planner.isCalibrating,
+                            onCalibrationClick: { point in
+                                planner.addCalibrationPoint(point,
+                                                            chartID: chart.id,
+                                                            aspect: aspect(of: model.image,
+                                                                           rotation: browser.rotation))
+                            })
 
                 if let errorText = model.errorText {
                     errorOverlay(errorText)
@@ -116,19 +126,42 @@ struct ChartDetailView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if annotations.isAnnotating, chart != nil {
-                AnnotationPalette(chartID: chart?.id)
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            VStack(spacing: 10) {
+                if planner.isPlanning, chart != nil {
+                    TaxiRoutePanel(chartID: chart?.id)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if annotations.isAnnotating, chart != nil {
+                    AnnotationPalette(chartID: chart?.id)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .padding(.bottom, 20)
         }
         .animation(.easeOut(duration: 0.16), value: annotations.isAnnotating)
+        .animation(.easeOut(duration: 0.16), value: planner.isPlanning)
+        .onChange(of: chart?.airportCode) { code in planner.prepare(icao: code) }
+        .onAppear { planner.prepare(icao: chart?.airportCode) }
         .navigationTitle(chart?.title ?? "Chartdesk")
         .navigationSubtitle(subtitle)
         .toolbar(id: "chart", content: toolbarContent)
         .toolbarBackground(Color.ngWindow, for: .windowToolbar)
         .onAppear { refresh() }
         .onChange(of: renderKey) { _ in refresh() }
+    }
+
+    /// The faint whole-network overlay is only worth showing while the planner is open, and
+    /// only once there is a calibration to judge.
+    private func referenceLines(for chartID: String) -> [[CGPoint]] {
+        guard planner.isPlanning || planner.isCalibrating else { return [] }
+        return planner.networkPolylines(for: chartID)
+    }
+
+    /// Height over width of the plate as displayed, which the georeference needs because
+    /// normalised x and y are fractions of different edges.
+    private func aspect(of image: NSImage?, rotation: Int) -> Double {
+        guard let size = image?.size, size.width > 0 else { return 1 }
+        return Double(size.height / size.width)
     }
 
     private func refresh() {
@@ -214,6 +247,16 @@ struct ChartDetailView: View {
             }
             .disabled(chart == nil)
             .help(annotations.isAnnotating ? "Stop drawing on this chart" : "Draw on this chart")
+        }
+
+        ToolbarItem(id: "route", placement: .primaryAction) {
+            Button {
+                planner.isPlanning.toggle()
+            } label: {
+                Label("Taxi Route", systemImage: planner.isPlanning ? "point.topleft.down.curvedto.point.bottomright.up.fill" : "point.topleft.down.curvedto.point.bottomright.up")
+            }
+            .disabled(chart == nil)
+            .help("Build a taxi route from the airport's taxiways")
         }
 
         ToolbarItem(id: "marks.visible", placement: .primaryAction, showsByDefault: false) {

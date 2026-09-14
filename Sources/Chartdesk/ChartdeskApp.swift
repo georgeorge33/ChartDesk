@@ -11,6 +11,7 @@ struct ChartdeskApp: App {
     @StateObject private var viewer = ChartViewerController()
     @StateObject private var updater = UpdateController()
     @StateObject private var annotations = AnnotationStore()
+    @StateObject private var planner = TaxiRouteStore()
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,7 @@ struct ChartdeskApp: App {
                 .environmentObject(viewer)
                 .environmentObject(updater)
                 .environmentObject(annotations)
+                .environmentObject(planner)
                 .frame(minWidth: 940, minHeight: 620)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
@@ -32,7 +34,8 @@ struct ChartdeskApp: App {
                               browser: browser,
                               viewer: viewer,
                               updater: updater,
-                              marks: annotations)
+                              marks: annotations,
+                              planner: planner)
         }
 
         Window("Performance", id: "performance") {
@@ -49,6 +52,7 @@ struct ChartdeskApp: App {
                 .environmentObject(browser)
                 .environmentObject(updater)
                 .environmentObject(annotations)
+                .environmentObject(planner)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }

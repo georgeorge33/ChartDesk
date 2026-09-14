@@ -192,6 +192,11 @@ struct ChartCanvas: NSViewRepresentable {
     let onDraw: (Annotation) -> Void
     let onErase: (UUID) -> Void
 
+    let preview: [[CGPoint]]
+    let reference: [[CGPoint]]
+    let isCalibrating: Bool
+    let onCalibrationClick: (CGPoint) -> Void
+
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller, fitOnOpen: fitOnOpen)
     }
@@ -247,6 +252,10 @@ struct ChartCanvas: NSViewRepresentable {
         overlay.width = width
         overlay.onDraw = onDraw
         overlay.onErase = onErase
+        overlay.preview = preview
+        overlay.reference = reference
+        overlay.isCalibrating = isCalibrating
+        overlay.onCalibrationClick = onCalibrationClick
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
