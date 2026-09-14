@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Chartdesk.app
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          chmod +x build.sh
+          ./build.sh --doctor
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package
+        run: ditto -c -k --keepParent build/Chartdesk.app Chartdesk.app.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chartdesk-app
+          path: Chartdesk.app.zip
+          if-no-files-found: error
