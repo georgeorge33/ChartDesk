@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 extension Notification.Name {
+    static let showPerformance = Notification.Name("ChartdeskShowPerformance")
     static let focusAirportSearch = Notification.Name("ChartdeskFocusAirportSearch")
     static let focusChartSearch = Notification.Name("ChartdeskFocusChartSearch")
 }

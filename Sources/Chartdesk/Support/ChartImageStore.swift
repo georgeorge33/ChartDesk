@@ -24,18 +24,60 @@ final class ChartImageStore {
     private let ciContext = CIContext(options: nil)
 
     private init() {
-        cache.countLimit = 10
+        cache.countLimit = countLimit
+    }
+
+    // MARK: - Statistics
+
+    /// Counters for the Performance window. `NSCache` does not expose its own count, so
+    /// occupancy is tracked here; it is an upper bound, because the cache may evict without
+    /// telling us.
+    struct Statistics {
+        var count = 0
+        var limit = 0
+        var hits = 0
+        var misses = 0
+        var lastDecodeSeconds: Double?
+        var slowestDecodeSeconds: Double?
+    }
+
+    private let countLimit = 10
+    private let statsLock = NSLock()
+    private var stats = Statistics()
+
+    func statistics() -> Statistics {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        var snapshot = stats
+        snapshot.limit = countLimit
+        return snapshot
+    }
+
+    func resetStatistics() {
+        statsLock.lock()
+        let occupancy = stats.count
+        stats = Statistics()
+        stats.count = occupancy
+        statsLock.unlock()
     }
 
     func clearCache() {
         cache.removeAllObjects()
+        statsLock.lock()
+        stats.count = 0
+        statsLock.unlock()
     }
 
     func image(url: URL, night: Bool, desaturate: Bool, rotation: Int) -> Result<NSImage, ChartImageError> {
         let key = "\(url.path)|\(night ? 1 : 0)|\(desaturate ? 1 : 0)|\(rotation)" as NSString
         if let cached = cache.object(forKey: key) {
+            statsLock.lock()
+            stats.hits += 1
+            statsLock.unlock()
             return .success(cached.image)
         }
+
+        let startedAt = DispatchTime.now()
 
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let loaded = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -58,6 +100,15 @@ final class ChartImageStore {
 
         let image = NSImage(cgImage: cgImage, size: size)
         cache.setObject(ImageBox(image), forKey: key)
+
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000_000
+        statsLock.lock()
+        stats.misses += 1
+        stats.count = min(stats.count + 1, countLimit)
+        stats.lastDecodeSeconds = elapsed
+        stats.slowestDecodeSeconds = max(stats.slowestDecodeSeconds ?? 0, elapsed)
+        statsLock.unlock()
+
         return .success(image)
     }
 

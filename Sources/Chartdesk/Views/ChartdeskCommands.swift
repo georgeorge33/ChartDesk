@@ -106,6 +106,13 @@ struct ChartdeskCommands: Commands {
 
             Button("Reset Rotation") { browser.resetRotation() }
                 .disabled(chart == nil || browser.rotation == 0)
+
+            Divider()
+
+            Button("Performance…") {
+                NotificationCenter.default.post(name: .showPerformance, object: nil)
+            }
+            .keyboardShortcut("p", modifiers: [.command, .option])
         }
 
         // Chart

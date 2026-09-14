@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.3
+
+**Performance window**
+
+- New **View → Performance…** window (⌥⌘P) showing what Chartdesk is costing the machine,
+  refreshed once a second.
+- **This Process** — CPU use with a peak reading, thread count, memory footprint with a peak
+  reading, and how long the app has been running. Memory is `phys_footprint`, the same figure
+  Activity Monitor shows in its Memory column.
+- **System** — GPU utilisation, the GPU's name, core count and installed memory.
+- **Charts** — image cache occupancy, cache hit rate, the time taken to decode the last chart
+  and the slowest decode so far, plus library totals. These are the numbers that actually
+  explain a stall when opening a large plate.
+- **Reset Peaks** and **Empty Image Cache** buttons.
+- GPU use is reported for the whole system, not for Chartdesk alone, and the window says so.
+  macOS exposes no public per-process GPU figure.
+- Sampling only runs while the window is open, so the tracker costs nothing when closed.
+
+**Internal**
+
+- `ChartImageStore` now tracks cache hits, misses, occupancy and decode timings behind a lock.
+  `NSCache` does not expose its own count, so occupancy is counted here and is an upper bound.
+- `clearCache()` was previously dead code and is now reachable from the Performance window.
+
 ## 0.9.2
 
 **In-app updates**

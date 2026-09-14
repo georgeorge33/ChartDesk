@@ -6,6 +6,8 @@ struct ContentView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
 
+    @Environment(\.openWindow) private var openWindow
+
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
@@ -38,6 +40,9 @@ struct ContentView: View {
             Button("Later", role: .cancel) { updater.dismissAvailable() }
         } message: { release in
             Text("Chartdesk \(release.version) is available. You have \(updater.currentVersion).\n\nChartdesk will quit, replace itself in your Applications folder, and reopen.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showPerformance)) { _ in
+            openWindow(id: "performance")
         }
         .alert("Software Update", isPresented: $updater.showMessage) {
             Button("OK", role: .cancel) { }

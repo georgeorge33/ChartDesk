@@ -29,6 +29,14 @@ struct ChartdeskApp: App {
             ChartdeskCommands(library: library, browser: browser, viewer: viewer, updater: updater)
         }
 
+        Window("Performance", id: "performance") {
+            PerformanceView()
+                .environmentObject(library)
+                .preferredColorScheme(.dark)
+                .tint(.ngAccent)
+        }
+        .defaultSize(width: 400, height: 700)
+
         Settings {
             SettingsView()
                 .environmentObject(library)
