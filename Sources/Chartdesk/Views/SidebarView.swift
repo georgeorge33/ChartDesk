@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SidebarView: View {
@@ -241,6 +242,20 @@ private struct FlightAirportRow: View {
     let name: String?
 
     var body: some View {
+        if chartCount == nil {
+            // Nothing to select, so the row does the next most useful thing instead.
+            Button(action: openInPlanner) { row }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    inside ? NSCursor.pointingHand.push() : NSCursor.pop()
+                }
+                .help("\(field.icao) isn't in your library — open it in the MSFS flight planner")
+        } else {
+            row.help(name ?? field.icao)
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 8) {
             Text(field.role.title.prefix(3).uppercased())
                 .font(.system(size: 9, weight: .semibold))
@@ -269,17 +284,23 @@ private struct FlightAirportRow: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             } else {
-                Image(systemName: "exclamationmark.triangle")
+                Image(systemName: "arrow.up.forward.square")
                     .font(.caption)
                     .foregroundStyle(Color.orange)
             }
         }
-        .help(chartCount == nil ? "\(field.icao) isn't in your chart library" : (name ?? field.icao))
+        .contentShape(Rectangle())
     }
 
     private var detail: String? {
         guard chartCount != nil else { return "not in your library" }
         if let runway = field.runway, !runway.isEmpty { return "RWY \(runway)" }
         return name
+    }
+
+    private func openInPlanner() {
+        guard let url = URL(string: "https://planner.flightsimulator.com/airport/\(field.icao)")
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 }

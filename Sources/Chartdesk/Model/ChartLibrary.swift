@@ -23,6 +23,7 @@ enum DefaultsKey {
     static let annotationWidth = "annotationWidth"
     static let simbriefAccount = "simbriefAccount"
     static let simbriefOnLaunch = "simbriefOnLaunch"
+    static let airportLookup = "airportLookup"
 }
 
 // MARK: - Folder bookmark

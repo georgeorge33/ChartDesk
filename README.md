@@ -113,7 +113,8 @@ BAW117  EGLL → KJFK · B772
 ```
 
 That last line is the point. Discovering on the ground that you have no plates for your
-alternate is exactly the thing worth catching early.
+alternate is exactly the thing worth catching early — click it to open that airport in the
+MSFS flight planner.
 
 It's a section, not a folder — nothing is copied and nothing is written to your chart library.
 Load it again any time to pick up a replanned flight, or turn on loading at launch.

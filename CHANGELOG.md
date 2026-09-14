@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1
+
+- An airport in the flight list that you have no charts for is now clickable, and opens that
+  airport in the MSFS web flight planner. There is nothing to select on those rows, so they do
+  the next most useful thing instead.
+
 ## 0.12.0
 
 **Flights from SimBrief**
