@@ -20,6 +20,15 @@ struct FlightPlan: Codable, Equatable {
                 case .alternate: return "Alternate"
                 }
             }
+
+            /// Spelled out rather than truncated: "Alternate" cut to four letters is ALTE.
+            var badge: String {
+                switch self {
+                case .origin: return "ORIG"
+                case .destination: return "DEST"
+                case .alternate: return "ALTN"
+                }
+            }
         }
 
         var icao: String

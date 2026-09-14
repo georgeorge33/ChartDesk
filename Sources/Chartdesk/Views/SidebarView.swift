@@ -257,9 +257,9 @@ private struct FlightAirportRow: View {
 
     private var row: some View {
         HStack(spacing: 8) {
-            Text(field.role.title.prefix(3).uppercased())
+            Text(field.role.badge)
                 .font(.system(size: 9, weight: .semibold))
-                .frame(width: 30)
+                .frame(width: 36)
                 .padding(.vertical, 2)
                 .background(Color.ngAccent.opacity(chartCount == nil ? 0.25 : 1),
                             in: RoundedRectangle(cornerRadius: 3, style: .continuous))
