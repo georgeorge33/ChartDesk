@@ -65,6 +65,21 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
 
     var onCalibrationClick: ((CGPoint) -> Void)?
 
+    /// Dragging the whole overlay into place, rather than clicking points for it to fit.
+    var isAligning = false {
+        didSet {
+            guard isAligning != oldValue else { return }
+            if isAligning { cancelTextEditor() }
+            refreshCursor()
+        }
+    }
+
+    var onAlignDrag: ((CGPoint) -> Void)?
+    var onAlignTurn: ((Double, CGPoint) -> Void)?
+    var onAlignZoom: ((Double, CGPoint) -> Void)?
+
+    private var alignAnchor: NSPoint?
+
     /// The stroke under the pointer right now. Held here rather than in the store so a drag
     /// in progress costs no SwiftUI updates and no disk writes.
     private var live: Annotation?
@@ -74,10 +89,14 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Mouse
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        (isActive || isCalibrating) ? super.hitTest(point) : nil
+        (isActive || isCalibrating || isAligning) ? super.hitTest(point) : nil
     }
 
     override func mouseDown(with event: NSEvent) {
+        if isAligning {
+            alignAnchor = convert(event.locationInWindow, from: nil)
+            return
+        }
         if isCalibrating {
             onCalibrationClick?(stored(convert(event.locationInWindow, from: nil)))
             return
@@ -106,6 +125,13 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isAligning {
+            guard let previous = alignAnchor else { return }
+            let current = convert(event.locationInWindow, from: nil)
+            alignAnchor = current
+            align(from: previous, to: current, modifiers: event.modifierFlags)
+            return
+        }
         guard isActive else { return super.mouseDragged(with: event) }
         let point = convert(event.locationInWindow, from: nil)
 
@@ -138,12 +164,56 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isAligning { alignAnchor = nil; return }
         guard isActive else { return super.mouseUp(with: event) }
         guard let current = live else { return }
         live = nil
         needsDisplay = true
         guard !current.isEmpty else { return }
         onDraw?(current)
+    }
+
+    /// Grab-and-turn rather than a slider: the point under the pointer follows it round the
+    /// middle of what you are looking at, which is the same gesture as rotating a paper chart.
+    private func align(from previous: NSPoint, to current: NSPoint, modifiers: NSEvent.ModifierFlags) {
+        let pivot = visibleCentre()
+
+        if modifiers.contains(.option) {
+            let was = atan2(previous.y - pivot.y, previous.x - pivot.x)
+            let now = atan2(current.y - pivot.y, current.x - pivot.x)
+            // The view is flipped, so a growing angle here is clockwise on screen.
+            onAlignTurn?(Double(now - was), unclamped(pivot))
+            return
+        }
+
+        if modifiers.contains(.shift) {
+            let was = hypot(previous.x - pivot.x, previous.y - pivot.y)
+            let now = hypot(current.x - pivot.x, current.y - pivot.y)
+            guard was > max(bounds.width * 0.002, 1) else { return }
+            onAlignZoom?(Double(now / was), unclamped(pivot))
+            return
+        }
+
+        let from = unclamped(previous), to = unclamped(current)
+        onAlignDrag?(CGPoint(x: to.x - from.x, y: to.y - from.y))
+    }
+
+    override func magnify(with event: NSEvent) {
+        guard isAligning else { return super.magnify(with: event) }
+        onAlignZoom?(1 + Double(event.magnification), unclamped(visibleCentre()))
+    }
+
+    override func rotate(with event: NSEvent) {
+        guard isAligning else { return super.rotate(with: event) }
+        // AppKit reports anticlockwise degrees.
+        onAlignTurn?(Double(-event.rotation) * .pi / 180, unclamped(visibleCentre()))
+    }
+
+    private func visibleCentre() -> NSPoint {
+        guard let visible = enclosingScrollView?.documentVisibleRect, !visible.isEmpty else {
+            return NSPoint(x: bounds.midX, y: bounds.midY)
+        }
+        return NSPoint(x: visible.midX, y: visible.midY)
     }
 
     private func erase(at point: NSPoint) {
@@ -269,6 +339,7 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Cursor
 
     override func resetCursorRects() {
+        if isAligning { return addCursorRect(bounds, cursor: .openHand) }
         if isCalibrating { return addCursorRect(bounds, cursor: .crosshair) }
         guard isActive else { return super.resetCursorRects() }
         addCursorRect(bounds, cursor: tool == .text ? .iBeam : .crosshair)
@@ -289,6 +360,14 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     private var eraserReach: CGFloat { 9 / magnification }
 
     private var minimumSampleGap: CGFloat { 1.2 / magnification }
+
+    /// Like `stored`, without the clamp. A drag near the edge of the plate must still report
+    /// its true delta, and a clamped one would quietly shrink it.
+    private func unclamped(_ point: NSPoint) -> CGPoint {
+        AnnotationGeometry.source(CGPoint(x: point.x / max(bounds.width, 1),
+                                          y: point.y / max(bounds.height, 1)),
+                                  rotation: rotation)
+    }
 
     private func stored(_ point: NSPoint) -> CGPoint {
         let shown = CGPoint(x: clamp(point.x / max(bounds.width, 1)),

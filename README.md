@@ -196,9 +196,16 @@ Chartdesk itself never touches the network — it only reads what that leaves in
 `~/Library/Application Support/Chartdesk/taxi/`.
 
 The first time you plan a route on a given chart it asks you to line the plate up with the
-ground: click a couple of taxiway intersections, and Chartdesk works out the rest. The
-coordinates come from the imported data, so you never type one, and it suggests which crossing
-to click next — always the one furthest from what you've already placed.
+ground. Two ways to do it:
+
+**Drag it into place** — grab the taxi network and move it onto the pavement. Drag to move,
+⌥ drag to turn, ⇧ drag to resize, or use a trackpad's rotate and pinch. You see the whole
+airfield line up at once.
+
+**Or click crossings** — click a couple of taxiway intersections, and Chartdesk works out the
+rest. The coordinates come from the imported
+data, so you never type one, and it suggests which crossing to click next — always the one
+furthest from what you've already placed.
 
 Crossings rather than runway thresholds because they're the same point on both the chart and
 the map data. OpenStreetMap's runway geometry runs to the physical end of the pavement while a

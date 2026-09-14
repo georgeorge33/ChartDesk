@@ -197,6 +197,11 @@ struct ChartCanvas: NSViewRepresentable {
     let isCalibrating: Bool
     let onCalibrationClick: (CGPoint) -> Void
 
+    let isAligning: Bool
+    let onAlignDrag: (CGPoint) -> Void
+    let onAlignTurn: (Double, CGPoint) -> Void
+    let onAlignZoom: (Double, CGPoint) -> Void
+
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller, fitOnOpen: fitOnOpen)
     }
@@ -256,6 +261,10 @@ struct ChartCanvas: NSViewRepresentable {
         overlay.reference = reference
         overlay.isCalibrating = isCalibrating
         overlay.onCalibrationClick = onCalibrationClick
+        overlay.isAligning = isAligning
+        overlay.onAlignDrag = onAlignDrag
+        overlay.onAlignTurn = onAlignTurn
+        overlay.onAlignZoom = onAlignZoom
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {

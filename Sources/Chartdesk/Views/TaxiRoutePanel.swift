@@ -10,6 +10,7 @@ struct TaxiRoutePanel: View {
 
     @EnvironmentObject private var planner: TaxiRouteStore
     @EnvironmentObject private var annotations: AnnotationStore
+    @Environment(\.chartAspect) private var aspect
 
     let chartID: String?
 
@@ -62,12 +63,12 @@ struct TaxiRoutePanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("This chart hasn't been lined up with the ground yet.")
                     .font(.callout)
-                Text("Click two taxiway crossings and it works the rest out.")
+                Text("Drag the airport into place, or click two taxiway crossings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Calibrate…") { planner.beginCalibration() }
+            Button("Calibrate…") { planner.beginCalibration(chartID: chartID, aspect: aspect) }
                 .buttonStyle(.borderedProminent)
             closeButton
         }
@@ -76,30 +77,42 @@ struct TaxiRoutePanel: View {
     private var calibrating: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Picker("Crossing", selection: Binding(
-                    get: { planner.calibrationTarget ?? planner.graph?.intersections.first },
-                    set: { planner.calibrationTarget = $0 })) {
-                    ForEach(planner.graph?.intersections ?? []) { crossing in
-                        Text(crossing.label).tag(Optional(crossing))
+                Picker("", selection: Binding(
+                    get: { planner.calibrationMethod },
+                    set: { planner.useMethod($0, chartID: chartID, aspect: aspect) })) {
+                    ForEach(TaxiRouteStore.CalibrationMethod.allCases) { method in
+                        Text(method.title).tag(method)
                     }
                 }
+                .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 128)
+                .frame(width: 210)
 
-                Text(planner.calibrationPrompt)
-                    .font(.callout)
+                if planner.calibrationMethod == .crossings {
+                    Picker("Crossing", selection: Binding(
+                        get: { planner.calibrationTarget ?? planner.graph?.intersections.first },
+                        set: { planner.calibrationTarget = $0 })) {
+                        ForEach(planner.graph?.intersections ?? []) { crossing in
+                            Text(crossing.label).tag(Optional(crossing))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 118)
+                }
 
                 Spacer(minLength: 0)
 
-                Button {
-                    planner.removeLastCalibrationPoint()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
+                if planner.calibrationMethod == .crossings {
+                    Button {
+                        planner.removeLastCalibrationPoint()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(planner.pendingAnchors.isEmpty ? Color.secondary : Color.ngAccentText)
+                    .disabled(planner.pendingAnchors.isEmpty)
+                    .help("Undo the last point")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(planner.pendingAnchors.isEmpty ? Color.secondary : Color.ngAccentText)
-                .disabled(planner.pendingAnchors.isEmpty)
-                .help("Undo the last point")
 
                 Button("Cancel") { planner.cancelCalibration() }
 
@@ -108,21 +121,26 @@ struct TaxiRoutePanel: View {
                     .disabled(!planner.canCommitCalibration || chartID == nil)
             }
 
-            HStack(spacing: 8) {
-                ForEach(Array(planner.pendingAnchors.enumerated()), id: \.offset) { _, anchor in
-                    Text(anchor.label)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.ngAccent, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                        .foregroundStyle(.white)
+            Text(planner.calibrationPrompt)
+                .font(.callout)
+
+            if planner.calibrationMethod == .crossings {
+                HStack(spacing: 8) {
+                    ForEach(Array(planner.pendingAnchors.enumerated()), id: \.offset) { _, anchor in
+                        Text(anchor.label)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.ngAccent, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .foregroundStyle(.white)
+                    }
+                    if planner.pendingAnchors.count < 2 {
+                        Text("Two points minimum. Zoom in first — the closer you click, the better every route lands.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
                 }
-                if planner.pendingAnchors.count < 2 {
-                    Text("Two points minimum. Zoom in first — the closer you click, the better every route lands.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
             }
 
             if let note = planner.calibrationNote {
@@ -136,7 +154,8 @@ struct TaxiRoutePanel: View {
 
     /// Warnings read as warnings; a plain measurement does not.
     private func noteColour(_ note: String) -> Color {
-        note.hasPrefix("Off by") || note.hasPrefix("Lined up") ? .secondary : .orange
+        note.hasPrefix("Off by") || note.hasPrefix("Lined up") || note.contains("across the chart")
+            ? .secondary : .orange
     }
 
     // MARK: - Builder
@@ -287,8 +306,9 @@ struct TaxiRoutePanel: View {
             Spacer(minLength: 0)
 
             Button("Recalibrate") {
-                planner.removeCalibration(chartID)
-                planner.beginCalibration()
+                // Deliberately does not clear the existing calibration: the draft replaces it
+                // on Done, so cancelling — or quitting part way — leaves the old one intact.
+                planner.beginCalibration(chartID: chartID, aspect: aspect)
             }
             .buttonStyle(.plain)
             .font(.caption)
@@ -375,5 +395,20 @@ struct TaxiRoutePanel: View {
         }
         annotations.showMarks = true
         planner.clearRoute()
+    }
+}
+
+// MARK: - Aspect
+
+/// The panel needs the plate's unrotated shape to seed an alignment, and only the detail view
+/// knows it. Passed through the environment rather than threaded down as another parameter.
+private struct ChartAspectKey: EnvironmentKey {
+    static let defaultValue: Double = 1
+}
+
+extension EnvironmentValues {
+    var chartAspect: Double {
+        get { self[ChartAspectKey.self] }
+        set { self[ChartAspectKey.self] = newValue }
     }
 }

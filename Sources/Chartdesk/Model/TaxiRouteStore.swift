@@ -50,6 +50,18 @@ final class TaxiRouteStore: ObservableObject {
 
     // MARK: Calibration in progress
 
+    /// Two ways to line a chart up. Clicking crossings is precise and can report how far
+    /// out it is; dragging the whole overlay is quicker and lets you judge the whole airfield
+    /// at once instead of four points.
+    enum CalibrationMethod: String, CaseIterable, Identifiable {
+        case align
+        case crossings
+
+        var id: String { rawValue }
+        var title: String { self == .align ? "Drag to align" : "Click crossings" }
+    }
+
+    @Published var calibrationMethod: CalibrationMethod = .align
     @Published var calibrationTarget: TaxiIntersection?
     @Published private(set) var pendingAnchors: [GeoAnchor] = []
     @Published private(set) var calibrationNote: String?
@@ -200,13 +212,82 @@ final class TaxiRouteStore: ObservableObject {
 
     // MARK: - Calibration
 
-    func beginCalibration() {
+    func beginCalibration(chartID: String? = nil, aspect: Double = 1) {
         guard let graph = graph else { return }
         pendingAnchors = []
         draftFit = nil
         calibrationNote = nil
         calibrationTarget = graph.suggestedIntersection(avoiding: [])
         isCalibrating = true
+        if calibrationMethod == .align {
+            seedAlignment(chartID: chartID, aspect: aspect)
+        }
+    }
+
+    /// Switching method mid-calibration throws away what the other one had started, because
+    /// half a set of clicked points means nothing to a dragged overlay and vice versa.
+    func useMethod(_ method: CalibrationMethod, chartID: String?, aspect: Double) {
+        guard method != calibrationMethod else { return }
+        calibrationMethod = method
+        pendingAnchors = []
+        draftFit = nil
+        calibrationNote = nil
+        if method == .align { seedAlignment(chartID: chartID, aspect: aspect) }
+    }
+
+    /// Recalibrating starts from wherever the chart already sits, so a small correction stays
+    /// a small correction. A fresh chart starts north-up and centred: wrong, but obviously so.
+    private func seedAlignment(chartID: String?, aspect: Double) {
+        guard let graph = graph, let icao = airport else { return }
+
+        if let existing = georeference(for: chartID) {
+            draftFit = existing
+        } else {
+            let points = graph.network.nodes.compactMap { row -> Coordinate? in
+                row.count == 2 ? Coordinate(latitude: row[0], longitude: row[1]) : nil
+            }
+            guard !points.isEmpty else { return }
+            let centre = Coordinate(
+                latitude: points.map(\.latitude).reduce(0, +) / Double(points.count),
+                longitude: points.map(\.longitude).reduce(0, +) / Double(points.count))
+            draftFit = ChartGeoreference.initialGuess(icao: icao,
+                                                      centre: centre,
+                                                      extentMetres: graph.extentMetres,
+                                                      aspect: aspect)
+        }
+        calibrationNote = alignmentNote()
+    }
+
+    // MARK: Dragging the overlay
+
+    func nudge(by delta: CGPoint) {
+        guard let current = draftFit else { return }
+        draftFit = current.translated(by: delta)
+        calibrationNote = alignmentNote()
+    }
+
+    func turn(by radians: Double, about pivot: CGPoint) {
+        guard let current = draftFit else { return }
+        draftFit = current.rotated(by: radians, about: pivot)
+        calibrationNote = alignmentNote()
+    }
+
+    func zoom(by factor: Double, about pivot: CGPoint) {
+        guard let current = draftFit else { return }
+        draftFit = current.scaled(by: factor, about: pivot)
+        calibrationNote = alignmentNote()
+    }
+
+    /// A dragged overlay has no residual to report — there are no points it is trying to hit.
+    /// What it can say is how big and which way round it now thinks the chart is, which is
+    /// enough to catch a wildly wrong scale or a chart turned the wrong way.
+    private func alignmentNote() -> String? {
+        guard let fit = draftFit else { return nil }
+        let bearing = fit.chartBearing
+        let orientation = bearing < 1 || bearing > 359
+            ? "north-up"
+            : String(format: "turned %.0f° clockwise from north", bearing)
+        return String(format: "%.0f m across the chart, %@.", fit.metresPerUnit, orientation)
     }
 
     func cancelCalibration() {
@@ -217,6 +298,9 @@ final class TaxiRouteStore: ObservableObject {
     }
 
     var calibrationPrompt: String {
+        if calibrationMethod == .align {
+            return "Drag the overlay onto the pavement. ⌥ drag turns it, ⇧ drag resizes it."
+        }
         guard let target = calibrationTarget else {
             return "This airport has no taxiway crossings that can be identified without ambiguity."
         }

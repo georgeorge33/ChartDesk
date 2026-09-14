@@ -88,6 +88,74 @@ struct ChartGeoreference: Codable, Equatable {
         return wrapped > 359.999 ? 0 : wrapped
     }
 
+    // MARK: Aligning by hand
+
+    /// Dragging, rotating and scaling the overlay are not an approximation of the stored
+    /// transform — they *are* it. A georeference is a similarity, and `a + bi` taken as one
+    /// complex number is its rotation and scale while `tx + ty·i` is its translation, so each
+    /// gesture is a single operation on those four numbers with nothing to fit.
+
+    /// Moves the overlay. `delta` is in normalised chart units, y downwards as drawn.
+    func translated(by delta: CGPoint) -> ChartGeoreference {
+        var moved = self
+        moved.tx += Double(delta.x)
+        moved.ty += -Double(delta.y) * aspect
+        return moved
+    }
+
+    /// Turns the overlay about a point on the plate. Positive is clockwise on screen.
+    func rotated(by radians: Double, about pivot: CGPoint) -> ChartGeoreference {
+        // The fit works in a y-up plane, so a clockwise turn on screen is a negative angle here.
+        let angle = -radians
+        let (cosine, sine) = (cos(angle), sin(angle))
+        let (px, py) = (Double(pivot.x), -Double(pivot.y) * aspect)
+
+        var turned = self
+        turned.a = a * cosine - b * sine
+        turned.b = a * sine + b * cosine
+
+        let (ox, oy) = (tx - px, ty - py)
+        turned.tx = ox * cosine - oy * sine + px
+        turned.ty = ox * sine + oy * cosine + py
+        return turned
+    }
+
+    /// Grows or shrinks the overlay about a point on the plate.
+    func scaled(by factor: Double, about pivot: CGPoint) -> ChartGeoreference {
+        guard factor > 0, factor.isFinite else { return self }
+        let (px, py) = (Double(pivot.x), -Double(pivot.y) * aspect)
+
+        var sized = self
+        sized.a = a * factor
+        sized.b = b * factor
+        sized.tx = (tx - px) * factor + px
+        sized.ty = (ty - py) * factor + py
+        return sized
+    }
+
+    /// Somewhere sane to start dragging from: north-up, centred, and sized so the airport
+    /// covers most of the plate. Wrong, but wrong in a way that is obvious and easy to correct.
+    static func initialGuess(icao: String,
+                             centre: Coordinate,
+                             extentMetres: Double,
+                             aspect: Double) -> ChartGeoreference {
+        let coverage = 0.7
+        let scale = coverage / max(extentMetres, 1)
+        return ChartGeoreference(icao: icao,
+                                 origin: centre,
+                                 a: scale,
+                                 b: 0,
+                                 tx: 0.5,
+                                 ty: -0.5 * aspect,
+                                 aspect: aspect,
+                                 anchors: [],
+                                 rmsMetres: 0)
+    }
+
+    /// True when the transform came from dragging rather than from clicked points, which is
+    /// what decides whether a residual can be reported at all.
+    var isHandAligned: Bool { anchors.isEmpty }
+
     // MARK: Fitting
 
     /// Least-squares similarity through every anchor. Two anchors fit exactly, which is why

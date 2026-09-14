@@ -2,6 +2,32 @@
 
 ## 0.10.1
 
+**Lining a chart up by dragging it**
+
+- A chart can now be calibrated by **dragging the taxi network onto the pavement** instead of
+  clicking points: drag to move, ⌥ drag to turn, ⇧ drag to resize. A trackpad's rotate and
+  pinch gestures work too.
+- This is not an approximation of the stored calibration — it *is* it. A georeference is a
+  similarity transform, and `a + bi` taken as one complex number is exactly its rotation and
+  scale while `tx + ty·i` is its translation, so each gesture is a single operation on those
+  four numbers with nothing to fit and no least squares involved.
+- Turning and resizing pivot on the middle of what you are looking at, so the feature under
+  the pointer stays under the pointer.
+- Recalibrating starts from wherever the chart already sits, so a small correction stays a
+  small correction. A chart that has never been calibrated starts north-up and centred at a
+  size that covers most of the plate — wrong, but obviously so and easy to drag from.
+- Clicking crossings is still there and still more precise; the two are a switch at the top of
+  the panel. Dragging shows you the whole airfield at once, which clicking cannot.
+
+**Fixed**
+
+- **Recalibrating destroyed the existing calibration before making a new one.** Cancelling
+  half way — or quitting — left the chart with nothing, having had a working calibration a
+  moment earlier. The draft now replaces the saved one only when you press Done.
+- Calibrating a chart while it was rotated stored an inverted aspect ratio, because the figure
+  was taken from the rendered image rather than the plate's own shape. Calibrations are stored
+  against the unrotated plate, so a chart calibrated at 90° would have been wrong.
+
 **Calibrating against taxiway crossings**
 
 - A chart is now lined up by clicking **taxiway intersections** rather than runway thresholds.

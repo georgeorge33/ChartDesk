@@ -108,13 +108,18 @@ struct ChartDetailView: View {
                             onErase: { identifier in annotations.remove(identifier, from: chart.id) },
                             preview: planner.polylines(for: chart.id),
                             reference: referenceLines(for: chart.id),
-                            isCalibrating: planner.isCalibrating,
+                            isCalibrating: planner.isCalibrating
+                                && planner.calibrationMethod == .crossings,
                             onCalibrationClick: { point in
                                 planner.addCalibrationPoint(point,
                                                             chartID: chart.id,
-                                                            aspect: aspect(of: model.image,
-                                                                           rotation: browser.rotation))
-                            })
+                                                            aspect: unrotatedAspect)
+                            },
+                            isAligning: planner.isCalibrating
+                                && planner.calibrationMethod == .align,
+                            onAlignDrag: { delta in planner.nudge(by: delta) },
+                            onAlignTurn: { radians, pivot in planner.turn(by: radians, about: pivot) },
+                            onAlignZoom: { factor, pivot in planner.zoom(by: factor, about: pivot) })
 
                 if let errorText = model.errorText {
                     errorOverlay(errorText)
@@ -142,6 +147,7 @@ struct ChartDetailView: View {
         .animation(.easeOut(duration: 0.16), value: planner.isPlanning)
         .onChange(of: chart?.airportCode) { code in planner.prepare(icao: code) }
         .onAppear { planner.prepare(icao: chart?.airportCode) }
+        .environment(\.chartAspect, unrotatedAspect)
         .navigationTitle(chart?.title ?? "Chartdesk")
         .navigationSubtitle(subtitle)
         .toolbar(id: "chart", content: toolbarContent)
@@ -157,11 +163,16 @@ struct ChartDetailView: View {
         return planner.networkPolylines(for: chartID)
     }
 
-    /// Height over width of the plate as displayed, which the georeference needs because
-    /// normalised x and y are fractions of different edges.
-    private func aspect(of image: NSImage?, rotation: Int) -> Double {
-        guard let size = image?.size, size.width > 0 else { return 1 }
-        return Double(size.height / size.width)
+    /// Height over width of the plate *unrotated*, which is what the georeference needs:
+    /// calibrations are stored against the unrotated plate so they survive turning it, and
+    /// the rendered image has already had the rotation applied to it. Taking the aspect from
+    /// the rendered image would invert it on a chart viewed at 90°.
+    private var unrotatedAspect: Double {
+        guard let size = model.image?.size, size.width > 0, size.height > 0 else { return 1 }
+        let quarter = ((browser.rotation % 360) + 360) % 360
+        return quarter == 90 || quarter == 270
+            ? Double(size.width / size.height)
+            : Double(size.height / size.width)
     }
 
     private func refresh() {
