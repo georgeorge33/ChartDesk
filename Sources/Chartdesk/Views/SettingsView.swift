@@ -16,6 +16,7 @@ private struct GeneralSettingsView: View {
 
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
+    @EnvironmentObject private var updater: UpdateController
 
     var body: some View {
         Form {
@@ -46,6 +47,10 @@ private struct GeneralSettingsView: View {
 
             Section("Startup") {
                 Toggle("Reopen the last chart on launch", isOn: $browser.restoreLastChart)
+                Toggle("Check for updates on launch", isOn: $updater.checkOnLaunch)
+                Text("Updating uses the GitHub CLI, because the repository is private.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Stored Corrections") {

@@ -286,6 +286,9 @@ fi
 
 # --- Signature -------------------------------------------------------------
 step "Signing (ad-hoc)"
+# codesign refuses a bundle carrying Finder info or a resource fork, and iCloud Drive adds
+# exactly that to anything under a synced Desktop or Documents folder. Strip it first.
+xattr -cr "$APP" 2>/dev/null || true
 if ! codesign --force --sign - "$APP" 2>/dev/null; then
 	warn "Ad-hoc signing failed; the app may be refused on Apple silicon."
 fi

@@ -44,11 +44,42 @@ jobs:
       - name: Package
         run: ditto -c -k --keepParent build/Chartdesk.app Chartdesk.app.zip
 
+      # Pull this version's section out of CHANGELOG.md so the release notes spell the
+      # changes out in full, rather than linking to a compare view.
+      - name: Release notes
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          awk -v want="## ${VERSION}" '
+            $0 == want { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then
+            echo "have_notes=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_notes=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::No '## ${VERSION}' section in CHANGELOG.md; falling back to generated notes."
+          fi
+
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" Chartdesk.app.zip \
-            --title "Chartdesk ${{ steps.version.outputs.version }}" \
-            --generate-notes \
-            || gh release upload "${{ steps.version.outputs.tag }}" Chartdesk.app.zip --clobber
+          if [ "${{ steps.notes.outputs.have_notes }}" = "yes" ]; then
+            NOTES=(--notes-file notes.md)
+          else
+            NOTES=(--generate-notes)
+          fi
+
+          if gh release create "${{ steps.version.outputs.tag }}" Chartdesk.app.zip \
+               --title "Chartdesk ${{ steps.version.outputs.version }}" \
+               "${NOTES[@]}"; then
+            exit 0
+          fi
+
+          # The release already exists: refresh both the asset and the notes.
+          gh release upload "${{ steps.version.outputs.tag }}" Chartdesk.app.zip --clobber
+          if [ "${{ steps.notes.outputs.have_notes }}" = "yes" ]; then
+            gh release edit "${{ steps.version.outputs.tag }}" --notes-file notes.md
+          fi

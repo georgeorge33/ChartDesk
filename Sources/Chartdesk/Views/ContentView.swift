@@ -4,6 +4,7 @@ struct ContentView: View {
 
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
+    @EnvironmentObject private var updater: UpdateController
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -25,8 +26,24 @@ struct ContentView: View {
                 WelcomeView()
             }
         }
-        .onAppear { restoreSelection() }
+        .onAppear {
+            restoreSelection()
+            updater.checkOnLaunchIfWanted()
+        }
         .onChange(of: library.scanID) { _ in restoreSelection() }
+        .alert("Update Available",
+               isPresented: $updater.showAvailable,
+               presenting: updater.available) { release in
+            Button("Update and Relaunch") { updater.installAvailable() }
+            Button("Later", role: .cancel) { updater.dismissAvailable() }
+        } message: { release in
+            Text("Chartdesk \(release.version) is available. You have \(updater.currentVersion).\n\nChartdesk will quit, replace itself in your Applications folder, and reopen.")
+        }
+        .alert("Software Update", isPresented: $updater.showMessage) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(updater.message ?? "")
+        }
     }
 
     /// Picks something sensible to show after a scan: the chart you were last on, else the

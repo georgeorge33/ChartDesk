@@ -16,6 +16,7 @@ enum DefaultsKey {
     static let canvasBackground = "canvasBackground"
     static let zoomToFitOnOpen = "zoomToFitOnOpen"
     static let restoreLastChart = "restoreLastChart"
+    static let checkForUpdates = "checkForUpdates"
 }
 
 // MARK: - Folder bookmark

@@ -5,6 +5,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var library: ChartLibrary
     @ObservedObject var browser: BrowserState
     @ObservedObject var viewer: ChartViewerController
+    @ObservedObject var updater: UpdateController
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -17,6 +18,13 @@ struct ChartdeskCommands: Commands {
     }
 
     var body: some Commands {
+
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") {
+                updater.check(manual: true)
+            }
+            .disabled(updater.isWorking)
+        }
 
         // File
         CommandGroup(replacing: .newItem) {
