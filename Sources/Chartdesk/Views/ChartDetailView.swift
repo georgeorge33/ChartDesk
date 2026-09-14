@@ -99,12 +99,13 @@ struct ChartDetailView: View {
                     loadingOverlay
                 }
             } else {
-                NoChartSelectedView()
+                NoChartSelectedView(background: browser.canvasColor)
             }
         }
         .navigationTitle(chart?.title ?? "Chartdesk")
         .navigationSubtitle(subtitle)
         .toolbar { toolbarContent }
+        .toolbarBackground(Color.ngWindow, for: .windowToolbar)
         .onAppear { refresh() }
         .onChange(of: renderKey) { _ in refresh() }
     }
@@ -124,7 +125,7 @@ struct ChartDetailView: View {
             .progressViewStyle(.circular)
             .controlSize(.small)
             .padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Color.ngPanelRaised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .shadow(radius: 6, y: 2)
     }
 
@@ -141,7 +142,7 @@ struct ChartDetailView: View {
             }
         }
         .padding(24)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.ngPanelRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: Toolbar
@@ -241,6 +242,9 @@ struct ChartDetailView: View {
 // MARK: - Placeholder
 
 private struct NoChartSelectedView: View {
+
+    let background: NSColor
+
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "doc.text.magnifyingglass")
@@ -253,6 +257,6 @@ private struct NoChartSelectedView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Color(nsColor: background))
     }
 }

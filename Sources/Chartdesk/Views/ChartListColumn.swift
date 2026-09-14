@@ -44,6 +44,7 @@ struct ChartListColumn: View {
         VStack(spacing: 0) {
             header
             Divider()
+                .overlay(Color.ngSeparator)
             if charts.isEmpty {
                 emptyState
             } else {
@@ -51,6 +52,7 @@ struct ChartListColumn: View {
             }
         }
         .frame(minWidth: 250)
+        .background(Color.ngPanel)
         .onChange(of: browser.sidebarSelection) { _ in
             handleSelectionChange()
         }
@@ -126,6 +128,7 @@ struct ChartListColumn: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
     }
 
     private func row(for chart: Chart, showsAirport: Bool) -> some View {
@@ -251,7 +254,7 @@ private struct ChartRow: View {
             if isPinned || isHovering {
                 Button(action: togglePin) {
                     Image(systemName: isPinned ? "star.fill" : "star")
-                        .foregroundStyle(isPinned ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(isPinned ? Color.ngAccentText : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help(isPinned ? "Unpin chart" : "Pin chart")

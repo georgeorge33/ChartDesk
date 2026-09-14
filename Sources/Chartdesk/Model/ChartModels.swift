@@ -13,8 +13,10 @@ enum ChartCategory: String, CaseIterable, Identifiable, Codable, Hashable {
 
     var id: String { rawValue }
 
-    /// Fixed order used everywhere charts are listed.
-    static let displayOrder: [ChartCategory] = [.airport, .departure, .arrival, .approach, .reference]
+    /// Fixed order used everywhere charts are listed, matching the Navigraph Charts app.
+    /// This is presentation only — the name parser has its own `classificationOrder`, so
+    /// reordering these tabs cannot change which category a chart is filed under.
+    static let displayOrder: [ChartCategory] = [.arrival, .approach, .airport, .departure, .reference]
 
     var shortName: String {
         switch self {

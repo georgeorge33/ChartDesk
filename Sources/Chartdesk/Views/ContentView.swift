@@ -20,6 +20,7 @@ struct ContentView: View {
                     ChartDetailView()
                 }
                 .navigationSplitViewStyle(.balanced)
+                .background(Color.ngWindow)
             } else {
                 WelcomeView()
             }
@@ -74,7 +75,7 @@ struct WelcomeView: View {
             VStack(spacing: 18) {
                 Image(systemName: "map")
                     .font(.system(size: 54, weight: .light))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.ngAccentText)
 
                 VStack(spacing: 6) {
                     Text("Welcome to Chartdesk")
@@ -140,7 +141,7 @@ struct WelcomeView: View {
                 .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.ngWindow)
     }
 
     private func layoutExample(title: String, lines: [String]) -> some View {

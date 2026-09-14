@@ -95,7 +95,7 @@ private struct ViewingSettingsView: View {
                         Text(background.displayName).tag(background)
                     }
                 }
-                Text("Night mode always uses a dark background.")
+                Text("Chart Navy matches the rest of the app. Night mode always uses a dark background.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

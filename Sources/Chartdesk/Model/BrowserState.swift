@@ -11,7 +11,7 @@ enum CanvasBackground: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .system: return "Match System"
+        case .system: return "Chart Navy"
         case .light: return "Light Grey"
         case .dark: return "Dark"
         }
@@ -19,7 +19,7 @@ enum CanvasBackground: String, CaseIterable, Identifiable {
 
     var color: NSColor {
         switch self {
-        case .system: return .underPageBackgroundColor
+        case .system: return Theme.canvas
         case .light: return NSColor(white: 0.92, alpha: 1)
         case .dark: return NSColor(white: 0.12, alpha: 1)
         }

@@ -17,6 +17,8 @@ struct ChartdeskApp: App {
                 .environmentObject(browser)
                 .environmentObject(viewer)
                 .frame(minWidth: 940, minHeight: 620)
+                .preferredColorScheme(.dark)
+                .tint(.ngAccent)
         }
         .defaultSize(width: 1340, height: 880)
         .windowToolbarStyle(.unified)
@@ -29,11 +31,21 @@ struct ChartdeskApp: App {
             SettingsView()
                 .environmentObject(library)
                 .environmentObject(browser)
+                .preferredColorScheme(.dark)
+                .tint(.ngAccent)
         }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    /// The app is always dark, whatever the system is set to. This one line carries every
+    /// AppKit-backed surface with it: toolbar, search fields, scrollers, menus, the
+    /// segmented control and grouped form backgrounds.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }

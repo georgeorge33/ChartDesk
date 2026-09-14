@@ -50,6 +50,7 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .overlay {
                 if library.airports.isEmpty && !library.isScanning {
                     EmptyLibraryNotice()
@@ -62,9 +63,11 @@ struct SidebarView: View {
             }
 
             Divider()
+                .overlay(Color.ngSeparator)
             footer
         }
         .frame(minWidth: 200)
+        .background(Color.ngWindow)
     }
 
     // MARK: - Pieces

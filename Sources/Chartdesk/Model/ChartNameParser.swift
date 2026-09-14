@@ -65,6 +65,12 @@ enum ChartNameParser {
     /// Most specific first – decides ties.
     private static let tieBreakOrder: [ChartCategory] = [.approach, .departure, .arrival, .airport, .reference]
 
+    /// Order in which categories claim tokens while the lookup tables are built: the first
+    /// category to claim a token keeps it. Deliberately independent of
+    /// `ChartCategory.displayOrder` so that reordering the tabs in the UI can never change
+    /// how a filename is classified.
+    private static let classificationOrder: [ChartCategory] = [.airport, .departure, .arrival, .approach, .reference]
+
     private struct TokenRule {
         let category: ChartCategory
         let weight: Int
@@ -72,12 +78,12 @@ enum ChartNameParser {
 
     private static let tokenRules: [String: TokenRule] = {
         var table: [String: TokenRule] = [:]
-        for category in ChartCategory.displayOrder {
+        for category in classificationOrder {
             for token in strongTokens[category] ?? [] where table[token] == nil {
                 table[token] = TokenRule(category: category, weight: strongWeight)
             }
         }
-        for category in ChartCategory.displayOrder {
+        for category in classificationOrder {
             for token in weakTokens[category] ?? [] where table[token] == nil {
                 table[token] = TokenRule(category: category, weight: weakWeight)
             }
@@ -87,7 +93,7 @@ enum ChartNameParser {
 
     private static let substringRules: [(token: String, category: ChartCategory)] = {
         var rules: [(token: String, category: ChartCategory)] = []
-        for category in ChartCategory.displayOrder {
+        for category in classificationOrder {
             for token in substringTokens[category] ?? [] {
                 rules.append((token, category))
             }

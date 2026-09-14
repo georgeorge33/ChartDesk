@@ -1,0 +1,39 @@
+import AppKit
+import SwiftUI
+
+/// The Navigraph-style palette. The app is pinned to dark, so these are fixed values
+/// rather than dynamic system colours.
+enum Theme {
+
+    private static func rgb(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green:   CGFloat((hex >> 8) & 0xFF) / 255,
+                blue:    CGFloat(hex & 0xFF) / 255,
+                alpha:   1)
+    }
+
+    /// Window, sidebar and detail background.
+    static let windowBackground = rgb(0x000810)
+    /// The middle chart-list column.
+    static let panel            = rgb(0x101828)
+    /// Overlays that float above the canvas.
+    static let panelRaised      = rgb(0x081020)
+    /// Dividers and hairlines.
+    static let separator        = rgb(0x182838)
+    /// Filled controls, selection, window tint.
+    static let accent           = rgb(0x185890)
+    /// Accent-coloured *text and glyphs*. `accent` is only 2.7:1 against the shell, so it
+    /// fails as a foreground colour; this is 8.6:1.
+    static let accentText       = rgb(0x30B8F0)
+    /// Backdrop behind a chart.
+    static let canvas           = rgb(0x000810)
+}
+
+extension Color {
+    static let ngWindow      = Color(nsColor: Theme.windowBackground)
+    static let ngPanel       = Color(nsColor: Theme.panel)
+    static let ngPanelRaised = Color(nsColor: Theme.panelRaised)
+    static let ngSeparator   = Color(nsColor: Theme.separator)
+    static let ngAccent      = Color(nsColor: Theme.accent)
+    static let ngAccentText  = Color(nsColor: Theme.accentText)
+}
