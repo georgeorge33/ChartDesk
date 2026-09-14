@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
+    @EnvironmentObject private var flight: FlightPlanStore
 
     @Environment(\.openWindow) private var openWindow
 
@@ -32,6 +33,7 @@ struct ContentView: View {
         .onAppear {
             restoreSelection()
             updater.checkOnLaunchIfWanted()
+            flight.refreshOnLaunchIfWanted()
         }
         .onChange(of: library.scanID) { _ in restoreSelection() }
         .alert("Update Available",

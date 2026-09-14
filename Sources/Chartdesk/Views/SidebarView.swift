@@ -4,6 +4,7 @@ struct SidebarView: View {
 
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
+    @EnvironmentObject private var flight: FlightPlanStore
 
     private var trimmedQuery: String {
         browser.airportQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12,6 +13,62 @@ struct SidebarView: View {
     private var filteredAirports: [Airport] {
         guard !trimmedQuery.isEmpty else { return library.airports }
         return library.airports.filter { $0.searchText.localizedCaseInsensitiveContains(trimmedQuery) }
+    }
+
+    /// The airports this flight needs, straight from the SimBrief plan. A section rather than
+    /// a folder on disk: Chartdesk never writes to your chart library, and copying files about
+    /// would mean cleaning them up again every time the flight changed.
+    @ViewBuilder
+    private var flightSection: some View {
+        Section {
+            if let problem = flight.problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let plan = flight.plan {
+                ForEach(plan.airfields) { field in
+                    flightRow(field)
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text(flight.plan?.title ?? "Flight")
+                    .lineLimit(1)
+                if let subtitle = flight.plan?.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if flight.isFetching {
+                    ProgressView().progressViewStyle(.circular).controlSize(.mini)
+                } else {
+                    Button {
+                        flight.refresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.ngAccentText)
+                    .help("Fetch the latest flight from SimBrief")
+                }
+            }
+        }
+    }
+
+    /// Airports you don't have charts for are listed but not selectable. Finding that out on
+    /// the ground is the point — it is the same check you would otherwise do from memory.
+    @ViewBuilder
+    private func flightRow(_ field: FlightPlan.Airfield) -> some View {
+        if let airport = library.airport(code: field.icao) {
+            FlightAirportRow(field: field, chartCount: airport.charts.count, name: airport.name)
+                .tag(SidebarItem.airport(field.icao))
+        } else {
+            FlightAirportRow(field: field, chartCount: nil, name: field.name)
+        }
     }
 
     var body: some View {
@@ -26,6 +83,10 @@ struct SidebarView: View {
                 .padding(.bottom, 6)
 
             List(selection: $browser.sidebarSelection) {
+                if trimmedQuery.isEmpty, flight.plan != nil || flight.problem != nil {
+                    flightSection
+                }
+
                 if !library.pinnedCharts.isEmpty {
                     Section {
                         pinnedRow
@@ -167,5 +228,58 @@ private struct EmptyLibraryNotice: View {
             .controlSize(.small)
         }
         .padding(20)
+    }
+}
+
+// MARK: - Flight row
+
+private struct FlightAirportRow: View {
+
+    let field: FlightPlan.Airfield
+    /// nil when the airport isn't in the library at all.
+    let chartCount: Int?
+    let name: String?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(field.role.title.prefix(3).uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .frame(width: 30)
+                .padding(.vertical, 2)
+                .background(Color.ngAccent.opacity(chartCount == nil ? 0.25 : 1),
+                            in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .foregroundStyle(chartCount == nil ? Color.secondary : Color.white)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(field.icao)
+                    .font(.callout)
+                    .foregroundStyle(chartCount == nil ? Color.secondary : Color.primary)
+                if let detail = detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(chartCount == nil ? Color.orange : Color.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if let count = chartCount {
+                Text("\(count)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+            }
+        }
+        .help(chartCount == nil ? "\(field.icao) isn't in your chart library" : (name ?? field.icao))
+    }
+
+    private var detail: String? {
+        guard chartCount != nil else { return "not in your library" }
+        if let runway = field.runway, !runway.isEmpty { return "RWY \(runway)" }
+        return name
     }
 }

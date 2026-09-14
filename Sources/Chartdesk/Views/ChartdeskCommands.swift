@@ -25,6 +25,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var updater: UpdateController
     @ObservedObject var marks: AnnotationStore
     @ObservedObject var planner: TaxiRouteStore
+    @ObservedObject var flight: FlightPlanStore
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -57,6 +58,19 @@ struct ChartdeskCommands: Commands {
             }
             .keyboardShortcut("r", modifiers: .command)
             .disabled(!library.hasLibrary)
+
+            Divider()
+
+            Button(flight.isFetching ? "Loading Flight…" : "Load SimBrief Flight") {
+                flight.refresh()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(flight.isFetching || !flight.hasAccount)
+
+            Button("Clear Flight") {
+                flight.clear()
+            }
+            .disabled(flight.plan == nil)
         }
 
         CommandGroup(after: .newItem) {

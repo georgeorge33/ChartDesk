@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.12.0
+
+**Flights from SimBrief**
+
+- Put your SimBrief username in Settings ▸ General and press **⇧⌘B**. The airports your flight
+  needs appear at the top of the sidebar: origin, destination and every alternate, each showing
+  how many charts you have for it.
+- Airports you have no charts for are listed anyway, flagged, and not selectable. Finding out on
+  the ground that you have nothing for your alternate is exactly what this is for.
+- It is a **section, not a folder**. Nothing is copied and nothing is written to your chart
+  library — Chartdesk still only ever reads it, so there is nothing to clean up when the flight
+  changes.
+- Works with either a Navigraph alias or a numeric pilot ID; which one you typed is worked out
+  from the value.
+- The last flight is kept on disk, so the section survives a relaunch with no internet. Optional
+  loading at launch, and a Clear Flight command.
+- SimBrief's own error wording is passed straight through — "No flight plan on file for the
+  specified user" says more than anything paraphrased would.
+
+**Internal**
+
+- The OFP is read by hand rather than through `Codable`. SimBrief returns every value as a
+  string and sends `alternate` as an object when there is one and an array when there are
+  several, which `Codable` handles badly; reading it loosely also means a missing field costs
+  one airport rather than the whole plan.
+- This is the first network connection Chartdesk makes itself — updates go through the `gh`
+  CLI. The README no longer claims otherwise.
+
+**README**
+
+- Rewritten shorter and reorganised to lead with using the app rather than building it. The
+  deprecated taxi section is down from sixty lines to ten.
+
 ## 0.11.0
 
 **Moving the window**

@@ -21,6 +21,8 @@ enum DefaultsKey {
     static let annotationTool = "annotationTool"
     static let annotationColor = "annotationColor"
     static let annotationWidth = "annotationWidth"
+    static let simbriefAccount = "simbriefAccount"
+    static let simbriefOnLaunch = "simbriefOnLaunch"
 }
 
 // MARK: - Folder bookmark

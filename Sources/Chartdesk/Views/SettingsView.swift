@@ -19,6 +19,7 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
+    @EnvironmentObject private var flight: FlightPlanStore
 
     var body: some View {
         Form {
@@ -53,6 +54,40 @@ private struct GeneralSettingsView: View {
                 Text("Updating uses the GitHub CLI, because the repository is private.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("SimBrief") {
+                TextField("Username or pilot ID", text: $flight.account)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Toggle("Load the latest flight on launch", isOn: $flight.fetchOnLaunch)
+                    Spacer()
+                    if flight.isFetching {
+                        ProgressView().progressViewStyle(.circular).controlSize(.small)
+                    } else {
+                        Button("Load Now") { flight.refresh() }
+                            .disabled(!flight.hasAccount)
+                    }
+                }
+                if let problem = flight.problem {
+                    Text(problem)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let plan = flight.plan {
+                    HStack {
+                        Text("\(plan.title) · \(plan.airfields.count) airports")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Clear") { flight.clear() }
+                    }
+                } else {
+                    Text("Your flight's airports appear at the top of the sidebar. Nothing is written to your chart folder.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Section("Toolbar") {

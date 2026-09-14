@@ -4,7 +4,8 @@ A native macOS browser for chart images you already have on disk. Built for LIDO
 as PNGs, laid out the way Navigraph Charts is: airports on the left, chart list in the middle,
 plate on the right.
 
-Requires macOS 13 or later. SwiftUI + AppKit, no dependencies, no network access.
+macOS 13+. SwiftUI and AppKit, no dependencies. Nothing is sent anywhere, and the only two
+things that reach out do so when you ask: checking for updates, and loading a SimBrief flight.
 
 > [!NOTE]
 > This app is created fully with Claude Opus 5 Max.
@@ -12,64 +13,19 @@ Requires macOS 13 or later. SwiftUI + AppKit, no dependencies, no network access
 > [!CAUTION]
 > For flight simulation use. Not for real-world navigation.
 
-## Build
+## Getting started
 
 ```sh
 ./build.sh --install
 ```
 
-That compiles a release build, wraps it in `Chartdesk.app`, builds the icon, ad-hoc signs it,
-copies it to `/Applications` and launches it. Use `./build.sh` alone to leave the app in
-`build/`, or `./build.sh --run` to build and launch in place.
+Compiles, bundles, signs and installs to `/Applications`. You need Xcode, or at minimum its
+command line tools (`xcode-select --install`). On a machine without Xcode, `./update.sh`
+downloads the latest build instead.
 
-You need Apple's Swift compiler — either Xcode, or just the command line tools:
-
-```sh
-xcode-select --install
-```
-
-The script calls `swiftc` directly rather than going through SwiftPM. There are no
-dependencies to resolve, so SwiftPM adds nothing, and its newer XCBuild backend refuses to
-start unless a full Xcode is installed and selected. The script works out the SwiftUI macro
-plugin paths itself, which is the other job SwiftPM would otherwise do. `./build.sh --spm` uses
-SwiftPM anyway if you want it; `./build.sh --doctor` prints what toolchain and plugins it can
-see.
-
-To work on the code, open `Package.swift` in Xcode — editing, indexing and autocomplete work
-normally there. Run `./build.sh` when you want a real bundle, since a bare executable doesn't
-get a proper Dock presence or menu bar.
-
----
-
-## Updating without building
-
-CI builds the app on a real Mac on every push, so a second machine never needs Xcode.
-
-```sh
-./update.sh
-```
-
-That downloads the newest build and installs it to `/Applications` — the most recent release if
-there is one, otherwise the most recent green CI run — strips the quarantine flag, quits a
-running copy, and reopens it. Pass the repo (`./update.sh owner/chartdesk`) when running it from
-outside the checkout.
-
-To cut a release, tag it:
-
-```sh
-git tag v1.1 && git push --tags
-```
-
-The release workflow stamps the version into the bundle, builds, and attaches `Chartdesk.app.zip`
-to a GitHub release. CI artifacts expire after 90 days; releases don't.
-
----
-
-## First run
-
-Click **Choose Charts Folder…** and point it at wherever your plates live. The folder is read
-only — Chartdesk never renames, moves, or writes anything inside it. macOS remembers the
-permission, so it reopens the same library on every launch.
+Then click **Choose Charts Folder…** and point it at your plates. The folder is **read only** —
+Chartdesk never renames, moves, or writes anything inside it. macOS remembers the permission,
+so the same library reopens every launch.
 
 Both layouts work:
 
@@ -82,60 +38,120 @@ Charts/                            Charts/
     SID RWY 28.png
 ```
 
-Airport codes come from the folder name when there is one, otherwise from the file name. A
-folder named `EGLL – London Heathrow` gives you both the code and the airport name in the
-sidebar. Anything with no recognisable code lands in an **Unsorted** group at the bottom of
-the sidebar rather than being hidden.
+Codes come from the folder name when there is one, otherwise the file name. Anything with no
+recognisable code lands in an **Unsorted** group rather than disappearing.
 
-Supported files: `png`, `jpg`, `jpeg`, `tif`, `tiff`, `gif`, `bmp`, `heic`, `webp`.
+Supported: `png`, `jpg`, `jpeg`, `tif`, `tiff`, `gif`, `bmp`, `heic`, `webp`.
 
 ---
 
-## How charts get sorted
+## Reading charts
 
-Five tabs, matching the plate types LIDO issues. The parser scores tokens found in the file
-name and in the enclosing folder names — file names win, folders only break ties.
+The viewer is a real `NSScrollView` — pinch to zoom, two-finger scroll to pan, double-click to
+toggle fit and 100%. Zoom holds through a night-mode toggle and resets when you change chart.
 
-| Tab | LIDO / common codes |
+**Night mode** inverts the plate for a dark cockpit. Straight inversion turns chart blue into
+orange, so Settings ▸ Viewing has *Remove colour when inverted* for a clean negative instead.
+
+**Pinned** charts sit at the top of the sidebar, grouped by airport — your working set for a
+flight. Recent airports follow underneath.
+
+Export and print use exactly what you're looking at: rotation, night mode, and anything you've
+drawn on.
+
+### How charts get sorted
+
+Five tabs matching the plate types LIDO issues. The parser scores tokens in the file name and
+enclosing folders; file names win, folders break ties.
+
+| Tab | Codes it looks for |
 |---|---|
-| **APT** Airport | AFC, AGC, ADC, APC, LVC, AOI, AOC, GMC, PDC, parking, stand, taxi, ground, aerodrome |
-| **DEP** Departure | SID, SIDPT, EOSID, DEP, departure, RNAV departure |
+| **APT** Airport | AFC, AGC, ADC, APC, LVC, AOI, AOC, GMC, PDC, parking, stand, taxi, ground |
+| **DEP** Departure | SID, SIDPT, EOSID, DEP, departure |
 | **ARR** Arrival | STAR, STARPT, ARR, arrival, transition |
 | **APP** Approach | IAC, VAC, MVC, ILS, LOC, RNP, RNAV, VOR, NDB, GLS, visual, circling, minima |
 | **REF** Reference | TXT, text pages, general, ATC, info, noise, escape, emergency, briefing |
 
-Runways are pulled out of things like `IAC ILS Z RWY 27R`, `ILS25L` or `RNP 09R` and shown as a
-badge. Approaches sort by runway number then L/C/R, so 09L comes before 09R before 10.
+Runways are pulled from names like `IAC ILS Z RWY 27R` or `RNP 09R` and shown as a badge.
+Approaches sort by runway number then L/C/R.
 
-Anything filed in the wrong tab: **right-click ▸ Move to Category**. The correction is saved to
-`~/Library/Application Support/Chartdesk/category-overrides.json` and survives rescans, renames
-of the app, and reboots. Settings ▸ General ▸ Reset Categories clears them all.
-
-If a whole batch of your files lands in the wrong place, the token tables are near the top of
-`Sources/Chartdesk/Model/ChartNameParser.swift` — they're plain string lists, so adding your own
-naming convention is a one-line edit and a rebuild.
+Anything filed wrong: **right-click ▸ Move to Category**, which sticks across rescans. For a
+whole batch, the token tables at the top of `ChartNameParser.swift` are plain string lists —
+a one-line edit and a rebuild.
 
 ---
 
-## Using it
+## Marking up a chart
 
-Pinned charts sit at the top of the sidebar with their own section, grouped by airport — that's
-your working set for a flight. Recent airports appear underneath, most recent first.
+**⇧⌘A** turns on annotate mode. Five tools — pen, highlighter, arrow, box, text — in eight
+colours and three weights, plus an eraser. `⌃1`–`⌃6` switch tools, `⌘Z` undoes, `⎋` leaves.
 
-The viewer is a real `NSScrollView`, so pinch to zoom, two-finger scroll to pan, and
-double-click to toggle between fit and 100%. Zoom stays put when you toggle night mode, and
-resets when you switch charts or rotate.
+Marks belong to the chart, not the window. They save as you draw and follow the plate when you
+rotate it, so a note beside runway 27 stays beside runway 27. Labels stay horizontal, since a
+sideways note is no use to anybody.
 
-Night mode inverts the plate for dark cockpits. A straight inversion turns chart blue into
-orange, so Settings ▸ Viewing has a *Remove colour when inverted* option that gives you a clean
-negative instead.
+Copies, exports and printouts burn the marks in at full chart resolution. **⇧⌘M** hides them
+everywhere at once without deleting anything.
 
-### Keyboard
+Weights are a share of the chart's width rather than a pixel count, so *Medium* looks the same
+on a small plate and a large one.
+
+---
+
+## Flights from SimBrief
+
+Put your SimBrief username in Settings ▸ General and press **⇧⌘B**. The airports your flight
+needs appear at the top of the sidebar — origin, destination and every alternate — each showing
+how many charts you have, or a warning that you have none:
+
+```
+BAW117  EGLL → KJFK · B772
+  ORI  EGLL   RWY 27R          24
+  DES  KJFK   RWY 04R          31
+  ALT  KBOS                    12
+  ALT  LFPG   not in your library  ⚠
+```
+
+That last line is the point. Discovering on the ground that you have no plates for your
+alternate is exactly the thing worth catching early.
+
+It's a section, not a folder — nothing is copied and nothing is written to your chart library.
+Load it again any time to pick up a replanned flight, or turn on loading at launch.
+
+---
+
+## Rearranging the toolbar
+
+Right-click the toolbar ▸ **Customize Toolbar…** and drag buttons on, off, or into a different
+order. Nineteen are available and nine start on the bar; rotate left, actual size, reveal in
+Finder, copy, export, print and the mark controls are all waiting in the sheet. The same menu
+switches between icon-only and icon-and-text.
+
+The window drags from anywhere in the toolbar that isn't a button.
+
+---
+
+## Taxi routes
+
+> [!WARNING]
+> **Deprecated — scheduled for removal in 1.0.** Lining a chart up with the ground is fiddly and
+> the drawn routes aren't dependable enough to read a clearance from. It still ships and still
+> works, and any route already drawn onto a chart is an ordinary mark that will outlive the
+> feature — but don't build anything on it.
+
+**⇧⌘T** on a ground chart builds a taxi route by tapping taxiways. The layout comes from
+OpenStreetMap, fetched once per airport with `python3 Tools/taxi_import.py KBOS`, and each chart
+has to be lined up with the ground first — either by dragging the network onto the pavement or
+by clicking two taxiway crossings.
+
+---
+
+## Keyboard
 
 | | |
 |---|---|
-| `⌘O` / `⌘R` | choose folder / rescan |
-| `⌘F` / `⌥⌘F` | search airports / filter charts |
+| `⌘O` `⌘R` | choose folder, rescan |
+| `⌘F` `⌥⌘F` | search airports, filter charts |
 | `⌘1`–`⌘5` | APT, DEP, ARR, APP, REF |
 | `⌘↑` `⌘↓` | previous / next chart |
 | `⌘D` | pin or unpin |
@@ -147,171 +163,83 @@ negative instead.
 | `⌃1`–`⌃6` | pen, highlighter, arrow, box, text, eraser |
 | `⌘Z` `⇧⌘Z` | undo / redo a mark |
 | `⇧⌘M` | hide or show marks |
-| `⇧⌘T` | plan a taxi route |
-
-Export and print use whatever you're looking at, including the rotation, the night-mode
-treatment and anything you've drawn on — handy for a paper copy of an approach in the
-orientation you actually fly it.
-
----
-
-## Marking up a chart
-
-**⇧⌘A**, or the pencil in the toolbar, turns on annotate mode and puts a palette at the
-bottom of the canvas. Five tools — pen, highlighter, arrow, box and text — in eight colours
-and three weights, plus an eraser that removes whatever you click or drag across. `⌃1` to
-`⌃6` switch tools, `⌘Z` undoes, `⎋` leaves.
-
-Marks belong to the chart, not to the window. They are saved as you draw, survive a rescan
-and a relaunch, and follow the plate when you rotate it — a note written beside runway 27
-stays beside runway 27 at any rotation. Text labels stay horizontal through a rotation, since
-a sideways note is no use to anybody.
-
-Copying, exporting and printing all burn the marks in, at the chart's own resolution.
-**⇧⌘M** hides every mark and leaves them out of copies and printouts without deleting
-anything.
-
-Weights are a share of the chart's width rather than a fixed number of pixels, so *Medium*
-looks the same on a small plate and a large one. Settings ▸ Markup sets what new marks start
-with, and clears the lot if you want to start over.
-
-Your chart files are never written to. Marks live in
-`~/Library/Application Support/Chartdesk/annotations.json`.
-
----
-
-## Taxi routes
-
-> [!WARNING]
-> **Deprecated — scheduled for removal in 1.0.** Calibrating a chart is fiddly in practice and
-> the drawn routes aren't dependable enough to read a clearance from. It still works and is
-> still shipped, and any route already drawn onto a chart is an ordinary mark that will survive
-> the removal, but don't build anything on it.
-
-
-Press **⇧⌘T** on a ground chart and build a clearance by tapping taxiways — no typing. The
-route draws on the plate as you go, and **Draw on chart** commits it as an ordinary mark, so
-it exports and prints with everything else.
-
-The airport's layout comes from OpenStreetMap and has to be fetched once per airport:
-
-```sh
-python3 Tools/taxi_import.py KBOS
-```
-
-Chartdesk itself never touches the network — it only reads what that leaves in
-`~/Library/Application Support/Chartdesk/taxi/`.
-
-The first time you plan a route on a given chart it asks you to line the plate up with the
-ground. Two ways to do it:
-
-**Drag it into place** — grab the taxi network and move it onto the pavement. Drag to move,
-⌥ drag to turn, ⇧ drag to resize, or use a trackpad's rotate and pinch. You see the whole
-airfield line up at once.
-
-**Or click crossings** — click a couple of taxiway intersections, and Chartdesk works out the
-rest. The coordinates come from the imported
-data, so you never type one, and it suggests which crossing to click next — always the one
-furthest from what you've already placed.
-
-Crossings rather than runway thresholds because they're the same point on both the chart and
-the map data. OpenStreetMap's runway geometry runs to the physical end of the pavement while a
-chart marks the displaced threshold, and those differ.
-
-Two points is the minimum, but place a third. Two always fit *exactly*, so the error it reports
-is zero no matter how badly you clicked — at Boston, two points with 15 m of click slop are
-29 m out at the worst corner of the field while claiming 0.0 m. A fourth point brings that to
-10 m and reports it honestly. The network is drawn faintly over the plate as you go, so you can
-see the fit rather than trust it.
-
-After each press, taxiways that don't connect to the one you chose are dimmed — 31 buttons
-become a handful. They stay pressable, because map data is imperfect and a legitimate turn
-should never be unreachable. Finish on a runway and the route ends there. If the route had to
-use a taxiway you didn't ask for, it says so underneath.
-
-Gates are offered as a starting point, but most airports don't have their apron lead-ins
-mapped, so the stand doesn't join the taxi network. Where that happens the gap is drawn thin
-and straight and labelled approximate rather than passed off as real pavement.
-
-> [!CAUTION]
-> Routes are drawn from community map data, not from an official aerodrome survey. Check them
-> against the plate. For flight simulation use only.
-
----
-
-## Rearranging the toolbar
-
-Right-click the toolbar and choose **Customize Toolbar…** — or View ▸ Customize Toolbar…, or
-Settings ▸ General ▸ Toolbar. Drag buttons on and off and into whatever order suits you.
-
-Nineteen buttons are available; nine are on the bar to start with. Rotate left, reset
-rotation, actual size, show/hide marks, undo mark, clear marks, reveal in Finder, copy image,
-export as PNG and print are all sitting in the sheet waiting to be dragged out. The same
-menu switches the bar between icon-only and icon-and-text.
+| `⇧⌘B` | load SimBrief flight |
+| `⇧⌘T` | plan a taxi route *(deprecated)* |
 
 ---
 
 ## Where your data lives
 
+Everything below `~/Library/Application Support/Chartdesk/`:
+
 | | |
 |---|---|
-| Folder permission, pins, recents, view settings | preferences for `local.chartdesk.app` |
-| Manual category moves | `~/Library/Application Support/Chartdesk/category-overrides.json` |
-| Marks drawn on charts | `~/Library/Application Support/Chartdesk/annotations.json` |
-| Chart calibrations | `~/Library/Application Support/Chartdesk/georeference.json` |
-| Imported airport layouts | `~/Library/Application Support/Chartdesk/taxi/` |
-| Toolbar arrangement | preferences for `local.chartdesk.app` |
-| Your charts | untouched, wherever you put them |
+| `annotations.json` | marks drawn on charts |
+| `category-overrides.json` | manual category moves |
+| `flight.json` | the last SimBrief flight |
+| `georeference.json` · `taxi/` | chart calibrations, airport layouts *(deprecated)* |
 
-To start completely fresh: `defaults delete local.chartdesk.app` and delete those JSON files.
+Pins, recents, the toolbar arrangement, view settings and the folder permission live in
+preferences for `local.chartdesk.app`. Your charts stay untouched wherever you put them.
+
+To start fresh: `defaults delete local.chartdesk.app` and delete that folder.
+
+---
+
+## Building and releasing
+
+`build.sh` calls `swiftc` directly rather than going through SwiftPM. There are no dependencies
+to resolve, so SwiftPM adds nothing, and its XCBuild backend refuses to start without a full
+Xcode selected. The script finds the SwiftUI macro plugins itself.
+
+```sh
+./build.sh                # leave it in build/
+./build.sh --run          # build and launch in place
+./build.sh --install      # install to /Applications and launch
+./build.sh --doctor       # what toolchain and plugins it can see
+./build.sh --spm          # use SwiftPM anyway
+```
+
+To work on the code, open `Package.swift` in Xcode — editing and indexing work normally there.
+Run `./build.sh` when you want a real bundle, since a bare executable gets no Dock presence or
+menu bar.
+
+CI builds on every push, so a second machine never needs Xcode: `./update.sh` installs the
+newest release, or the newest green CI build if there's no release yet. To cut a release, tag
+it — `git tag v1.1 && git push --tags` — and the workflow stamps the version, builds, and
+attaches `Chartdesk.app.zip`, using that version's CHANGELOG section as the notes.
 
 ---
 
 ## Troubleshooting
 
-**`Could not initialize build system … Unknown error parsing property list`** — that's
-SwiftPM's XCBuild backend failing to start, before it reads a line of our code. It needs a full
-Xcode install selected. The default `./build.sh` path avoids it entirely by calling `swiftc`.
-If you want `swift build` itself working: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`,
-then `rm -rf .build`, and try `swift build -c release --build-system native`.
-
 **"Swift compiler not found"** — install the command line tools with `xcode-select --install`,
-then check `./build.sh --doctor`.
+then run `./build.sh --doctor`.
 
 **`external macro implementation type 'SwiftUIMacros.StateMacro' could not be found`** — on
-current SDKs `@State`, `@StateObject` and `@EnvironmentObject` are macros, so the compiler needs
-the SwiftUIMacros plugin. That plugin ships inside Xcode's macOS platform directory and is *not*
-part of the Command Line Tools, so a CLT-only machine cannot build any SwiftUI app that uses
-them, this one included.
+current SDKs `@State` and friends are macros, and the SwiftUIMacros plugin ships inside Xcode's
+platform directory rather than the Command Line Tools. A CLT-only machine cannot build any
+SwiftUI app that uses them. `build.sh` looks in the toolchain, the SDK, and any `Xcode*.app` in
+`/Applications` — installed but unselected is enough. Find it with `./build.sh --find-macros`,
+or point at it directly with `CHARTDESK_PLUGIN_DIR=/path/to/host/plugins ./build.sh`.
+Toolchains from swift.org don't help; the plugin is part of Apple's SDK.
 
-`build.sh` looks for the plugin in the selected toolchain, the SDK, and any `Xcode*.app` sitting
-in `/Applications` — an installed but unselected Xcode is enough, nothing needs to be switched.
-If it finds nothing it stops with instructions rather than dumping compiler errors.
+**`Could not initialize build system`** — SwiftPM's XCBuild backend failing before it reads any
+of our code. The default `./build.sh` path avoids it. If you want `swift build` working:
+`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, `rm -rf .build`, then
+`swift build -c release --build-system native`.
 
-```sh
-./build.sh --doctor       # what toolchain and plugins are visible
-./build.sh --find-macros  # search the disk for SwiftUIMacros
-```
+**Ad-hoc signing fails** — iCloud stamps Finder info onto anything under a synced Desktop or
+Documents folder, which `codesign` refuses. `build.sh` strips it and retries; if it still fails,
+build from a folder outside iCloud.
 
-If the plugin turns up somewhere unusual, point the build straight at it:
+**No charts appear** — check the folder holds image files rather than PDFs. PDF plates aren't
+supported yet.
 
-```sh
-CHARTDESK_PLUGIN_DIR=/path/to/host/plugins ./build.sh
-```
-
-If it isn't on the machine at all, Xcode has to be installed. Toolchains from swift.org don't
-help — SwiftUIMacros is part of Apple's SDK, not the open source toolchain.
-
-**The app builds but shows no charts** — check the folder actually contains image files rather
-than PDFs. PDF plates aren't supported in this version; convert them first, or say the word and
-I'll add a PDF path using the same pypdfium2 approach ChartView uses.
-
-**A chart won't open** — the viewer shows the reason inline with a Reveal in Finder button.
-Usually a truncated download or a `.png` that's secretly something else.
-
-**Charts are in the wrong tabs** — right-click ▸ Move to Category for one-offs, or edit the
-token tables in `ChartNameParser.swift` for a pattern.
+**A chart won't open** — the viewer shows why, with a Reveal in Finder button. Usually a
+truncated download or a `.png` that's secretly something else.
 
 ---
+
 > [!CAUTION]
 > **For flight simulation use. Not for real-world navigation.**
