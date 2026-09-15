@@ -28,6 +28,17 @@ jobs:
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
+          # A candidate -- v1.0.0-rc.1 -- is published as a pre-release, so the API's
+          # "latest" keeps pointing at the last final one and neither ./update.sh nor the
+          # in-app check offers it to anybody who did not ask for it. Its notes come from the
+          # version it is a candidate for, since an RC's changes are that release's changes.
+          BASE="${VERSION%%-*}"
+          if [ "$BASE" != "$VERSION" ]; then
+            echo "prerelease=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=no" >> "$GITHUB_OUTPUT"
+          fi
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -49,7 +60,7 @@ jobs:
       - name: Release notes
         id: notes
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.base }}"
           awk -v want="## ${VERSION}" '
             $0 == want { found = 1; next }
             found && /^## / { exit }
@@ -72,9 +83,14 @@ jobs:
             NOTES=(--generate-notes)
           fi
 
+          FLAGS=()
+          if [ "${{ steps.version.outputs.prerelease }}" = "yes" ]; then
+            FLAGS+=(--prerelease)
+          fi
+
           if gh release create "${{ steps.version.outputs.tag }}" Chartdesk.app.zip \
                --title "Chartdesk ${{ steps.version.outputs.version }}" \
-               "${NOTES[@]}"; then
+               "${FLAGS[@]}" "${NOTES[@]}"; then
             exit 0
           fi
 

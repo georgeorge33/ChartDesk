@@ -277,17 +277,6 @@ struct ChartCanvas: NSViewRepresentable {
     let onDraw: (Annotation) -> Void
     let onErase: (UUID) -> Void
 
-    // DEPRECATED (1.0): the taxi-routing pass-through, down to `onAlignZoom`.
-    let preview: [[CGPoint]]
-    let reference: [[CGPoint]]
-    let isCalibrating: Bool
-    let onCalibrationClick: (CGPoint) -> Void
-
-    let isAligning: Bool
-    let onAlignDrag: (CGPoint) -> Void
-    let onAlignTurn: (Double, CGPoint) -> Void
-    let onAlignZoom: (Double, CGPoint) -> Void
-
     func makeCoordinator() -> Coordinator {
         Coordinator(controller: controller, fitOnOpen: fitOnOpen)
     }
@@ -344,14 +333,6 @@ struct ChartCanvas: NSViewRepresentable {
         overlay.width = width
         overlay.onDraw = onDraw
         overlay.onErase = onErase
-        overlay.preview = preview
-        overlay.reference = reference
-        overlay.isCalibrating = isCalibrating
-        overlay.onCalibrationClick = onCalibrationClick
-        overlay.isAligning = isAligning
-        overlay.onAlignDrag = onAlignDrag
-        overlay.onAlignTurn = onAlignTurn
-        overlay.onAlignZoom = onAlignZoom
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {

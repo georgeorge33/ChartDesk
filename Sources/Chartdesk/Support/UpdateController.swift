@@ -156,11 +156,20 @@ final class UpdateController: ObservableObject {
             let right = index < old.count ? old[index] : 0
             if left != right { return left > right }
         }
-        return false
+        // Same numbers: a release beats a candidate for it, so 1.0.0 is offered to someone
+        // running 1.0.0-rc.1 rather than leaving them on the candidate for good.
+        return isCandidate(current) && !isCandidate(candidate)
     }
 
+    private static func isCandidate(_ version: String) -> Bool {
+        version.contains("-")
+    }
+
+    /// The numeric part only. A candidate's suffix is dropped rather than parsed, so
+    /// `1.0.0-rc.1` does not read as a fourth component and come out *above* `1.0.0`.
     private static func parts(_ version: String) -> [Int] {
-        version.split(separator: ".").map { Int($0.prefix(while: { $0.isNumber })) ?? 0 }
+        let release = version.split(separator: "-").first.map(String.init) ?? version
+        return release.split(separator: ".").map { Int($0.prefix(while: { $0.isNumber })) ?? 0 }
     }
 
     // MARK: - Work done off the main thread

@@ -45,46 +45,6 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     var onDraw: ((Annotation) -> Void)?
     var onErase: ((UUID) -> Void)?
 
-    // DEPRECATED (1.0): everything from here to `onAlignZoom` belongs to taxi routing.
-
-    /// A route being assembled: drawn live so each button press extends the line on the
-    /// plate, rather than only appearing once it is committed.
-    var preview: [[CGPoint]] = [] {
-        didSet { if preview != oldValue { needsDisplay = true } }
-    }
-
-    /// The whole imported taxi network, faintly. The only honest way to check a calibration
-    /// is to see whether the data lands on the pavement printed underneath it.
-    var reference: [[CGPoint]] = [] {
-        didSet { if reference != oldValue { needsDisplay = true } }
-    }
-
-    /// While calibrating, a click reports where it landed instead of drawing anything.
-    var isCalibrating = false {
-        didSet {
-            guard isCalibrating != oldValue else { return }
-            if isCalibrating { cancelTextEditor() }
-            refreshCursor()
-        }
-    }
-
-    var onCalibrationClick: ((CGPoint) -> Void)?
-
-    /// Dragging the whole overlay into place, rather than clicking points for it to fit.
-    var isAligning = false {
-        didSet {
-            guard isAligning != oldValue else { return }
-            if isAligning { cancelTextEditor() }
-            refreshCursor()
-        }
-    }
-
-    var onAlignDrag: ((CGPoint) -> Void)?
-    var onAlignTurn: ((Double, CGPoint) -> Void)?
-    var onAlignZoom: ((Double, CGPoint) -> Void)?
-
-    private var alignAnchor: NSPoint?
-
     /// The stroke under the pointer right now. Held here rather than in the store so a drag
     /// in progress costs no SwiftUI updates and no disk writes.
     private var live: Annotation?
@@ -94,18 +54,10 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Mouse
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        (isActive || isCalibrating || isAligning) ? super.hitTest(point) : nil
+        isActive ? super.hitTest(point) : nil
     }
 
     override func mouseDown(with event: NSEvent) {
-        if isAligning {
-            alignAnchor = convert(event.locationInWindow, from: nil)
-            return
-        }
-        if isCalibrating {
-            onCalibrationClick?(stored(convert(event.locationInWindow, from: nil)))
-            return
-        }
         guard isActive else { return super.mouseDown(with: event) }
 
         // Clicking away from a label being typed keeps it, the way a text box usually behaves.
@@ -130,13 +82,6 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if isAligning {
-            guard let previous = alignAnchor else { return }
-            let current = convert(event.locationInWindow, from: nil)
-            alignAnchor = current
-            align(from: previous, to: current, modifiers: event.modifierFlags)
-            return
-        }
         guard isActive else { return super.mouseDragged(with: event) }
         let point = convert(event.locationInWindow, from: nil)
 
@@ -169,56 +114,12 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if isAligning { alignAnchor = nil; return }
         guard isActive else { return super.mouseUp(with: event) }
         guard let current = live else { return }
         live = nil
         needsDisplay = true
         guard !current.isEmpty else { return }
         onDraw?(current)
-    }
-
-    /// Grab-and-turn rather than a slider: the point under the pointer follows it round the
-    /// middle of what you are looking at, which is the same gesture as rotating a paper chart.
-    private func align(from previous: NSPoint, to current: NSPoint, modifiers: NSEvent.ModifierFlags) {
-        let pivot = visibleCentre()
-
-        if modifiers.contains(.option) {
-            let was = atan2(previous.y - pivot.y, previous.x - pivot.x)
-            let now = atan2(current.y - pivot.y, current.x - pivot.x)
-            // The view is flipped, so a growing angle here is clockwise on screen.
-            onAlignTurn?(Double(now - was), unclamped(pivot))
-            return
-        }
-
-        if modifiers.contains(.shift) {
-            let was = hypot(previous.x - pivot.x, previous.y - pivot.y)
-            let now = hypot(current.x - pivot.x, current.y - pivot.y)
-            guard was > max(bounds.width * 0.002, 1) else { return }
-            onAlignZoom?(Double(now / was), unclamped(pivot))
-            return
-        }
-
-        let from = unclamped(previous), to = unclamped(current)
-        onAlignDrag?(CGPoint(x: to.x - from.x, y: to.y - from.y))
-    }
-
-    override func magnify(with event: NSEvent) {
-        guard isAligning else { return super.magnify(with: event) }
-        onAlignZoom?(1 + Double(event.magnification), unclamped(visibleCentre()))
-    }
-
-    override func rotate(with event: NSEvent) {
-        guard isAligning else { return super.rotate(with: event) }
-        // AppKit reports anticlockwise degrees.
-        onAlignTurn?(Double(-event.rotation) * .pi / 180, unclamped(visibleCentre()))
-    }
-
-    private func visibleCentre() -> NSPoint {
-        guard let visible = enclosingScrollView?.documentVisibleRect, !visible.isEmpty else {
-            return NSPoint(x: bounds.midX, y: bounds.midY)
-        }
-        return NSPoint(x: visible.midX, y: visible.midY)
     }
 
     private func erase(at point: NSPoint) {
@@ -233,51 +134,9 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        drawReference()
         AnnotationRenderer.draw(annotations, size: bounds.size, rotation: rotation)
         if let live = live, !live.isEmpty {
             AnnotationRenderer.draw(live, size: bounds.size, rotation: rotation)
-        }
-        drawPreview()
-    }
-
-    /// Normalised, unrotated points — the same convention marks use — turned into view
-    /// coordinates for the plate as it is currently shown.
-    private func viewPath(_ line: [CGPoint]) -> NSBezierPath? {
-        guard line.count > 1 else { return nil }
-        let path = NSBezierPath()
-        for (index, point) in line.enumerated() {
-            let shown = AnnotationGeometry.display(point, rotation: rotation)
-            let where_ = NSPoint(x: shown.x * bounds.width, y: shown.y * bounds.height)
-            index == 0 ? path.move(to: where_) : path.line(to: where_)
-        }
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        return path
-    }
-
-    private func drawReference() {
-        guard !reference.isEmpty else { return }
-        let width = max(bounds.width * 0.0012, 0.6)
-        NSColor(srgbRed: 0.19, green: 0.72, blue: 0.94, alpha: 0.30).setStroke()
-        for line in reference {
-            guard let path = viewPath(line) else { continue }
-            path.lineWidth = width
-            path.stroke()
-        }
-    }
-
-    private func drawPreview() {
-        guard !preview.isEmpty else { return }
-        let width = max(bounds.width * 0.0045, 1.5)
-        for line in preview {
-            guard let path = viewPath(line) else { continue }
-            path.lineWidth = width * 5
-            NSColor(srgbRed: 1.0, green: 0.82, blue: 0.12, alpha: 0.34).setStroke()
-            path.stroke()
-            path.lineWidth = width
-            NSColor(srgbRed: 1.0, green: 0.72, blue: 0.05, alpha: 0.95).setStroke()
-            path.stroke()
         }
     }
 
@@ -344,8 +203,6 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Cursor
 
     override func resetCursorRects() {
-        if isAligning { return addCursorRect(bounds, cursor: .openHand) }
-        if isCalibrating { return addCursorRect(bounds, cursor: .crosshair) }
         guard isActive else { return super.resetCursorRects() }
         addCursorRect(bounds, cursor: tool == .text ? .iBeam : .crosshair)
     }

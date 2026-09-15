@@ -63,7 +63,6 @@ struct ChartDetailView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var viewer: ChartViewerController
     @EnvironmentObject private var annotations: AnnotationStore
-    @EnvironmentObject private var planner: TaxiRouteStore
     @StateObject private var model = ChartRenderModel()
 
     private var chart: Chart? {
@@ -105,21 +104,7 @@ struct ChartDetailView: View {
                             color: annotations.color,
                             width: annotations.width,
                             onDraw: { mark in annotations.add(mark, to: chart.id) },
-                            onErase: { identifier in annotations.remove(identifier, from: chart.id) },
-                            preview: planner.polylines(for: chart.id),
-                            reference: referenceLines(for: chart.id),
-                            isCalibrating: planner.isCalibrating
-                                && planner.calibrationMethod == .crossings,
-                            onCalibrationClick: { point in
-                                planner.addCalibrationPoint(point,
-                                                            chartID: chart.id,
-                                                            aspect: unrotatedAspect)
-                            },
-                            isAligning: planner.isCalibrating
-                                && planner.calibrationMethod == .align,
-                            onAlignDrag: { delta in planner.nudge(by: delta) },
-                            onAlignTurn: { radians, pivot in planner.turn(by: radians, about: pivot) },
-                            onAlignZoom: { factor, pivot in planner.zoom(by: factor, about: pivot) })
+                            onErase: { identifier in annotations.remove(identifier, from: chart.id) })
 
                 if let errorText = model.errorText {
                     errorOverlay(errorText)
@@ -132,10 +117,6 @@ struct ChartDetailView: View {
         }
         .overlay(alignment: .bottom) {
             VStack(spacing: 10) {
-                if planner.isPlanning, chart != nil {
-                    TaxiRoutePanel(chartID: chart?.id)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
                 if annotations.isAnnotating, chart != nil {
                     AnnotationPalette(chartID: chart?.id)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -144,36 +125,12 @@ struct ChartDetailView: View {
             .padding(.bottom, 20)
         }
         .animation(.easeOut(duration: 0.16), value: annotations.isAnnotating)
-        .animation(.easeOut(duration: 0.16), value: planner.isPlanning)
-        .onChange(of: chart?.airportCode) { _, code in planner.prepare(icao: code) }
-        .onAppear { planner.prepare(icao: chart?.airportCode) }
-        .environment(\.chartAspect, unrotatedAspect)
         .navigationTitle(chart?.title ?? "Chartdesk")
         .navigationSubtitle(subtitle)
         .toolbar(id: "chart", content: toolbarContent)
         .toolbarBackground(Color.ngWindow, for: .windowToolbar)
         .onAppear { refresh() }
         .onChange(of: renderKey) { refresh() }
-    }
-
-    // DEPRECATED (1.0): taxi routing.
-    /// The faint whole-network overlay is only worth showing while the planner is open, and
-    /// only once there is a calibration to judge.
-    private func referenceLines(for chartID: String) -> [[CGPoint]] {
-        guard planner.isPlanning || planner.isCalibrating else { return [] }
-        return planner.networkPolylines(for: chartID)
-    }
-
-    /// Height over width of the plate *unrotated*, which is what the georeference needs:
-    /// calibrations are stored against the unrotated plate so they survive turning it, and
-    /// the rendered image has already had the rotation applied to it. Taking the aspect from
-    /// the rendered image would invert it on a chart viewed at 90°.
-    private var unrotatedAspect: Double {
-        guard let size = model.image?.size, size.width > 0, size.height > 0 else { return 1 }
-        let quarter = ((browser.rotation % 360) + 360) % 360
-        return quarter == 90 || quarter == 270
-            ? Double(size.width / size.height)
-            : Double(size.height / size.width)
     }
 
     private func refresh() {
@@ -259,17 +216,6 @@ struct ChartDetailView: View {
             }
             .disabled(chart == nil)
             .help(annotations.isAnnotating ? "Stop drawing on this chart" : "Draw on this chart")
-        }
-
-        // DEPRECATED (1.0): taxi routing.
-        ToolbarItem(id: "route", placement: .primaryAction) {
-            Button {
-                planner.isPlanning.toggle()
-            } label: {
-                Label("Taxi Route", systemImage: planner.isPlanning ? "point.topleft.down.curvedto.point.bottomright.up.fill" : "point.topleft.down.curvedto.point.bottomright.up")
-            }
-            .disabled(chart == nil)
-            .help("Build a taxi route from the airport's taxiways")
         }
 
         ToolbarItem(id: "marks.visible", placement: .primaryAction, showsByDefault: false) {

@@ -226,21 +226,6 @@ The window drags from anywhere in the toolbar that isn't a button.
 
 ---
 
-## Taxi routes
-
-> [!WARNING]
-> **Deprecated — scheduled for removal in 1.0.** Lining a chart up with the ground is fiddly and
-> the drawn routes aren't dependable enough to read a clearance from. It still ships and still
-> works, and any route already drawn onto a chart is an ordinary mark that will outlive the
-> feature — but don't build anything on it.
-
-**⇧⌘T** on a ground chart builds a taxi route by tapping taxiways. The layout comes from
-OpenStreetMap, fetched once per airport with `python3 Tools/taxi_import.py KBOS`, and each chart
-has to be lined up with the ground first — either by dragging the network onto the pavement or
-by clicking two taxiway crossings.
-
----
-
 ## Keyboard
 
 | | |
@@ -259,7 +244,6 @@ by clicking two taxiway crossings.
 | `⌘Z` `⇧⌘Z` | undo / redo a mark |
 | `⇧⌘M` | hide or show marks |
 | `⇧⌘B` | load SimBrief flight |
-| `⇧⌘T` | plan a taxi route *(deprecated)* |
 
 ---
 
@@ -272,7 +256,6 @@ Everything below `~/Library/Application Support/Chartdesk/`:
 | `annotations.json` | marks drawn on charts |
 | `category-overrides.json` | manual category moves |
 | `flight.json` | the last SimBrief flight |
-| `georeference.json` · `taxi/` | chart calibrations, airport layouts *(deprecated)* |
 
 Pins, recents, the toolbar arrangement, view settings and the folder permission live in
 preferences for `local.chartdesk.app`. Your charts stay untouched wherever you put them.

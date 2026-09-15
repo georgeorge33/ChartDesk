@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.15.0
+## 1.0.0
+
+**Taxi routing is gone**
+
+- The taxi router, the chart calibration that fed it and the OpenStreetMap importer are all
+  removed, as promised when they were deprecated. Lining a chart up with the ground was fiddly
+  and the drawn routes were never dependable enough to read a clearance from.
+- **Routes already drawn onto a chart survive.** They were committed as ordinary annotations,
+  so they are marks like any other and outlive the feature that made them.
+- `⇧⌘T`, the Taxi Route toolbar button and the Recalibrate menu item are gone with it, and the
+  align, calibrate and network-preview apparatus is out of the annotation overlay — 2,295
+  lines in total.
+- `georeference.json` and the `taxi/` folder under `~/Library/Application Support/Chartdesk/`
+  are no longer read. Nothing deletes them for you; they are yours to remove.
 
 **Now requires macOS 26**
 

@@ -13,8 +13,6 @@ struct ChartdeskApp: App {
     @StateObject private var annotations = AnnotationStore()
     @StateObject private var flight = FlightPlanStore()
     @StateObject private var weather = WeatherStore()
-    // DEPRECATED (1.0): taxi routing.
-    @StateObject private var planner = TaxiRouteStore()
 
     var body: some Scene {
         WindowGroup {
@@ -24,7 +22,6 @@ struct ChartdeskApp: App {
                 .environmentObject(viewer)
                 .environmentObject(updater)
                 .environmentObject(annotations)
-                .environmentObject(planner)
                 .environmentObject(flight)
                 .environmentObject(weather)
                 .frame(minWidth: 940, minHeight: 620)
@@ -40,7 +37,6 @@ struct ChartdeskApp: App {
                               viewer: viewer,
                               updater: updater,
                               marks: annotations,
-                              planner: planner,
                               flight: flight,
                               weather: weather)
         }
@@ -59,7 +55,6 @@ struct ChartdeskApp: App {
                 .environmentObject(browser)
                 .environmentObject(updater)
                 .environmentObject(annotations)
-                .environmentObject(planner)
                 .environmentObject(flight)
                 .environmentObject(weather)
                 .preferredColorScheme(.dark)

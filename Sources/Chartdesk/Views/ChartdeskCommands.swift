@@ -24,7 +24,6 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var viewer: ChartViewerController
     @ObservedObject var updater: UpdateController
     @ObservedObject var marks: AnnotationStore
-    @ObservedObject var planner: TaxiRouteStore
     @ObservedObject var flight: FlightPlanStore
     @ObservedObject var weather: WeatherStore
 
@@ -254,21 +253,6 @@ struct ChartdeskCommands: Commands {
                 marks.clear(browser.selectedChartID)
             }
             .disabled(!marks.hasMarks(for: browser.selectedChartID))
-
-            Divider()
-
-            // DEPRECATED (1.0): taxi routing.
-            Button(planner.isPlanning ? "Close Taxi Route" : "Plan Taxi Route…") {
-                planner.isPlanning.toggle()
-            }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(chart == nil)
-
-            Button("Recalibrate This Chart…") {
-                planner.isPlanning = true
-                planner.beginCalibration(chartID: browser.selectedChartID)
-            }
-            .disabled(chart == nil || !planner.isCalibrated(browser.selectedChartID))
         }
 
         CommandGroup(replacing: .help) { }
