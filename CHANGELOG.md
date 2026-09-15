@@ -24,11 +24,10 @@
 - The caution line is red on both the startup screen and the welcome screen. A chart browser
   for a simulator is exactly the thing somebody might one day reach for in a cockpit.
 
-**Every release before this one is marked as a pre-release**
+**The update check follows candidates**
 
-- 0.9 through 0.14.0 are now flagged as pre-releases on GitHub, which is what they were.
-- **The update check follows pre-releases and candidates.** It used to ask for the newest
-  release that was *not* a pre-release, which now means it found nothing at all. It lists them
+- **It looks for pre-releases now.** It used to ask GitHub for the newest release that was
+  *not* a pre-release, which made a release candidate invisible to it. It lists releases
   instead and takes the highest version — by version rather than by date, so a patch cut after
   a candidate cannot look like the newest thing going.
 - Candidates are ordered against each other too. `1.0.0-rc.1` used to parse as though `rc.1`
