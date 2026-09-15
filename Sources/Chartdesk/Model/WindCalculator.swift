@@ -47,6 +47,17 @@ struct RunwayWind: Identifiable, Equatable {
         "\(Int(crosswind.rounded())) kt from the \(fromRight ? "right" : "left")"
     }
 
+    /// The wind speed these two components came from — they are its legs, so Pythagoras gives
+    /// it back. The diagram scales both arrows against this, which is what makes their lengths
+    /// comparable.
+    var speed: Double { hypot(headwind, crosswind) }
+
+    /// Beside the crosswind arrow, where the side has to be spelled out: the arrow shows which
+    /// way the wind pushes you, not which side it comes from.
+    var crosswindTag: String {
+        "\(Int(crosswind.rounded())) kt cross \(fromRight ? "R" : "L")"
+    }
+
     /// For the chart-list column, which is too narrow for "from the right".
     var shortCrosswind: String {
         "\(Int(crosswind.rounded())) kt \(fromRight ? "R" : "L")"

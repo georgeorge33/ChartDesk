@@ -268,7 +268,7 @@ struct WeatherPanel: View {
             // Between the field and the rows: the two settings sit together at the top, and
             // the picture sits directly above the list that picks what it draws.
             if let selected = selectedRunway {
-                RunwayWindDiagram(selected: selected, all: winds)
+                RunwayWindDiagram(selected: selected)
                     .frame(height: 162)
                     .frame(maxWidth: .infinity)
             }
@@ -360,76 +360,39 @@ struct WeatherPanel: View {
 
 // MARK: - The runway diagram
 
-/// The wind resolved onto one runway, with that runway always drawn pointing up the page.
+/// The runway on the left, always pointing up the page, and the wind beside it as the only two
+/// numbers that matter: the component along the runway and the component across it.
 ///
-/// A compass rose makes you do the rotation in your head, and on approach the only thing that
-/// matters is the wind *relative to the runway*. So the picture is rotated instead: the selected
-/// runway is always vertical, and it is the only one carrying numbers — six designators' worth
-/// of labels is what made the rose a puzzle. The others stay as faint rays for the geometry,
-/// and the small N is the only thing saying that up the page is no longer north.
+/// The runway is drawn vertically whatever its heading, because on approach the only thing that
+/// matters is the wind *relative* to it and a compass rose makes you do that rotation in your
+/// head. The two arrows are the decomposition of one wind vector, drawn to a single scale, so
+/// their lengths are comparable: a long one down the page and a stub across it is a wind on the
+/// nose, and the reverse is the one to think about.
 ///
-/// Nothing is drawn but the runway and the wind vector. The arrow always reaches from the rim,
-/// so its length says nothing about speed — this is an angle picture, and the knots are in the
-/// list underneath it.
+/// Each arrow points the way the air moves, which is also the way it pushes you — a headwind
+/// arrow runs back towards the threshold, and a wind off the right blows you left.
 private struct RunwayWindDiagram: View {
 
     let selected: RunwayWind
-    /// Every runway on the list, for context rays.
-    let all: [RunwayWind]
 
     /// Half the drawn pavement width.
     private let halfWidth: CGFloat = 17
 
     var body: some View {
         Canvas { context, size in
-            let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = min(size.width, size.height) / 2 - 16
+            let pad: CGFloat = 10
 
-            /// Screen point for an angle measured clockwise from the runway's own heading.
-            func point(_ relative: Double, _ distance: CGFloat) -> CGPoint {
-                let radians = relative * .pi / 180
-                return CGPoint(x: centre.x + sin(radians) * distance,
-                               y: centre.y - cos(radians) * distance)
-            }
+            // MARK: The runway
 
-            // The other runways, for the shape of the airfield. Anything collinear with the
-            // selected one — its reciprocal, or a parallel — is the same line and adds nothing.
-            var drawn: Set<Int> = [selected.magneticHeading]
-            for entry in all {
-                // Parallels share a heading, so 04L and 04R are one ray rather than two laid
-                // on top of each other.
-                guard drawn.insert(entry.magneticHeading).inserted else { continue }
-                let relative = Double(entry.magneticHeading - selected.magneticHeading)
-                guard abs(sin(relative * .pi / 180)) > 0.09 else { continue }
-                var ray = Path()
-                ray.move(to: centre)
-                ray.addLine(to: point(relative, radius - 6))
-                context.stroke(ray, with: .color(Color.secondary.opacity(0.3)),
-                               style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            }
-
-            // Where north went.
-            let north = Double(-selected.magneticHeading)
-            var tick = Path()
-            tick.move(to: point(north, radius - 5))
-            tick.addLine(to: point(north, radius))
-            context.stroke(tick, with: .color(Color.secondary.opacity(0.5)), lineWidth: 1)
-            context.draw(Text("N")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(.tertiary),
-                         at: point(north, radius + 8))
-
-            // The pavement, drawn as a strip rather than a ray so the threshold end is obvious.
-            let length = radius - 2
-            let strip = CGRect(x: centre.x - halfWidth, y: centre.y - length,
-                               width: halfWidth * 2, height: length * 2)
+            let strip = CGRect(x: 18, y: pad,
+                               width: halfWidth * 2, height: size.height - pad * 2)
             let pavement = Path(roundedRect: strip, cornerRadius: 2)
             context.fill(pavement, with: .color(Color.secondary.opacity(0.22)))
             context.stroke(pavement, with: .color(Color.secondary.opacity(0.5)), lineWidth: 1)
 
             var centreline = Path()
-            centreline.move(to: CGPoint(x: centre.x, y: strip.minY + 8))
-            centreline.addLine(to: CGPoint(x: centre.x, y: strip.maxY - 36))
+            centreline.move(to: CGPoint(x: strip.midX, y: strip.minY + 8))
+            centreline.addLine(to: CGPoint(x: strip.midX, y: strip.maxY - 36))
             context.stroke(centreline, with: .color(.white.opacity(0.3)),
                            style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
 
@@ -437,34 +400,86 @@ private struct RunwayWindDiagram: View {
             // runway points up, so the threshold you cross is the bottom one.
             var bars = Path()
             for offset in [-11.0, -4.0, 4.0, 11.0] {
-                bars.move(to: CGPoint(x: centre.x + offset, y: strip.maxY - 4))
-                bars.addLine(to: CGPoint(x: centre.x + offset, y: strip.maxY - 15))
+                bars.move(to: CGPoint(x: strip.midX + offset, y: strip.maxY - 4))
+                bars.addLine(to: CGPoint(x: strip.midX + offset, y: strip.maxY - 15))
             }
             context.stroke(bars, with: .color(.white.opacity(0.4)), lineWidth: 2)
 
             context.draw(Text(selected.runway)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.ngAccentText),
-                         at: CGPoint(x: centre.x, y: strip.maxY - 27))
+                         at: CGPoint(x: strip.midX, y: strip.maxY - 27))
 
-            // The wind, in the runway's own frame: 0 is straight down it, positive off the
-            // right side. It blows *from* its bearing, so the arrow comes in from the rim and
-            // the arrowhead lands on the runway.
-            let from = point(selected.windOffset, radius)
+            // MARK: The wind, as its two components
 
-            var shaft = Path()
-            shaft.move(to: from)
-            shaft.addLine(to: centre)
-            context.stroke(shaft, with: .color(Color.orange),
-                           style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+            let left = strip.maxX + 20
+            let middle = CGPoint(x: (left + size.width - 12) / 2, y: size.height / 2)
+            // The scale a full-strength wind would draw at. Each arrow is that times its own
+            // share, so the two are to scale against each other.
+            let full = min(size.height / 2 - 14, middle.x - left - 12)
+            let knots = max(selected.speed, 1)
 
-            var barbs = Path()
-            for spread in [-24.0, 24.0] {
-                barbs.move(to: centre)
-                barbs.addLine(to: point(selected.windOffset + spread, 10))
+            let along = full * selected.headwind / knots
+            let across = full * selected.crosswind / knots * (selected.fromRight ? -1 : 1)
+            // Both arrows leave one point, since between them they are one vector. That corner
+            // is placed so each arrow straddles the middle rather than hanging off it, which
+            // keeps the pair centred however the wind swings round.
+            let origin = CGPoint(x: middle.x - across / 2, y: middle.y - along / 2)
+
+            func arrow(to tip: CGPoint, from start: CGPoint, colour: Color) {
+                var shaft = Path()
+                shaft.move(to: start)
+                shaft.addLine(to: tip)
+                context.stroke(shaft, with: .color(colour),
+                               style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+
+                let heading = atan2(tip.x - start.x, start.y - tip.y)
+                var barbs = Path()
+                for spread in [-0.45, 0.45] {
+                    barbs.move(to: tip)
+                    barbs.addLine(to: CGPoint(x: tip.x - sin(heading + spread) * 8,
+                                              y: tip.y + cos(heading + spread) * 8))
+                }
+                context.stroke(barbs, with: .color(colour),
+                               style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
-            context.stroke(barbs, with: .color(Color.orange),
-                           style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+
+            // Along the runway. A headwind blows from the far end back towards the threshold,
+            // so it points down the page; a tailwind points up it.
+            if abs(along) >= 1 {
+                let tip = CGPoint(x: origin.x, y: origin.y + along)
+                let colour = selected.isTailwind ? Color.orange : Color.ngAccentText
+                arrow(to: tip, from: origin, colour: colour)
+                context.draw(Text(selected.shortHeadwind)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(colour),
+                             at: CGPoint(x: min(origin.x + 9, size.width - 54),
+                                         y: (origin.y + tip.y) / 2),
+                             anchor: .leading)
+            }
+
+            // Across it, blowing towards the side it pushes you.
+            if abs(across) >= 1 {
+                let tip = CGPoint(x: origin.x + across, y: origin.y)
+                arrow(to: tip, from: origin, colour: Color.ngAccentText)
+                // Clear of the along arrow by sitting on the other side of the line from it.
+                let below = along < 0
+                context.draw(Text(selected.crosswindTag)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.ngAccentText),
+                             at: CGPoint(x: (origin.x + tip.x) / 2,
+                                         y: origin.y + (below ? 9 : -9)),
+                             anchor: below ? .top : .bottom)
+
+                if let gust = selected.gustCrosswind, gust >= selected.crosswind + 1 {
+                    context.draw(Text("gust \(Int(gust.rounded()))")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.orange),
+                                 at: CGPoint(x: (origin.x + tip.x) / 2,
+                                             y: origin.y + (below ? 22 : -22)),
+                                 anchor: below ? .top : .bottom)
+                }
+            }
         }
     }
 }

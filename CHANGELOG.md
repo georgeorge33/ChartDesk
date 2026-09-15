@@ -19,13 +19,13 @@
 
 - The weather panel now resolves the wind against your runways, each with its head and cross
   component, and draws the one you pick.
-- **The selected runway is always drawn pointing up the page**, whatever its heading. On
-  approach the only thing that matters is the wind relative to the runway, and a compass rose
-  makes you do that rotation in your head. It is also the only runway carrying numbers — the
-  others are faint rays for the geometry, and a small N says where north went.
-- The only thing drawn over the runway is the wind vector. Its length says nothing about speed
-  — it is there for the angle — and the head or tail component and the direct crosswind are in
-  the list underneath, one row per runway.
+- **The selected runway is drawn on the left, always pointing up the page**, whatever its
+  heading. On approach the only thing that matters is the wind relative to the runway, and a
+  compass rose makes you do that rotation in your head.
+- Beside it the wind is drawn as its two components: one arrow along the runway for the head or
+  tail, one across it for the direct crosswind. Both are to one scale, so their lengths are
+  comparable — a long arrow down the page beside a stub is a wind on the nose. Each points the
+  way the air moves, which is also the way it pushes you, and a tailwind turns orange.
 - **Runways are a menu, filled from the charts you hold**, so there is nothing to type. A plate
   named `IAC ILS Z RWY 04R` is proof that 04R exists, and that 22L does with it, being the other
   end of the same strip. An airport with no charts — one typed into the ICAO field — offers all
