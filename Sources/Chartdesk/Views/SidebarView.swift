@@ -127,6 +127,9 @@ struct SidebarView: View {
             Divider()
                 .overlay(Color.ngSeparator)
             footer
+            Divider()
+                .overlay(Color.ngSeparator)
+            ZuluClock()
         }
         .frame(minWidth: 200)
         .background(Color.ngWindow)
@@ -190,6 +193,47 @@ struct SidebarView: View {
         guard let first = filteredAirports.first else { return }
         browser.sidebarSelection = .airport(first.code)
     }
+}
+
+// MARK: - Zulu clock
+
+/// The UTC clock in the bottom corner of the window.
+///
+/// Every clearance, METAR, TAF and OFP is in Zulu and the menu bar clock is not, so the
+/// conversion is a small recurring cost worth removing. It sits on its own line rather than
+/// sharing the folder row, which already gives up space to the stale-charts warning.
+///
+/// `TimelineView` rather than a `Timer`: SwiftUI stops asking for dates while the view is off
+/// screen, so an occluded or minimised window costs nothing.
+private struct ZuluClock: View {
+
+    var body: some View {
+        // Anchored to the current whole second, so it ticks on the second rather than whenever
+        // the view happened to be built.
+        let start = Date(timeIntervalSinceReferenceDate:
+                            Date().timeIntervalSinceReferenceDate.rounded(.down))
+
+        TimelineView(.periodic(from: start, by: 1)) { context in
+            Text(ZuluClock.formatter.string(from: context.date))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .help("Current UTC time")
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        // A 24-hour aviation clock, not a localised time of day: the format is fixed whatever
+        // the Mac's region is set to.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "HH:mm:ss 'Z'"
+        return formatter
+    }()
 }
 
 // MARK: - Rows

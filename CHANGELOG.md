@@ -48,6 +48,12 @@
 - The star marks the most headwind of the runways listed. It is not a recommendation — Boston
   often runs 04L/04R when the wind favours 09, and 09 is frequently closed.
 
+**Elsewhere**
+
+- A **UTC clock** in the bottom corner of the window, `hh:mm:ss Z`. Every clearance, report and
+  OFP is in Zulu and the menu bar clock is not. It is a `TimelineView`, so it costs nothing
+  while the window is hidden.
+
 **Weather and ATIS**
 
 - A new panel at the foot of the chart list shows the selected airport's METAR, TAF, real ATIS

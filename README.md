@@ -63,6 +63,9 @@ and their runway badge is highlighted — the header says which runway, so the o
 itself. The sidebar footer warns when the newest file in your library is more than 60 days old,
 which is two LIDO cycles.
 
+A **UTC clock** sits in the bottom corner of the window — every clearance, report and OFP is in
+Zulu, and the menu bar clock is not.
+
 Export and print use exactly what you're looking at: rotation, night mode, and anything you've
 drawn on.
 
