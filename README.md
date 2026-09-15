@@ -59,10 +59,9 @@ and their runway badge is highlighted — the header says which runway, so the o
 itself. The sidebar footer warns when the newest file in your library is more than 60 days old,
 which is two LIDO cycles.
 
-A **UTC clock** sits beside the airport code, with this Mac's local time and its offset from
-UTC next to it — `23:11:57 Z  00:11  (+1)`. Every clearance, report and OFP is in Zulu, and the
-menu bar clock is not. A release candidate prints its version in orange in the sidebar's bottom
-corner, so a pre-release build cannot be mistaken for the real thing.
+A **UTC clock** sits beside the airport code — every clearance, report and OFP is in Zulu, and
+the menu bar clock is not. A release candidate prints its version in orange in the sidebar's
+bottom corner, so a pre-release build cannot be mistaken for the real thing.
 
 Export and print use exactly what you're looking at: rotation and anything you've drawn on.
 
