@@ -13,6 +13,8 @@ struct ChartListColumn: View {
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var weather: WeatherStore
 
+    @State private var columnHeight: CGFloat = 0
+
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
     }
@@ -72,9 +74,13 @@ struct ChartListColumn: View {
 
             if !isPinnedList, weather.isEnabled, let airport = selectedAirport {
                 Divider().overlay(Color.ngSeparator)
-                WeatherPanel(icao: airport.code)
+                WeatherPanel(icao: airport.code, available: columnHeight)
             }
         }
+        // The panel is resizable, and this is what stops it being dragged over the list. Safe
+        // to read here: the column's own height comes from the split view, not from its
+        // children, so nothing circles back.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { columnHeight = $0 }
         .frame(minWidth: 250)
         .background(Color.ngPanel)
         .onAppear { weather.show(icao: selectedAirport?.code) }

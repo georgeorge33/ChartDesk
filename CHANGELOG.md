@@ -31,8 +31,7 @@
   end of the same strip. An airport with no charts — one typed into the ICAO field — offers all
   36 designators instead. A list typed into the old text field is still honoured.
 - **The panel resizes.** Drag the grip on its top edge to trade height with the chart list; the
-  size is remembered. It is a cap rather than a fixed height, so a short report still leaves the
-  space to the chart list.
+  size is remembered, and the drag stops with the list still usable rather than swallowing it.
 - It sits in the chart list rather than a window of its own — the airport you want weather for
   is almost always the one whose charts you are reading, and a second window would have meant
   keeping two selections in step. **⇧⌘W** shows or hides it.

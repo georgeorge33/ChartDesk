@@ -15,6 +15,8 @@ struct WeatherPanel: View {
 
     /// The airport the chart list is showing. The panel follows it unless you type another.
     let icao: String?
+    /// Height of the whole chart-list column, so the panel cannot be dragged over the list.
+    let available: CGFloat
 
     @State private var query = ""
     @State private var picked: String?
@@ -92,14 +94,29 @@ struct WeatherPanel: View {
 
     // MARK: Resizing
 
+    /// The tallest the panel may be drawn: what the column can spare while leaving the chart
+    /// list a usable stub. Permissive until the first layout pass has measured anything.
+    private var ceiling: CGFloat {
+        available <= 0
+            ? WeatherStore.panelHeightRange.upperBound
+            : max(WeatherStore.panelHeightRange.lowerBound, available - 240)
+    }
+
+    /// Fixed rather than a maximum. Two greedy siblings in a stack split the space between
+    /// them, so a cap stopped the panel at half the column however far you dragged.
+    private var contentHeight: CGFloat {
+        min(weather.panelHeight, ceiling)
+    }
+
     /// Drag the top edge to trade height with the chart list.
     private var resizeHandle: some View {
         PanelResizeGrip(onBegin: { heightAtDragStart = weather.panelHeight },
                         onDrag: { up in
                             let start = heightAtDragStart ?? weather.panelHeight
-                            let range = WeatherStore.panelHeightRange
-                            weather.panelHeight = min(max(start + up, range.lowerBound),
-                                                      range.upperBound)
+                            heightAtDragStart = start
+                            weather.panelHeight =
+                                min(max(start + up, WeatherStore.panelHeightRange.lowerBound),
+                                    ceiling)
                         },
                         onEnd: {
                             heightAtDragStart = nil
@@ -206,7 +223,7 @@ struct WeatherPanel: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: weather.panelHeight)
+        .frame(height: contentHeight)
     }
 
     // MARK: Wind
@@ -482,6 +499,7 @@ private struct PanelResizeGrip: NSViewRepresentable {
         var handlers: (begin: () -> Void, drag: (CGFloat) -> Void, end: () -> Void)?
 
         private var startY: CGFloat = 0
+        private var isDragging = false
         private var isHovering = false
 
         override var mouseDownCanMoveWindow: Bool { false }
@@ -509,17 +527,27 @@ private struct PanelResizeGrip: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
-            startY = NSEvent.mouseLocation.y
-            handlers?.begin()
+            begin()
         }
 
         override func mouseDragged(with event: NSEvent) {
+            // A drag can arrive without the mouse-down that should have preceded it —
+            // dismissing a menu eats one — and measuring from a stale origin would make the
+            // deltas compound instead of tracking the pointer.
+            if !isDragging { begin() }
             // Screen coordinates run upwards, and up is a taller panel.
             handlers?.drag(NSEvent.mouseLocation.y - startY)
         }
 
         override func mouseUp(with event: NSEvent) {
+            isDragging = false
             handlers?.end()
+        }
+
+        private func begin() {
+            startY = NSEvent.mouseLocation.y
+            isDragging = true
+            handlers?.begin()
         }
 
         /// A grip, because a 9-point strip is otherwise invisible and nobody drags what they
