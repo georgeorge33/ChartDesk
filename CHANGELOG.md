@@ -1,20 +1,31 @@
 # Changelog
 
-## 1.0.0-rc.6
-
-*A candidate's notes list only what that candidate adds. The full 1.0.0 notes come with the
-release itself.*
-
-- **The clock moves up beside the airport code** in the chart list, out of the sidebar's bottom
-  corner, and now shows **local time and its offset** next to Zulu: `23:11:57 Z  00:11  (+1)`.
-- Local is this Mac's time zone, which is the only one the app can know — the time at the
-  airport in front of you would need a zone for every ICAO code, and nothing here carries one.
-- Zulu keeps its seconds and local runs to the minute. Zulu is the clock you time a report
-  against; local only has to say roughly where the day is.
-- The bottom corner of the sidebar now holds nothing but the release-candidate badge, and
-  disappears entirely on a final build.
-
 ## 1.0.0
+
+The first release that isn't a pre-release. Everything here is new since 0.14.0.
+
+### What changed, in short
+
+- **Weather and ATIS.** METAR, TAF, real ATIS and VATSIM ATIS in the chart list, with the key
+  values colour coded and the ATIS's age beside it.
+- **Wind and crosswind.** The runway you pick drawn pointing up the page, with the wind beside
+  it as a head-or-tail arrow and a crosswind arrow, both to one scale.
+- **Runways come from your charts.** A plate for 04R is proof that 04R and 22L exist, so the
+  runway menu fills itself and there is nothing to type.
+- **Magnetic variation is a field, and it matters.** METAR wind is true, runway numbers are
+  magnetic; at Boston's 15°W that is the difference between 3.5 and 8.5 knots of crosswind.
+- **A UTC clock** beside the airport code, since every clearance and report is in Zulu.
+- **A startup screen**, and a release candidate now says so in the corner.
+- **Taxi routing is gone**, as promised when it was deprecated — 2,295 lines, and any route
+  already drawn on a chart survives as an ordinary mark.
+- **Night mode is gone** too, along with the inversion that never applied to your marks.
+- **Requires macOS 26**, and the network code is rewritten with structured concurrency.
+- **Nothing is set below 10.5 point** — the smallest labels used to be 9.
+- **Fixes:** charts opened flush left instead of centred; the weather panel's drag compounded
+  its own deltas and stopped at half the column; a candidate sorted *above* the release it was
+  a candidate for, so anyone testing one would never have been offered the real thing.
+
+### In full
 
 **Taxi routing is gone**
 
@@ -114,6 +125,10 @@ release itself.*
   often runs 04L/04R when the wind favours 09, and 09 is frequently closed.
 
 **Elsewhere**
+
+- **Nothing is set below 10.5 point.** The smallest labels were 9, under the 10 that macOS's
+  own smallest text style resolves to, and the floor is now a named font rather than a number
+  written out at each of fifty-six sites.
 
 - **A chart opens centred.** A fitted plate is narrower than the window, and the code that
   positioned it after zooming clamped the scroll origin to zero — which undid the clip view's

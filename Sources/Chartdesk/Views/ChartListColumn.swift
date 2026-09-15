@@ -283,7 +283,7 @@ private struct ChartRow: View {
                             .foregroundStyle(servesPlannedRunway ? Color.ngAccentText : Color.secondary)
                     }
                 }
-                .font(.caption)
+                .font(.ngSmall)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }

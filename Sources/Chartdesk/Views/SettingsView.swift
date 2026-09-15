@@ -32,7 +32,7 @@ private struct GeneralSettingsView: View {
                         .truncationMode(.middle)
                         .foregroundStyle(library.hasLibrary ? Color.primary : Color.secondary)
                     Text("\(library.chartCount) charts · \(library.airports.count) airports")
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(.secondary)
                 }
 
@@ -53,7 +53,7 @@ private struct GeneralSettingsView: View {
                 Toggle("Reopen the last chart on launch", isOn: $browser.restoreLastChart)
                 Toggle("Check for updates on launch", isOn: $updater.checkOnLaunch)
                 Text("Updating uses the GitHub CLI, because the repository is private.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
             }
 
@@ -72,20 +72,20 @@ private struct GeneralSettingsView: View {
                 }
                 if let problem = flight.problem {
                     Text(problem)
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let plan = flight.plan {
                     HStack {
                         Text("\(plan.title) · \(plan.airfields.count) airports")
-                            .font(.caption)
+                            .font(.ngSmall)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button("Clear") { flight.clear() }
                     }
                 } else {
                     Text("Your flight's airports appear at the top of the sidebar. Nothing is written to your chart folder.")
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -96,7 +96,7 @@ private struct GeneralSettingsView: View {
                 Text("METAR and TAF come from the Aviation Weather Center, real ATIS from FAA "
                      + "D-ATIS (US fields only), and VATSIM ATIS from the VATSIM data feed. "
                      + "Collapsing the panel stops the requests.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -140,7 +140,7 @@ private struct ViewingSettingsView: View {
             Section("Opening a Chart") {
                 Toggle("Zoom to fit the window", isOn: $browser.zoomToFitOnOpen)
                 Text("When this is off, charts open at full size with the top of the plate in view.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -152,7 +152,7 @@ private struct ViewingSettingsView: View {
                     }
                 }
                 Text("Chart Navy matches the rest of the app.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
             }
         }
@@ -183,7 +183,7 @@ private struct MarkupSettingsView: View {
                     }
                 }
                 Text("Weights are set as a share of the chart's width, so the same choice looks equally thick on a small plate and a large one.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -191,7 +191,7 @@ private struct MarkupSettingsView: View {
             Section("Showing Marks") {
                 Toggle("Draw marks over charts", isOn: $annotations.showMarks)
                 Text("Turning this off hides every mark and leaves them out of copies, exports and printouts. Nothing is deleted.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -209,7 +209,7 @@ private struct MarkupSettingsView: View {
                     Spacer()
                 }
                 Text("Marks live in ~/Library/Application Support/Chartdesk/annotations.json. Your chart files are never written to.")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

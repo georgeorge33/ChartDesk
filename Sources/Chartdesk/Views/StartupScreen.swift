@@ -32,7 +32,7 @@ struct StartupScreen: View {
 
                 if !version.isEmpty {
                     Text(version)
-                        .font(.caption)
+                        .font(.ngSmall)
                         .monospacedDigit()
                         // Orange for a candidate, the same as the badge in the corner.
                         .foregroundStyle(version.contains("-") ? Color.orange : Color.ngAccentText)
@@ -44,7 +44,7 @@ struct StartupScreen: View {
                         .progressViewStyle(.circular)
                         .controlSize(.small)
                     Text(status)
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 26)
@@ -53,7 +53,7 @@ struct StartupScreen: View {
                 // The same line the app carries everywhere else. A chart browser for a
                 // simulator is exactly the thing somebody might one day reach for in a cockpit.
                 Text("For flight simulation use. Not for real-world navigation.")
-                    .font(.caption2.weight(.medium))
+                    .font(.ngSmallMedium)
                     .foregroundStyle(Color.ngWarning)
                     .padding(.top, 34)
             }

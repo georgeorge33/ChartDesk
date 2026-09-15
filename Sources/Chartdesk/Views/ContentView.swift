@@ -172,7 +172,7 @@ struct WelcomeView: View {
                         }
 
                         Text("Airport codes, chart types and runways are read from the file and folder names. Anything filed in the wrong tab can be moved with a right-click.")
-                            .font(.caption)
+                            .font(.ngSmall)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -185,7 +185,7 @@ struct WelcomeView: View {
             Spacer(minLength: 0)
 
             Text("For flight simulation use. Not for real-world navigation.")
-                .font(.footnote.weight(.medium))
+                .font(.ngSmallMedium)
                 .foregroundStyle(Color.ngWarning)
                 .padding(.bottom, 18)
         }
@@ -196,12 +196,12 @@ struct WelcomeView: View {
     private func layoutExample(title: String, lines: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption)
+                .font(.ngSmall)
                 .fontWeight(.semibold)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { item in
                     Text(item.element)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.ngSmallMono)
                         .foregroundStyle(.secondary)
                 }
             }

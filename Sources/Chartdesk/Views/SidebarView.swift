@@ -24,7 +24,7 @@ struct SidebarView: View {
         Section {
             if let problem = flight.problem {
                 Text(problem)
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(Color.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -185,7 +185,7 @@ struct SidebarView: View {
             Label("Pinned Charts", systemImage: "star.fill")
             Spacer(minLength: 4)
             Text("\(library.pinnedCharts.count)")
-                .font(.caption)
+                .font(.ngSmall)
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
         }
@@ -196,7 +196,7 @@ struct SidebarView: View {
     private var candidateBar: some View {
         HStack(spacing: 8) {
             Text(SidebarView.candidateVersion ?? "")
-                .font(.caption2.weight(.semibold))
+                .font(.ngSmallBold)
                 .monospacedDigit()
                 .foregroundStyle(Color.orange)
                 .padding(.horizontal, 6)
@@ -251,7 +251,7 @@ struct SidebarView: View {
                 .help("Rescan the chart folder")
             }
         }
-        .font(.caption)
+        .font(.ngSmall)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -276,14 +276,14 @@ private struct AirportRow: View {
                     .fontWeight(.medium)
                 if let subtitle = airport.displaySubtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
             Text("\(airport.charts.count)")
-                .font(.caption)
+                .font(.ngSmall)
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
         }
@@ -303,7 +303,7 @@ private struct EmptyLibraryNotice: View {
             Text("No charts found")
                 .font(.callout)
             Text("Pick a folder that contains chart images.")
-                .font(.caption)
+                .font(.ngSmall)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Choose Folder…") {
@@ -341,7 +341,7 @@ private struct FlightAirportRow: View {
     private var row: some View {
         HStack(spacing: 8) {
             Text(field.role.badge)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.ngSmallBold)
                 .frame(width: 36)
                 .padding(.vertical, 2)
                 .background(Color.ngAccent.opacity(chartCount == nil ? 0.25 : 1),
@@ -354,7 +354,7 @@ private struct FlightAirportRow: View {
                     .foregroundStyle(chartCount == nil ? Color.secondary : Color.primary)
                 if let detail = detail {
                     Text(detail)
-                        .font(.caption2)
+                        .font(.ngSmall)
                         .foregroundStyle(chartCount == nil ? Color.orange : Color.secondary)
                         .lineLimit(1)
                 }
@@ -364,11 +364,11 @@ private struct FlightAirportRow: View {
 
             if let count = chartCount {
                 Text("\(count)")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
             } else {
                 Image(systemName: "arrow.up.forward.square")
-                    .font(.caption)
+                    .font(.ngSmall)
                     .foregroundStyle(Color.orange)
             }
         }

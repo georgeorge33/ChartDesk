@@ -29,7 +29,7 @@ struct PerformanceView: View {
                     if let gpu = monitor.sample.gpuPercent {
                         meter("GPU", value: gpu, of: 100, text: PerformanceMonitor.percent(gpu))
                         Text("GPU use is reported for the whole system. macOS exposes no per-process figure.")
-                            .font(.caption)
+                            .font(.ngSmall)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         if let name = monitor.sample.gpuName {

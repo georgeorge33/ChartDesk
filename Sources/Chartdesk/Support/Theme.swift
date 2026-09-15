@@ -49,6 +49,19 @@ extension ChartCategory {
     var tint: Color { Color(nsColor: Theme.category(self)) }
 }
 
+extension Font {
+    /// The floor for type in the app: nothing is set smaller than this.
+    ///
+    /// 10.5 rather than `.caption`, which resolves to 10 on macOS and was the smallest thing
+    /// here until a set of hand-picked 9-point labels made it smaller still. Named rather than
+    /// written out at each site so the floor is one number to change and nothing can quietly
+    /// slip under it.
+    static let ngSmall = Font.system(size: 10.5)
+    static let ngSmallMedium = Font.system(size: 10.5, weight: .medium)
+    static let ngSmallBold = Font.system(size: 10.5, weight: .semibold)
+    static let ngSmallMono = Font.system(size: 10.5, design: .monospaced)
+}
+
 extension Color {
     static let ngWindow      = Color(nsColor: Theme.windowBackground)
     static let ngPanel       = Color(nsColor: Theme.panel)

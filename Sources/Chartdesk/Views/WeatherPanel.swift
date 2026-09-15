@@ -135,9 +135,9 @@ struct WeatherPanel: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: weather.isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.ngSmallBold)
                     Text("Weather")
-                        .font(.caption.weight(.medium))
+                        .font(.ngSmallMedium)
                 }
             }
             .buttonStyle(.plain)
@@ -148,17 +148,17 @@ struct WeatherPanel: View {
                 // hold no charts for is still one field away.
                 TextField("ICAO", text: $query)
                     .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+                    .font(.ngSmall)
                     .frame(width: 66)
                     .onSubmit(lookUp)
             } else if let code = code {
-                Text(code).font(.caption).foregroundStyle(Color.ngAccentText)
+                Text(code).font(.ngSmall).foregroundStyle(Color.ngAccentText)
             }
 
             Spacer(minLength: 0)
 
             if let age = weather.age(for: code), weather.isExpanded {
-                Text(age).font(.caption2).foregroundStyle(.tertiary)
+                Text(age).font(.ngSmall).foregroundStyle(.tertiary)
             }
 
             if weather.isFetching {
@@ -174,7 +174,7 @@ struct WeatherPanel: View {
                 .help("Fetch the latest weather and ATIS")
             }
         }
-        .font(.caption)
+        .font(.ngSmall)
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
     }
@@ -192,10 +192,10 @@ struct WeatherPanel: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 10) {
                 if let problem = weather.problem {
-                    Text(problem).font(.caption).foregroundStyle(Color.orange)
+                    Text(problem).font(.ngSmall).foregroundStyle(Color.orange)
                 } else if report == nil {
                     Text(weather.isFetching ? "Fetching…" : "No weather loaded.")
-                        .font(.caption)
+                        .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -216,7 +216,7 @@ struct WeatherPanel: View {
                     }
                     ForEach(report.notes, id: \.self) { note in
                         Text(note)
-                            .font(.caption2)
+                            .font(.ngSmall)
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -239,20 +239,20 @@ struct WeatherPanel: View {
                     .font(.callout.weight(.medium))
                 Spacer(minLength: 0)
                 Text("var")
-                    .font(.caption2)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                 TextField("", value: variationBinding, format: .number)
                     .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+                    .font(.ngSmall)
                     .frame(width: 40)
                 Text("°W")
-                    .font(.caption2)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
             }
 
             HStack(spacing: 6) {
                 Text("RWY")
-                    .font(.caption2)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                 Picker("", selection: runwayChoice) {
                     if runwayChoice.wrappedValue == nil {
@@ -263,7 +263,7 @@ struct WeatherPanel: View {
                     }
                 }
                 .labelsHidden()
-                .font(.caption)
+                .font(.ngSmall)
                 .frame(width: 84)
                 Spacer(minLength: 0)
             }
@@ -284,7 +284,7 @@ struct WeatherPanel: View {
                         : (wind?.isCalm == true
                            ? "Wind is calm — nothing to resolve."
                            : "Wind is variable — no steady direction to resolve.")))
-                    .font(.caption2)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -296,7 +296,7 @@ struct WeatherPanel: View {
                 // the components are quietly wrong by exactly that much.
                 Text("METAR wind is true, runway numbers are magnetic — set the variation from "
                      + "the chart. The star is the most headwind of these, not what ATC will give you.")
-                    .font(.caption2)
+                    .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -312,7 +312,7 @@ struct WeatherPanel: View {
         } label: {
             HStack(spacing: 7) {
                 Text(entry.runway)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.ngSmallMono)
                     .frame(width: 30, alignment: .leading)
                 Text(entry.shortHeadwind)
                     .foregroundStyle(entry.isTailwind ? Color.orange : Color.secondary)
@@ -322,11 +322,11 @@ struct WeatherPanel: View {
                 Spacer(minLength: 0)
                 if isBest {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 8))
+                        .font(.ngSmall)
                         .foregroundStyle(Color.ngAccentText)
                 }
             }
-            .font(.caption)
+            .font(.ngSmall)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(chosen ? Color.ngAccent.opacity(0.5) : Color.clear,
@@ -353,12 +353,12 @@ struct WeatherPanel: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Text(title)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.ngSmallBold)
                     .foregroundStyle(accent)
                 if showsAge { AtisAge(text: text) }
             }
             Text(WeatherPanel.marked(text))
-                .font(mono ? .system(.caption2, design: .monospaced) : .caption2)
+                .font(mono ? .ngSmallMono : .ngSmall)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -410,7 +410,7 @@ private struct AtisAge: View {
             TimelineView(.periodic(from: issued, by: 60)) { context in
                 let minutes = max(Int(context.date.timeIntervalSince(issued) / 60), 0)
                 Text("+\(minutes) min\(minutes == 1 ? "" : "s")")
-                    .font(.system(size: 9))
+                    .font(.ngSmall)
                     .monospacedDigit()
                     .foregroundStyle(minutes > 60 ? Color.orange : Color.secondary)
                     .help(minutes > 60
@@ -520,7 +520,7 @@ private struct RunwayWindDiagram: View {
                 // off against the arrow.
                 let head = along > 0
                 context.draw(Text(selected.shortHeadwind)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.ngSmallMedium)
                     .foregroundStyle(colour),
                              at: CGPoint(x: min(max(origin.x, 34), size.width - 34),
                                          y: tip.y + (head ? 11 : -11)),
@@ -534,7 +534,7 @@ private struct RunwayWindDiagram: View {
                 // Clear of the along arrow by sitting on the other side of the line from it.
                 let below = along < 0
                 context.draw(Text(selected.crosswindTag)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.ngSmallMedium)
                     .foregroundStyle(Color.ngAccentText),
                              at: CGPoint(x: (origin.x + tip.x) / 2,
                                          y: origin.y + (below ? 9 : -9)),
@@ -542,7 +542,7 @@ private struct RunwayWindDiagram: View {
 
                 if let gust = selected.gustCrosswind, gust >= selected.crosswind + 1 {
                     context.draw(Text("gust \(Int(gust.rounded()))")
-                        .font(.system(size: 9))
+                        .font(.ngSmall)
                         .foregroundStyle(Color.orange),
                                  at: CGPoint(x: (origin.x + tip.x) / 2,
                                              y: origin.y + (below ? 22 : -22)),

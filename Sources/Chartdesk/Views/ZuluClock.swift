@@ -19,7 +19,7 @@ struct ZuluClock: View {
 
         TimelineView(.periodic(from: start, by: 1)) { context in
             Text(ZuluClock.formatter.string(from: context.date))
-                .font(.caption)
+                .font(.ngSmall)
                 .monospacedDigit()
                 .foregroundStyle(Color.ngAccentText)
                 .lineLimit(1)
