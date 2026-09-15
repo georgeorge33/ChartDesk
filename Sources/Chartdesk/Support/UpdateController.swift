@@ -161,17 +161,34 @@ final class UpdateController: ObservableObject {
         }
         // Same numbers: rank the suffixes. A final release outranks every candidate for it,
         // and a later candidate outranks an earlier one, so rc.2 reaches rc.1.
-        return rank(candidate) > rank(current)
+        return outranks(rank(candidate), rank(current))
     }
 
     /// How far along a version is within its own release number: a final release is top, and a
     /// candidate is ordered by the number in its suffix.
-    private static func rank(_ version: String) -> Int {
+    /// How far along a version is within its own release number: every number in its
+    /// pre-release suffix, in order. A final release has no suffix and outranks every candidate
+    /// for it, so it is the largest possible value.
+    ///
+    /// A list rather than one number because a candidate can be patched: `rc.5.1` has to land
+    /// above `rc.5`, and reading only the last number put it *below*, which would have left
+    /// anyone on rc.5 never offered the fix.
+    private static func rank(_ version: String) -> [Int] {
         let pieces = version.split(separator: "-")
-        guard pieces.count > 1 else { return .max }
+        guard pieces.count > 1 else { return [.max] }
         let tail = pieces.dropFirst().joined(separator: "-")
-        let digits = tail.split(whereSeparator: { !$0.isNumber })
-        return digits.last.flatMap { Int($0) } ?? 0
+        let numbers = tail.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        return numbers.isEmpty ? [0] : numbers
+    }
+
+    /// Element-wise, with a missing element counting as zero.
+    private static func outranks(_ left: [Int], _ right: [Int]) -> Bool {
+        for index in 0..<max(left.count, right.count) {
+            let a = index < left.count ? left[index] : 0
+            let b = index < right.count ? right[index] : 0
+            if a != b { return a > b }
+        }
+        return false
     }
 
     /// The numeric part only. A candidate's suffix is dropped rather than parsed, so
