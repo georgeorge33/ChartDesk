@@ -15,6 +15,17 @@
 - `georeference.json` and the `taxi/` folder under `~/Library/Application Support/Chartdesk/`
   are no longer read. Nothing deletes them for you; they are yours to remove.
 
+**Every release before this one is marked as a pre-release**
+
+- 0.9 through 0.14.0 are now flagged as pre-releases on GitHub, which is what they were: this
+  is the first release that is not.
+- That leaves nothing published for an update check to find until 1.0.0 itself ships, so the
+  check says so plainly instead of reporting `release not found` and looking broken. Candidates
+  and pre-releases are still never offered automatically — install one by name with
+  `gh release download <tag>`.
+- `./update.sh` falls through to the newest green CI build, which is the behaviour it always
+  had when there was no release to install.
+
 **Now requires macOS 26**
 
 - The minimum is raised from macOS 13 to **26**, ahead of 1.0. The binary reports `minos 26.0`

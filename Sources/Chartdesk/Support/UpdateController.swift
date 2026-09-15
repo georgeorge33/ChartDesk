@@ -84,6 +84,14 @@ final class UpdateController: ObservableObject {
                 case .failure(let text):
                     if manual { self.report(text) }
 
+                case .none:
+                    if manual {
+                        self.report("No published release yet. Every release so far is marked "
+                                    + "as a pre-release, and those are not offered "
+                                    + "automatically — install one by hand with: "
+                                    + "gh release download <tag>")
+                    }
+
                 case .success(let info):
                     if Self.isNewer(info.version, than: self.currentVersion) {
                         self.available = info
@@ -176,6 +184,8 @@ final class UpdateController: ObservableObject {
 
     private enum CheckOutcome {
         case success(ReleaseInfo)
+        /// GitHub answered, and there is no published release to compare against.
+        case none
         case failure(String)
     }
 
@@ -184,9 +194,14 @@ final class UpdateController: ObservableObject {
         case failure(String)
     }
 
+    /// The newest *published* release, which deliberately excludes pre-releases: a candidate
+    /// is for whoever asks for it by name, not for everybody's update check.
     private static func latestRelease(gh: String, repo: String) -> CheckOutcome {
         let result = run(gh, ["release", "view", "--repo", repo, "--json", "tagName"])
         guard result.status == 0 else {
+            // Nothing published yet reads as an error from `gh`, but it is an ordinary state
+            // and saying "release not found" out loud makes the menu item look broken.
+            if result.error.localizedCaseInsensitiveContains("not found") { return .none }
             return .failure(result.error.isEmpty ? "Could not reach GitHub." : result.error)
         }
         guard let data = result.output.data(using: .utf8),
