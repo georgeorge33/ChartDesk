@@ -12,6 +12,7 @@ struct ChartdeskApp: App {
     @StateObject private var updater = UpdateController()
     @StateObject private var annotations = AnnotationStore()
     @StateObject private var flight = FlightPlanStore()
+    @StateObject private var weather = WeatherStore()
     // DEPRECATED (1.0): taxi routing.
     @StateObject private var planner = TaxiRouteStore()
 
@@ -25,6 +26,7 @@ struct ChartdeskApp: App {
                 .environmentObject(annotations)
                 .environmentObject(planner)
                 .environmentObject(flight)
+                .environmentObject(weather)
                 .frame(minWidth: 940, minHeight: 620)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
@@ -58,6 +60,7 @@ struct ChartdeskApp: App {
                 .environmentObject(annotations)
                 .environmentObject(planner)
                 .environmentObject(flight)
+                .environmentObject(weather)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }

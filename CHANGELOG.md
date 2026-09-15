@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.15.0
+
+**Weather and ATIS**
+
+- A new panel at the foot of the chart list shows the selected airport's METAR, TAF, real ATIS
+  and VATSIM ATIS. It follows whichever airport you have selected.
+- METAR and TAF come from the Aviation Weather Center and cover the world. Real ATIS is FAA
+  D-ATIS, which is US fields only — everywhere else says so rather than leaving a blank row.
+  VATSIM ATIS comes from the VATSIM data feed and appears only while a controller is online.
+- **VATSIM METAR and TAF are deliberately not fetched.** VATSIM's METAR endpoint serves the
+  same observation byte for byte, since it mirrors real weather, and VATSIM publishes no TAF at
+  all. Requesting them would be duplicate traffic for identical text. What VATSIM uniquely has
+  is the controller's ATIS, which does differ — different runways in use, and only when staffed.
+- METAR and TAF are shown above ATIS. A full ATIS runs to ten lines of hold-short and crane
+  advisories, which pushed the two things you actually glance at below the fold.
+- Airports with a split ATIS are shown separately, labelled Arrival and Departure, rather than
+  merged — Manchester currently publishes Arrival E and Departure I.
+- Text is selectable, METAR and TAF are monospaced, and each source fails on its own: an ATIS
+  that isn't published never stops the METAR arriving.
+- **Collapsing the panel stops the requests** rather than just hiding them, and there is a
+  Settings toggle to switch it off entirely. Results are cached for a minute, which keeps a
+  Refresh meaningful and stays well inside VATSIM's fifteen-second polling guidance.
+
 ## 0.14.0
 
 **Charts for the runway you're actually using**

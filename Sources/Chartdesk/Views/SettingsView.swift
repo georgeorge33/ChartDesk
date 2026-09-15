@@ -20,6 +20,7 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
     @EnvironmentObject private var flight: FlightPlanStore
+    @EnvironmentObject private var weather: WeatherStore
 
     var body: some View {
         Form {
@@ -88,6 +89,16 @@ private struct GeneralSettingsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+
+            Section("Weather") {
+                Toggle("Show weather and ATIS under the chart list", isOn: $weather.isEnabled)
+                Text("METAR and TAF come from the Aviation Weather Center, real ATIS from FAA "
+                     + "D-ATIS (US fields only), and VATSIM ATIS from the VATSIM data feed. "
+                     + "Collapsing the panel stops the requests.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Toolbar") {

@@ -87,6 +87,30 @@ a one-line edit and a rebuild.
 
 ---
 
+## Weather and ATIS
+
+A panel at the foot of the chart list shows the selected airport's **METAR**, **TAF**, real
+**ATIS** and **VATSIM ATIS**. Collapse it and the requests stop — it isn't just hidden.
+
+| | Source |
+|---|---|
+| METAR, TAF | [Aviation Weather Center](https://aviationweather.gov) — worldwide |
+| Real ATIS | FAA D-ATIS via `datis.clowd.io` — **US fields only** |
+| VATSIM ATIS | the VATSIM data feed — only while a controller is online |
+
+VATSIM's own METAR endpoint serves the same observation byte for byte, and VATSIM publishes no
+TAF at all, so neither is fetched — it would be duplicate traffic for identical text. What
+VATSIM uniquely has is the controller's ATIS, which genuinely differs: different runways in use,
+and only present when the position is staffed.
+
+METAR and TAF come first in the panel on purpose. A full ATIS runs to ten lines of hold-short
+and crane advisories, which would push the two things you actually glance at out of view.
+
+Results are cached for a minute, which keeps a Refresh meaningful and stays well inside
+VATSIM's fifteen-second polling guidance.
+
+---
+
 ## Marking up a chart
 
 **⇧⌘A** turns on annotate mode. Five tools — pen, highlighter, arrow, box, text — in eight

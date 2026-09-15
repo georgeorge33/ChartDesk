@@ -11,6 +11,7 @@ struct ChartListColumn: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var annotations: AnnotationStore
     @EnvironmentObject private var flight: FlightPlanStore
+    @EnvironmentObject private var weather: WeatherStore
 
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
@@ -68,11 +69,18 @@ struct ChartListColumn: View {
             } else {
                 list
             }
+
+            if !isPinnedList, weather.isEnabled, let airport = selectedAirport {
+                Divider().overlay(Color.ngSeparator)
+                WeatherPanel(icao: airport.code)
+            }
         }
         .frame(minWidth: 250)
         .background(Color.ngPanel)
+        .onAppear { weather.show(icao: selectedAirport?.code) }
         .onChange(of: browser.sidebarSelection) { _ in
             handleSelectionChange()
+            weather.show(icao: selectedAirport?.code)
         }
     }
 

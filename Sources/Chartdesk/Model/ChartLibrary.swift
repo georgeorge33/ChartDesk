@@ -24,6 +24,8 @@ enum DefaultsKey {
     static let simbriefAccount = "simbriefAccount"
     static let simbriefOnLaunch = "simbriefOnLaunch"
     static let airportLookup = "airportLookup"
+    static let weatherEnabled = "weatherEnabled"
+    static let weatherExpanded = "weatherExpanded"
 }
 
 // MARK: - Folder bookmark
