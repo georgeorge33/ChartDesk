@@ -30,10 +30,6 @@ final class ChartViewerController: ObservableObject {
         }
     }
 
-    /// The live zoom, straight from the scroll view. `magnification` is a throttled mirror of
-    /// this for the toolbar, so anything that has to be exact reads it here instead.
-    private var actualMagnification: CGFloat { scrollView?.magnification ?? magnification }
-
     func syncMagnification() {
         guard let scrollView = scrollView else { return }
         let value = scrollView.magnification
@@ -42,24 +38,11 @@ final class ChartViewerController: ObservableObject {
         }
     }
 
-    /// The toolbar shows a whole percentage, so SwiftUI is told only when that number changes.
-    ///
-    /// A trackpad delivers zoom events faster than the screen refreshes, and publishing each
-    /// one re-evaluated the detail view and pushed every property back onto the canvas — work
-    /// competing with the scrolling it was trying to keep up with.
-    private func publishMagnification() {
-        guard let scrollView = scrollView else { return }
-        let value = scrollView.magnification
-        if Int((value * 100).rounded()) != Int((magnification * 100).rounded()) {
-            magnification = value
-        }
-    }
-
     // MARK: Zoom
 
-    func zoomIn() { setMagnification(actualMagnification * step) }
+    func zoomIn() { setMagnification(magnification * step) }
 
-    func zoomOut() { setMagnification(actualMagnification / step) }
+    func zoomOut() { setMagnification(magnification / step) }
 
     func actualSize() { setMagnification(1) }
 
@@ -84,7 +67,7 @@ final class ChartViewerController: ObservableObject {
     /// Double-click behaviour: swap between "whole chart" and "one pixel per point".
     func toggleFitAndActualSize() {
         guard let fit = fitScale() else { return }
-        if abs(actualMagnification - fit) < 0.01 {
+        if abs(magnification - fit) < 0.01 {
             setMagnification(1)
         } else {
             zoomToFit()
@@ -114,9 +97,9 @@ final class ChartViewerController: ObservableObject {
     func zoom(by factor: CGFloat, at point: NSPoint) {
         guard let scrollView = scrollView, scrollView.documentView != nil,
               factor > 0, factor.isFinite else { return }
-        scrollView.setMagnification(clamp(actualMagnification * factor, in: scrollView),
+        scrollView.setMagnification(clamp(magnification * factor, in: scrollView),
                                     centeredAt: point)
-        publishMagnification()
+        magnification = scrollView.magnification
     }
 
     /// Drags the plate under the pointer. `delta` is in screen points.
@@ -274,40 +257,16 @@ final class ChartScrollView: NSScrollView {
 
     var onScrollZoom: ((CGFloat, NSPoint) -> Void)?
 
-    /// Zoom asked for since the last flush, as an exponent so the pieces add up.
-    private var pendingExponent: CGFloat = 0
-    private var pendingPoint: NSPoint = .zero
-    private var flushScheduled = false
-
     override func scrollWheel(with event: NSEvent) {
-        // Momentum arrives after your fingers have left the trackpad. Scrolling coasts nicely;
-        // a zoom that carries on after you stop overshoots what you were aiming at, so the
-        // zoom follows the fingers and nothing else.
-        guard event.momentumPhase == [] else { return }
-
         let delta = event.scrollingDeltaY
         guard delta != 0 else { return }
 
         // A trackpad reports many small precise deltas where a wheel reports a few large
         // ones, so each needs its own sensitivity to feel the same.
-        pendingExponent += event.hasPreciseScrollingDeltas ? delta * 0.004 : delta * 0.06
-        pendingPoint = documentView?.convert(event.locationInWindow, from: nil)
+        let step = event.hasPreciseScrollingDeltas ? delta * 0.004 : delta * 0.06
+        let point = documentView?.convert(event.locationInWindow, from: nil)
             ?? NSPoint(x: documentVisibleRect.midX, y: documentVisibleRect.midY)
-
-        // One magnification change per turn of the run loop. A trackpad delivers events
-        // faster than the screen refreshes, and each separate change was a separate layout
-        // of the plate and the marks on top of it for the same total amount of zoom.
-        guard !flushScheduled else { return }
-        flushScheduled = true
-        DispatchQueue.main.async { [weak self] in self?.flushZoom() }
-    }
-
-    private func flushZoom() {
-        flushScheduled = false
-        let exponent = pendingExponent
-        pendingExponent = 0
-        guard exponent != 0 else { return }
-        onScrollZoom?(exp(exponent), pendingPoint)
+        onScrollZoom?(exp(step), point)
     }
 }
 

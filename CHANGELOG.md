@@ -101,16 +101,6 @@
 
 **Elsewhere**
 
-- **Scroll-to-zoom is smoother.** A trackpad delivers zoom events faster than the screen
-  refreshes, and each one was a separate magnification change — a separate layout of the plate
-  and the marks on top of it — and a separate SwiftUI update of the whole detail view. They are
-  coalesced to one change per turn of the run loop now, and SwiftUI is told only when the whole
-  percentage in the toolbar changes. The total zoom for a given gesture is identical: the steps
-  are exponents, so they add.
-- Momentum no longer zooms. After your fingers leave the trackpad macOS keeps sending events;
-  scrolling coasts nicely on them but a zoom overshoots what you were aiming at, so the zoom
-  now follows the fingers and stops with them.
-
 - **A chart opens centred.** A fitted plate is narrower than the window, and the code that
   positioned it after zooming clamped the scroll origin to zero — which undid the clip view's
   centring and planted the chart against the left edge with all of its margin on the right.
