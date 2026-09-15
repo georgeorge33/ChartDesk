@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 APP_NAME="Chartdesk"
 APP="build/${APP_NAME}.app"
 CONTENTS="${APP}/Contents"
-DEPLOYMENT_TARGET="13.0"
+DEPLOYMENT_TARGET="26.0"
 
 step() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33m  ! \033[0m%s\n' "$1"; }

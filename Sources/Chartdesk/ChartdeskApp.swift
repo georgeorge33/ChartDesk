@@ -41,7 +41,8 @@ struct ChartdeskApp: App {
                               updater: updater,
                               marks: annotations,
                               planner: planner,
-                              flight: flight)
+                              flight: flight,
+                              weather: weather)
         }
 
         Window("Performance", id: "performance") {
@@ -51,16 +52,6 @@ struct ChartdeskApp: App {
                 .tint(.ngAccent)
         }
         .defaultSize(width: 400, height: 700)
-
-        Window("Weather", id: "weather") {
-            WeatherWindow()
-                .environmentObject(weather)
-                .environmentObject(library)
-                .environmentObject(browser)
-                .preferredColorScheme(.dark)
-                .tint(.ngAccent)
-        }
-        .defaultSize(width: 560, height: 620)
 
         Settings {
             SettingsView()

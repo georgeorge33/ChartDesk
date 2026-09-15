@@ -160,6 +160,7 @@ enum SimBrief {
 ///
 /// This is the one place Chartdesk opens a network connection of its own, and only when asked.
 /// The last plan is kept on disk so the section still stands after a relaunch with no internet.
+@MainActor
 final class FlightPlanStore: ObservableObject {
 
     @Published var account: String {
@@ -221,20 +222,11 @@ final class FlightPlanStore: ObservableObject {
         request.timeoutInterval = 25
         request.setValue("Chartdesk", forHTTPHeaderField: "User-Agent")
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-            DispatchQueue.main.async {
+        Task { [weak self] in
+            do {
+                let (data, _) = try await URLSession.shared.data(for: request)
                 guard let self = self else { return }
                 self.isFetching = false
-
-                if let error = error {
-                    self.problem = "Couldn't reach SimBrief. \(error.localizedDescription)"
-                    return
-                }
-                guard let data = data else {
-                    self.problem = "SimBrief sent an empty reply."
-                    return
-                }
-
                 switch SimBrief.parse(data) {
                 case .failure(let why):
                     self.problem = why.message
@@ -243,8 +235,12 @@ final class FlightPlanStore: ObservableObject {
                     self.problem = nil
                     FlightPlanStore.save(plan)
                 }
+            } catch {
+                guard let self = self else { return }
+                self.isFetching = false
+                self.problem = "Couldn't reach SimBrief. \(error.localizedDescription)"
             }
-        }.resume()
+        }
     }
 
     /// The page to open for an airport that isn't in the library. nil when the template is

@@ -43,6 +43,15 @@ struct RunwayWind: Identifiable, Equatable {
     var crosswindLabel: String {
         "\(Int(crosswind.rounded())) kt from the \(fromRight ? "right" : "left")"
     }
+
+    /// For the chart-list column, which is too narrow for "from the right".
+    var shortCrosswind: String {
+        "\(Int(crosswind.rounded())) kt \(fromRight ? "R" : "L")"
+    }
+
+    var shortHeadwind: String {
+        "\(Int(abs(headwind).rounded())) kt \(isTailwind ? "tail" : "head")"
+    }
 }
 
 // MARK: - Maths

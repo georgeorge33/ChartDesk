@@ -26,6 +26,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var marks: AnnotationStore
     @ObservedObject var planner: TaxiRouteStore
     @ObservedObject var flight: FlightPlanStore
+    @ObservedObject var weather: WeatherStore
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -164,8 +165,9 @@ struct ChartdeskCommands: Commands {
 
             Divider()
 
-            Button("Weather…") {
-                NotificationCenter.default.post(name: .showWeather, object: nil)
+            Button(weather.isExpanded ? "Hide Weather" : "Show Weather") {
+                weather.isEnabled = true
+                weather.isExpanded.toggle()
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
 

@@ -145,7 +145,7 @@ struct ChartDetailView: View {
         }
         .animation(.easeOut(duration: 0.16), value: annotations.isAnnotating)
         .animation(.easeOut(duration: 0.16), value: planner.isPlanning)
-        .onChange(of: chart?.airportCode) { code in planner.prepare(icao: code) }
+        .onChange(of: chart?.airportCode) { _, code in planner.prepare(icao: code) }
         .onAppear { planner.prepare(icao: chart?.airportCode) }
         .environment(\.chartAspect, unrotatedAspect)
         .navigationTitle(chart?.title ?? "Chartdesk")
@@ -153,7 +153,7 @@ struct ChartDetailView: View {
         .toolbar(id: "chart", content: toolbarContent)
         .toolbarBackground(Color.ngWindow, for: .windowToolbar)
         .onAppear { refresh() }
-        .onChange(of: renderKey) { _ in refresh() }
+        .onChange(of: renderKey) { refresh() }
     }
 
     // DEPRECATED (1.0): taxi routing.

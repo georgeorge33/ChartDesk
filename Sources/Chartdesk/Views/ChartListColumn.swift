@@ -78,7 +78,7 @@ struct ChartListColumn: View {
         .frame(minWidth: 250)
         .background(Color.ngPanel)
         .onAppear { weather.show(icao: selectedAirport?.code) }
-        .onChange(of: browser.sidebarSelection) { _ in
+        .onChange(of: browser.sidebarSelection) {
             handleSelectionChange()
             weather.show(icao: selectedAirport?.code)
         }

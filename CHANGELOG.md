@@ -2,12 +2,29 @@
 
 ## 0.15.0
 
+**Now requires macOS 26**
+
+- The minimum is raised from macOS 13 to **26**, ahead of 1.0. The binary reports `minos 26.0`
+  against the 27 SDK.
+- The network code is rewritten with structured concurrency. Fetching weather ran four
+  independent requests through a `DispatchGroup` with an `NSLock` guarding a mutable capture;
+  it is now four `async let`s, which says the same thing without the lock or the shared
+  mutable state. `WeatherStore` and `FlightPlanStore` are `@MainActor`, so the UI state they
+  hold cannot be touched off the main thread by construction.
+- `onChange(of:)` moved to the two-parameter form, and the `Text.foregroundStyle` workaround in
+  the wind rose is gone — both were only there to stay compatible with macOS 13.
+
+
 **Wind and crosswind**
 
-- New **Weather window** (⇧⌘W) for looking up any airport, not just the one whose charts you
-  have open. Type an ICAO and it fetches.
-- A wind rose draws your runways as rays with the wind blowing in from its bearing, and a table
-  gives the head and cross component for each. Click a row to pick it out on the rose.
+- The weather panel now resolves the wind against your runways. A rose draws them as rays with
+  the wind blowing in from its bearing, and each gets its head and cross component. Click a row
+  to pick that runway out on the rose.
+- It sits in the chart list rather than a window of its own — the airport you want weather for
+  is almost always the one whose charts you are reading, and a second window would have meant
+  keeping two selections in step. **⇧⌘W** shows or hides it.
+- The ICAO field looks up any airport, so a destination you hold no charts for is one field away
+  rather than unreachable.
 - **Magnetic variation is a field, and it matters.** METAR reports wind against true north while
   a runway designator is magnetic, so at Boston's 15°W the two references differ by 15°. On
   runway 04R in a 050/20 wind that is 3.5 knots of crosswind ignored versus 8.5 knots resolved

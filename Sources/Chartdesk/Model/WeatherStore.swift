@@ -105,6 +105,21 @@ enum WeatherSource {
         }
     }
 
+    // MARK: Fetching
+
+    static func data(from url: URL?) async -> Data? {
+        guard let url = url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        return try? await URLSession.shared.data(for: request).0
+    }
+
+    static func text(from url: URL?) async -> String? {
+        guard let data = await data(from: url) else { return nil }
+        return rawText(data)
+    }
+
     /// Raw endpoints answer with an error sentence rather than a status code often enough to
     /// be worth checking for.
     static func rawText(_ data: Data) -> String? {
@@ -124,6 +139,7 @@ enum WeatherSource {
 ///
 /// Nothing is requested while the panel is collapsed, so closing it genuinely stops the
 /// traffic rather than just hiding it.
+@MainActor
 final class WeatherStore: ObservableObject {
 
     @Published var isEnabled: Bool {
@@ -257,47 +273,21 @@ final class WeatherStore: ObservableObject {
         isFetching = true
         problem = nil
 
-        var result = AirportWeather()
-        let group = DispatchGroup()
+        Task { [weak self] in
+            // Four independent requests. `async let` states that plainly; the DispatchGroup
+            // and lock this replaces only implied it, and needed a mutable capture to work.
+            async let metar = WeatherSource.text(from: WeatherSource.metarURL(code))
+            async let taf = WeatherSource.text(from: WeatherSource.tafURL(code))
+            async let datis = WeatherSource.data(from: WeatherSource.datisURL(code))
 
-        func request(_ url: URL?, _ handle: @escaping (Data) -> Void) {
-            guard let url = url else { return }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 20
-            request.setValue(WeatherSource.userAgent, forHTTPHeaderField: "User-Agent")
-            group.enter()
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                if let data = data { handle(data) }
-                group.leave()
-            }.resume()
-        }
+            let feed = await self?.vatsimData()
 
-        let lock = NSLock()
+            var result = AirportWeather()
+            result.metar = await metar
+            result.taf = await taf
+            if let datis = await datis { result.realAtis = WeatherSource.parseDatis(datis) }
+            if let feed = feed { result.vatsimAtis = WeatherSource.parseVatsim(feed, icao: code) }
 
-        request(WeatherSource.metarURL(code)) { data in
-            guard let text = WeatherSource.rawText(data) else { return }
-            lock.lock(); result.metar = text; lock.unlock()
-        }
-        request(WeatherSource.tafURL(code)) { data in
-            guard let text = WeatherSource.rawText(data) else { return }
-            lock.lock(); result.taf = text; lock.unlock()
-        }
-        request(WeatherSource.datisURL(code)) { data in
-            let reports = WeatherSource.parseDatis(data)
-            lock.lock(); result.realAtis = reports; lock.unlock()
-        }
-
-        if let cached = vatsimFeed, Date().timeIntervalSince(cached.at) < Self.cacheSeconds {
-            result.vatsimAtis = WeatherSource.parseVatsim(cached.data, icao: code)
-        } else {
-            request(WeatherSource.vatsimFeedURL) { [weak self] data in
-                let reports = WeatherSource.parseVatsim(data, icao: code)
-                lock.lock(); result.vatsimAtis = reports; lock.unlock()
-                DispatchQueue.main.async { self?.vatsimFeed = (data, Date()) }
-            }
-        }
-
-        group.notify(queue: .main) { [weak self] in
             guard let self = self, token == self.generation else { return }
             self.isFetching = false
 
@@ -315,4 +305,17 @@ final class WeatherStore: ObservableObject {
             self.cache[code] = result
         }
     }
+
+    /// The feed covers every airport at once, so it is fetched once and shared.
+    private func vatsimData() async -> Data? {
+        if let cached = vatsimFeed, Date().timeIntervalSince(cached.at) < Self.cacheSeconds {
+            return cached.data
+        }
+        guard let data = await WeatherSource.data(from: WeatherSource.vatsimFeedURL) else {
+            return nil
+        }
+        vatsimFeed = (data, Date())
+        return data
+    }
+
 }

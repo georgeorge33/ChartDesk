@@ -4,8 +4,9 @@ A native macOS browser for chart images you already have on disk. Built for LIDO
 as PNGs, laid out the way Navigraph Charts is: airports on the left, chart list in the middle,
 plate on the right.
 
-macOS 13+. SwiftUI and AppKit, no dependencies. Nothing is sent anywhere, and the only two
-things that reach out do so when you ask: checking for updates, and loading a SimBrief flight.
+macOS 26+. SwiftUI and AppKit, no dependencies. Nothing is sent anywhere. The things that
+reach out do so when you ask: checking for updates, loading a SimBrief flight, and fetching
+weather.
 
 > [!NOTE]
 > This app is created fully with Claude Opus 5 Max.
@@ -111,9 +112,10 @@ VATSIM's fifteen-second polling guidance.
 
 ### Wind and crosswind
 
-**⇧⌘W** opens a Weather window for any airport, with the wind drawn against the runways you
-use. Type the runways once per airport and it remembers them; each one gets its head and cross
-component, and the rose shows the wind blowing in from its bearing.
+The same panel resolves the wind against the runways you use. Type them once per airport and it
+remembers them; each gets its head and cross component, and a rose shows the wind blowing in
+from its bearing. Click a row to pick that runway out on the rose. **⇧⌘W** shows or hides the
+panel, and the ICAO field looks up any airport — including a destination you hold no charts for.
 
 > [!IMPORTANT]
 > Set the **variation** from the chart. METAR wind is referenced to true north while runway

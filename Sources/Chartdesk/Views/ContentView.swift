@@ -35,7 +35,7 @@ struct ContentView: View {
             updater.checkOnLaunchIfWanted()
             flight.refreshOnLaunchIfWanted()
         }
-        .onChange(of: library.scanID) { _ in restoreSelection() }
+        .onChange(of: library.scanID) { restoreSelection() }
         .alert("Update Available",
                isPresented: $updater.showAvailable,
                presenting: updater.available) { release in
@@ -46,9 +46,6 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showPerformance)) { _ in
             openWindow(id: "performance")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showWeather)) { _ in
-            openWindow(id: "weather")
         }
         .alert("Software Update", isPresented: $updater.showMessage) {
             Button("OK", role: .cancel) { }
