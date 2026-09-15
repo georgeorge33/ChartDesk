@@ -275,7 +275,7 @@ final class ChartScrollView: NSScrollView {
 struct ChartCanvas: NSViewRepresentable {
 
     let image: NSImage?
-    /// Changing this resets the zoom (new chart or new rotation); a night-mode swap does not.
+    /// Changing this resets the zoom: a new chart, or a new rotation.
     let resetKey: String
     let background: NSColor
     let fitOnOpen: Bool

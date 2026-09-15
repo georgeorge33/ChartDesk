@@ -14,7 +14,7 @@ final class ChartRenderModel: ObservableObject {
     private var currentKey = ""
     private var generation = 0
 
-    func request(chart: Chart?, key: String, night: Bool, desaturate: Bool, rotation: Int) {
+    func request(chart: Chart?, key: String, rotation: Int) {
         guard key != currentKey else { return }
         currentKey = key
         generation += 1
@@ -28,7 +28,7 @@ final class ChartRenderModel: ObservableObject {
         }
 
         // The previous image stays on screen until the new one is ready, which keeps
-        // night-mode toggles from flashing.
+        // rotations from flashing.
         image = nil
         errorText = nil
         isLoading = true
@@ -36,8 +36,6 @@ final class ChartRenderModel: ObservableObject {
         let url = chart.url
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = ChartImageStore.shared.image(url: url,
-                                                      night: night,
-                                                      desaturate: desaturate,
                                                       rotation: rotation)
             DispatchQueue.main.async {
                 guard let self = self, token == self.generation else { return }
@@ -136,8 +134,6 @@ struct ChartDetailView: View {
     private func refresh() {
         model.request(chart: chart,
                       key: renderKey,
-                      night: browser.nightMode,
-                      desaturate: browser.desaturateNight,
                       rotation: browser.rotation)
     }
 
@@ -182,7 +178,7 @@ struct ChartDetailView: View {
         fileItems()
     }
 
-    /// Pinning, night mode and everything to do with marking a plate up.
+    /// Pinning and everything to do with marking a plate up.
     @ToolbarContentBuilder
     private func markupItems() -> some CustomizableToolbarContent {
 
@@ -195,16 +191,6 @@ struct ChartDetailView: View {
             }
             .disabled(chart == nil)
             .help(isPinned ? "Remove from pinned charts" : "Pin this chart")
-        }
-
-        ToolbarItem(id: "night", placement: .primaryAction) {
-            Button {
-                browser.nightMode.toggle()
-            } label: {
-                Label("Night Mode", systemImage: browser.nightMode ? "moon.fill" : "moon")
-            }
-            .disabled(chart == nil)
-            .help("Invert the chart for night flying")
         }
 
         ToolbarItem(id: "annotate", placement: .primaryAction) {

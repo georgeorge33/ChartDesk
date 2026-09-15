@@ -15,6 +15,20 @@
 - `georeference.json` and the `taxi/` folder under `~/Library/Application Support/Chartdesk/`
   are no longer read. Nothing deletes them for you; they are yours to remove.
 
+**Night mode is gone**
+
+- The inverted-chart mode is removed: the toolbar button, `⇧⌘N`, the Settings section, the
+  Core Image inversion, the `nightMode` and `desaturateNight` preferences and the dark canvas
+  override with them. Nothing is left switched off behind a flag.
+- Marks were never inverted with the plate underneath them, which is part of why the mode never
+  quite worked. The annotation palette stays as it was.
+
+**The SimBrief section can be cleared from the sidebar**
+
+- An × beside the flight section's refresh button clears the flight and removes the section.
+  There were already a Clear in Settings ▸ General and one in the File menu, but neither is
+  where you are when you decide you are done with a flight.
+
 **A startup screen**
 
 - The app opens on its icon, its version and the caution line while the library's first scan

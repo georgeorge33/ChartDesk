@@ -49,11 +49,7 @@ Supported: `png`, `jpg`, `jpeg`, `tif`, `tiff`, `gif`, `bmp`, `heic`, `webp`.
 ## Reading charts
 
 **Scroll to zoom** — centred on the pointer, so the feature under it stays put. **Drag to pan**,
-double-click to toggle fit and 100%. Pinch works too. Zoom holds through a night-mode toggle and
-resets when you change chart.
-
-**Night mode** inverts the plate for a dark cockpit. Straight inversion turns chart blue into
-orange, so Settings ▸ Viewing has *Remove colour when inverted* for a clean negative instead.
+double-click to toggle fit and 100%. Pinch works too. Zoom resets when you change chart.
 
 **Pinned** charts sit at the top of the sidebar, grouped by airport — your working set for a
 flight. Recent airports follow underneath.
@@ -66,8 +62,7 @@ which is two LIDO cycles.
 A **UTC clock** sits in the bottom corner of the window — every clearance, report and OFP is in
 Zulu, and the menu bar clock is not.
 
-Export and print use exactly what you're looking at: rotation, night mode, and anything you've
-drawn on.
+Export and print use exactly what you're looking at: rotation and anything you've drawn on.
 
 ### How charts get sorted
 
@@ -218,7 +213,7 @@ Load it again any time to pick up a replanned flight, or turn on loading at laun
 ## Rearranging the toolbar
 
 Right-click the toolbar ▸ **Customize Toolbar…** and drag buttons on, off, or into a different
-order. Nineteen are available and nine start on the bar; rotate left, actual size, reveal in
+order. Eighteen are available and eight start on the bar; rotate left, actual size, reveal in
 Finder, copy, export, print and the mark controls are all waiting in the sheet. The same menu
 switches between icon-only and icon-and-text.
 
@@ -236,7 +231,6 @@ The window drags from anywhere in the toolbar that isn't a button.
 | `⌘↑` `⌘↓` | previous / next chart |
 | `⌘D` | pin or unpin |
 | `⌘+` `⌘-` `⌘0` `⌘9` | zoom in, out, fit, 100% |
-| `⇧⌘N` | night mode |
 | `⇧⌘R` `⇧⌘L` | rotate right / left |
 | `⇧⌘C` `⌘E` `⌘P` | copy image, export PNG, print |
 | `⇧⌘A` | annotate |

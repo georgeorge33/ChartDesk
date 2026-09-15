@@ -145,12 +145,6 @@ struct ChartdeskCommands: Commands {
 
             Divider()
 
-            Button(browser.nightMode ? "Turn Off Night Mode" : "Turn On Night Mode") {
-                browser.nightMode.toggle()
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(chart == nil)
-
             Button("Rotate Right") { browser.rotateRight() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(chart == nil)

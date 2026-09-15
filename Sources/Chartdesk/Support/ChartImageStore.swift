@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import CoreImage
 import Foundation
 import ImageIO
 
@@ -8,9 +7,9 @@ struct ChartImageError: Error {
     let message: String
 }
 
-/// Loads chart images at full resolution and applies the night-mode / rotation treatment.
+/// Loads chart images at full resolution and applies the rotation.
 /// `image(...)` is synchronous and safe to call from a background queue; results are cached
-/// so toggling night mode back and forth is instant.
+/// so turning a plate back and forth is instant.
 final class ChartImageStore {
 
     static let shared = ChartImageStore()
@@ -21,7 +20,6 @@ final class ChartImageStore {
     }
 
     private let cache = NSCache<NSString, ImageBox>()
-    private let ciContext = CIContext(options: nil)
 
     private init() {
         cache.countLimit = countLimit
@@ -68,8 +66,8 @@ final class ChartImageStore {
         statsLock.unlock()
     }
 
-    func image(url: URL, night: Bool, desaturate: Bool, rotation: Int) -> Result<NSImage, ChartImageError> {
-        let key = "\(url.path)|\(night ? 1 : 0)|\(desaturate ? 1 : 0)|\(rotation)" as NSString
+    func image(url: URL, rotation: Int) -> Result<NSImage, ChartImageError> {
+        let key = "\(url.path)|\(rotation)" as NSString
         if let cached = cache.object(forKey: key) {
             statsLock.lock()
             stats.hits += 1
@@ -85,9 +83,6 @@ final class ChartImageStore {
         }
 
         var cgImage = loaded
-        if night, let inverted = invert(cgImage, desaturate: desaturate) {
-            cgImage = inverted
-        }
         let normalisedRotation = ((rotation % 360) + 360) % 360
         if normalisedRotation != 0, let rotated = rotate(cgImage, degrees: normalisedRotation) {
             cgImage = rotated
@@ -113,25 +108,6 @@ final class ChartImageStore {
     }
 
     // MARK: - Filters
-
-    private func invert(_ image: CGImage, desaturate: Bool) -> CGImage? {
-        let input = CIImage(cgImage: image)
-
-        guard let invertFilter = CIFilter(name: "CIColorInvert") else { return nil }
-        invertFilter.setValue(input, forKey: kCIInputImageKey)
-        guard let invertedImage = invertFilter.outputImage else { return nil }
-        var output = invertedImage
-
-        if desaturate, let controls = CIFilter(name: "CIColorControls") {
-            controls.setValue(output, forKey: kCIInputImageKey)
-            controls.setValue(0.0, forKey: kCIInputSaturationKey)
-            if let desaturated = controls.outputImage {
-                output = desaturated
-            }
-        }
-
-        return ciContext.createCGImage(output, from: output.extent)
-    }
 
     /// Rotates clockwise by 90 / 180 / 270 degrees.
     private func rotate(_ image: CGImage, degrees: Int) -> CGImage? {

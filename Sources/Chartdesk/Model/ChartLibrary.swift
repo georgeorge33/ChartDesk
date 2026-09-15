@@ -11,8 +11,6 @@ enum DefaultsKey {
     static let lastAirport = "lastAirport"
     static let lastChart = "lastChart"
     static let lastCategory = "lastCategory"
-    static let nightMode = "nightMode"
-    static let desaturateNight = "desaturateNight"
     static let canvasBackground = "canvasBackground"
     static let zoomToFitOnOpen = "zoomToFitOnOpen"
     static let restoreLastChart = "restoreLastChart"

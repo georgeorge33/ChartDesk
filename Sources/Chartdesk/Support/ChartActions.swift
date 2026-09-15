@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// Side-effecting actions for a single chart. Everything here renders the chart exactly as it
-/// appears on screen, so a night-mode, rotated or annotated chart prints and exports the way
+/// appears on screen, so a rotated or annotated chart prints and exports the way
 /// it looks.
 enum ChartActions {
 
@@ -11,18 +11,13 @@ enum ChartActions {
                               state: BrowserState,
                               marks: AnnotationStore,
                               completion: @escaping (NSImage) -> Void) {
-        let night = state.nightMode
-        let desaturate = state.desaturateNight
         let rotation = state.rotation
         // Read on the caller's thread: the store belongs to the UI. Marks that are currently
         // hidden stay out of the copy, which keeps "what you see is what you get" honest.
         let annotations = marks.visibleMarks(for: chart.id)
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = ChartImageStore.shared.image(url: chart.url,
-                                                      night: night,
-                                                      desaturate: desaturate,
-                                                      rotation: rotation)
+            let result = ChartImageStore.shared.image(url: chart.url, rotation: rotation)
             switch result {
             case .success(let loaded):
                 let composed = AnnotationRenderer.burnIn(annotations, over: loaded, rotation: rotation)

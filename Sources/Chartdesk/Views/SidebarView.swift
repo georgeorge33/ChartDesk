@@ -44,6 +44,18 @@ struct SidebarView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+
+                // Next to the section it removes, rather than only in Settings: this is where
+                // you are when you decide you are done with a flight.
+                Button {
+                    flight.clear()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear this flight and remove the section")
+
                 if flight.isFetching {
                     ProgressView().progressViewStyle(.circular).controlSize(.mini)
                 } else {

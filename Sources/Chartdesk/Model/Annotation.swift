@@ -48,8 +48,8 @@ enum AnnotationTool: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Colours
 
-/// A small fixed palette. These are picked to stay legible on a white plate and to survive
-/// night mode, which inverts the chart underneath but not the marks drawn on top of it.
+/// A small fixed palette, picked to stay legible on a white plate and on the dark ground
+/// charts LIDO draws on a navy background.
 enum AnnotationColor: String, Codable, CaseIterable, Identifiable {
     case red
     case orange

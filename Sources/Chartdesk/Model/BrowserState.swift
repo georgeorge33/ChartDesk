@@ -58,14 +58,6 @@ final class BrowserState: ObservableObject {
     @Published var chartQuery: String = ""
     @Published var rotation: Int = 0
 
-    @Published var nightMode: Bool {
-        didSet { UserDefaults.standard.set(nightMode, forKey: DefaultsKey.nightMode) }
-    }
-
-    @Published var desaturateNight: Bool {
-        didSet { UserDefaults.standard.set(desaturateNight, forKey: DefaultsKey.desaturateNight) }
-    }
-
     @Published var canvasBackground: CanvasBackground {
         didSet { UserDefaults.standard.set(canvasBackground.rawValue, forKey: DefaultsKey.canvasBackground) }
     }
@@ -83,13 +75,9 @@ final class BrowserState: ObservableObject {
         defaults.register(defaults: [
             DefaultsKey.zoomToFitOnOpen: true,
             DefaultsKey.restoreLastChart: true,
-            DefaultsKey.desaturateNight: false,
-            DefaultsKey.nightMode: false
         ])
 
         category = ChartCategory(rawValue: defaults.string(forKey: DefaultsKey.lastCategory) ?? "") ?? .airport
-        nightMode = defaults.bool(forKey: DefaultsKey.nightMode)
-        desaturateNight = defaults.bool(forKey: DefaultsKey.desaturateNight)
         canvasBackground = CanvasBackground(rawValue: defaults.string(forKey: DefaultsKey.canvasBackground) ?? "") ?? .system
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
@@ -97,15 +85,13 @@ final class BrowserState: ObservableObject {
 
     // MARK: - Derived
 
-    /// Background behind the chart. Night mode always darkens it, whatever the preference.
-    var canvasColor: NSColor {
-        nightMode ? NSColor(white: 0.08, alpha: 1) : canvasBackground.color
-    }
+    /// Background behind the chart.
+    var canvasColor: NSColor { canvasBackground.color }
 
     /// Changes whenever the pixels on screen must change.
     func renderKey(for chart: Chart?) -> String {
         guard let chart = chart else { return "none" }
-        return "\(chart.id)|\(nightMode ? 1 : 0)|\(desaturateNight ? 1 : 0)|\(rotation)"
+        return "\(chart.id)|\(rotation)"
     }
 
     /// Changes only when the zoom should be reset (new chart, or a rotation).

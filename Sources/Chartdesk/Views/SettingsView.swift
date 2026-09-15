@@ -145,21 +145,13 @@ private struct ViewingSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Night Mode") {
-                Toggle("Remove colour when inverted", isOn: $browser.desaturateNight)
-                Text("Inverting a chart also flips its colours, so blues turn orange. Removing colour keeps an inverted chart looking like a plain negative.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             Section("Canvas") {
                 Picker("Background behind charts", selection: $browser.canvasBackground) {
                     ForEach(CanvasBackground.allCases) { background in
                         Text(background.displayName).tag(background)
                     }
                 }
-                Text("Chart Navy matches the rest of the app. Night mode always uses a dark background.")
+                Text("Chart Navy matches the rest of the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
