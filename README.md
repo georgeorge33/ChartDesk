@@ -114,6 +114,38 @@ and crane advisories, which would push the two things you actually glance at out
 Results are cached for a minute, which keeps a Refresh meaningful and stays well inside
 VATSIM's fifteen-second polling guidance.
 
+### What the colours mean
+
+METAR, TAF and ATIS are marked in two tiers. Two rather than a colour per field, because six
+colours is a legend you have to memorise:
+
+**Blue** — the information letter and the wind, marked whatever their value, because they are
+what you read every single time.
+
+**Orange** — a value worth a second look:
+
+| | Marked when |
+|---|---|
+| Visibility | below 3 SM or 5000 m, or an RVR group is reported at all |
+| Ceiling | a BKN, OVC or VV layer below 1000 ft |
+| Temperature | at or below 3°C, or at or above 30°C |
+| Pressure | QNH below 1000 or above 1030 hPa (29.53 / 30.42 inHg) |
+| Weather | thunderstorms, freezing precipitation, fog, hail, squalls, or anything heavy |
+
+Each is a boundary where the answer to *can I do this?* changes rather than a round number:
+below 3 SM an approach stops being visual, below a 1000 ft ceiling you are on instruments, 3°C
+is where ice becomes a question and 30°C is where performance does, and outside 1000–1030 hPa
+the altimetry error is worth thinking about. Mist, haze and light rain are deliberately left
+plain — marking those would mark half the reports in Europe. Everything staying plain is the
+point: the marks only mean something if most of the report is unmarked.
+
+Weather codes are read only in the coded run at the top of a report. Past the pressure group an
+American ATIS is plain English, where `VA` is a visual approach and `GS` is a glideslope rather
+than volcanic ash and hail.
+
+An ATIS also shows how long ago it was issued, from its own time group — **+29 mins**. Past an
+hour that turns orange: a new letter goes out at least hourly, so there is probably a newer one.
+
 ### Wind and crosswind
 
 The same panel resolves the wind against the runways you use. **Pick one from the RWY menu** and

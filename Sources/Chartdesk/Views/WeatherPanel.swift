@@ -204,12 +204,15 @@ struct WeatherPanel: View {
                 if let report = report {
                     // METAR and TAF above ATIS: a full ATIS runs to ten lines of hold-short
                     // and crane advisories and would push them out of view.
-                    if let metar = report.metar { block("METAR", metar, mono: true) }
-                    if let taf = report.taf { block("TAF", taf, mono: true) }
-                    ForEach(report.realAtis) { block($0.label, $0.text) }
+                    if let metar = report.metar { reportBlock("METAR", metar, mono: true) }
+                    if let taf = report.taf { reportBlock("TAF", taf, mono: true) }
+                    ForEach(report.realAtis) {
+                        reportBlock($0.label, $0.text, mono: false, showsAge: true)
+                    }
                     ForEach(report.vatsimAtis) {
-                        block("VATSIM \($0.label)", $0.text,
-                              accent: Color(nsColor: Theme.category(.arrival)))
+                        reportBlock("VATSIM \($0.label)", $0.text,
+                                    accent: Color(nsColor: Theme.category(.arrival)),
+                                    mono: false, showsAge: true)
                     }
                     ForEach(report.notes, id: \.self) { note in
                         Text(note)
@@ -340,21 +343,82 @@ struct WeatherPanel: View {
                 set: { weather.setVariation($0, for: code) })
     }
 
-    private func block(_ title: String,
-                       _ text: String,
-                       accent: Color = Color.ngAccentText,
-                       mono: Bool = false) -> some View {
+    /// A report with its key values coloured. `showsAge` puts the "+n mins" beside the title,
+    /// which only an ATIS carries a time group for.
+    private func reportBlock(_ title: String,
+                             _ text: String,
+                             accent: Color = Color.ngAccentText,
+                             mono: Bool,
+                             showsAge: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(accent)
-            Text(text)
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accent)
+                if showsAge { AtisAge(text: text) }
+            }
+            Text(WeatherPanel.marked(text))
                 .font(mono ? .system(.caption2, design: .monospaced) : .caption2)
-                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A report with its key values coloured, built by appending runs so the index arithmetic
+    /// stays in one place. Every run is given a colour explicitly, including the plain ones: a
+    /// `foregroundStyle` on the `Text` would otherwise decide which of the two wins.
+    static func marked(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        var cursor = text.startIndex
+
+        func plain(_ slice: Substring) {
+            var run = AttributedString(slice)
+            run.foregroundColor = .secondary
+            result += run
+        }
+
+        for span in AtisMarkup.spans(in: text) {
+            if cursor < span.range.lowerBound {
+                plain(text[cursor..<span.range.lowerBound])
+            }
+            var run = AttributedString(text[span.range])
+            run.foregroundColor = span.kind == .key ? Color.ngAccentText : Color.orange
+            result += run
+            cursor = span.range.upperBound
+        }
+        plain(text[cursor...])
+        return result
+    }
+}
+
+// MARK: - ATIS age
+
+/// How long ago the report in front of you was issued, from the time group it carries.
+///
+/// A new ATIS goes out at least hourly and immediately on a significant change, so the number
+/// is how much confidence to place in what you are reading. Past an hour it turns orange: at
+/// that point a newer letter almost certainly exists.
+private struct AtisAge: View {
+
+    let text: String
+
+    var body: some View {
+        if let issued = AtisMarkup.issueTime(in: text, now: Date()) {
+            // Anchored to the issue time, so the count changes on the minute it actually
+            // changes rather than a minute after the view happened to appear.
+            TimelineView(.periodic(from: issued, by: 60)) { context in
+                let minutes = max(Int(context.date.timeIntervalSince(issued) / 60), 0)
+                Text("+\(minutes) min\(minutes == 1 ? "" : "s")")
+                    .font(.system(size: 9))
+                    .monospacedDigit()
+                    .foregroundStyle(minutes > 60 ? Color.orange : Color.secondary)
+                    .help(minutes > 60
+                          ? "Issued \(minutes) minutes ago. An ATIS is reissued at least hourly, "
+                            + "so there is probably a newer letter."
+                          : "Issued \(minutes) minutes ago")
+            }
+        }
     }
 }
 

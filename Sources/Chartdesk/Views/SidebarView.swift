@@ -215,13 +215,13 @@ private struct ZuluClock: View {
 
         TimelineView(.periodic(from: start, by: 1)) { context in
             Text(ZuluClock.formatter.string(from: context.date))
-                .font(.caption)
+                .font(.callout)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .help("Current UTC time")
     }
 

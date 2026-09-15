@@ -71,6 +71,20 @@
   merged — Manchester currently publishes Arrival E and Departure I.
 - Text is selectable, METAR and TAF are monospaced, and each source fails on its own: an ATIS
   that isn't published never stops the METAR arriving.
+- **The key values are colour coded.** Two tiers rather than a colour per field: blue for the
+  information letter and the wind, marked whatever their value because they are what you read
+  every time, and orange for something worth a second look — visibility below 3 SM or 5000 m,
+  a ceiling below 1000 ft, temperature at or below 3°C or at or above 30°C, QNH outside
+  1000–1030 hPa, or weather that changes the plan. Mist, haze and light rain stay plain;
+  marking those would mark half the reports in Europe. Everything else staying plain is the
+  point.
+- Weather codes are read only in the coded run at the top of a report. Past the pressure group
+  an American ATIS is plain English, where `VA` is a visual approach and `GS` a glideslope
+  rather than volcanic ash and hail.
+- An ATIS shows how long ago it was issued, from its own time group: **+29 mins**, turning
+  orange past an hour, since a new letter goes out at least hourly.
+- D-ATIS is fetched from `atis.info` directly. `datis.clowd.io` still answers but only with a
+  302 to it, so this saves a redirect on every fetch.
 - **Collapsing the panel stops the requests** rather than just hiding them, and there is a
   Settings toggle to switch it off entirely. Results are cached for a minute, which keeps a
   Refresh meaningful and stays well inside VATSIM's fifteen-second polling guidance.

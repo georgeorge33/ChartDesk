@@ -48,8 +48,11 @@ enum WeatherSource {
     }
 
     /// FAA D-ATIS. US fields only; everywhere else answers 404, which is not an error.
+    ///
+    /// `datis.clowd.io` still works but only as a 302 to this, so asking here directly saves a
+    /// round trip on every fetch.
     static func datisURL(_ icao: String) -> URL? {
-        URL(string: "https://datis.clowd.io/api/\(icao)")
+        URL(string: "https://atis.info/api/\(icao)")
     }
 
     static let vatsimFeedURL = URL(string: "https://data.vatsim.net/v3/vatsim-data.json")
