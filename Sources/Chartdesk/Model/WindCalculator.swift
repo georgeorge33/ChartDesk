@@ -31,6 +31,9 @@ struct RunwayWind: Identifiable, Equatable {
     let crosswind: Double
     let fromRight: Bool
     let gustCrosswind: Double?
+    /// Signed angle from the runway's heading to the wind, -180...180, positive off the right
+    /// side. Stored rather than recomputed so the diagram and these numbers cannot disagree.
+    let windOffset: Double
 
     var id: String { runway }
     var isTailwind: Bool { headwind < -0.5 }
@@ -47,6 +50,12 @@ struct RunwayWind: Identifiable, Equatable {
     /// For the chart-list column, which is too narrow for "from the right".
     var shortCrosswind: String {
         "\(Int(crosswind.rounded())) kt \(fromRight ? "R" : "L")"
+    }
+
+    /// Beside the crosswind leg of the diagram, where the side has to be spelled out: the
+    /// arrow there shows which way the wind pushes you, not which side it comes from.
+    var crosswindTag: String {
+        "\(Int(crosswind.rounded())) kt cross \(fromRight ? "R" : "L")"
     }
 
     var shortHeadwind: String {
@@ -135,7 +144,8 @@ enum WindMath {
                               headwind: Double(wind.knots) * cos(radians),
                               crosswind: abs(Double(wind.knots) * sin(radians)),
                               fromRight: sin(radians) >= 0,
-                              gustCrosswind: wind.gustKnots.map { abs(Double($0) * sin(radians)) })
+                              gustCrosswind: wind.gustKnots.map { abs(Double($0) * sin(radians)) },
+                              windOffset: offset)
         }
     }
 

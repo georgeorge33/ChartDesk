@@ -32,6 +32,12 @@ struct WeatherPanel: View {
                                    runways: runways)
     }
 
+    /// The runway the diagram is drawn for. Whatever you clicked, or the one most into wind
+    /// until you do. Falls back when a picked runway is edited out of the list.
+    private var selectedRunway: RunwayWind? {
+        winds.first { $0.runway == picked } ?? WindMath.best(winds)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -166,14 +172,6 @@ struct WeatherPanel: View {
                     .foregroundStyle(.tertiary)
             }
 
-            if !winds.isEmpty {
-                WindRose(winds: winds,
-                         windFrom: wind?.direction.map { Double($0) + weather.variation(for: code) },
-                         highlighted: picked ?? WindMath.best(winds)?.runway)
-                    .frame(height: 150)
-                    .frame(maxWidth: .infinity)
-            }
-
             HStack(spacing: 6) {
                 Text("RWY")
                     .font(.caption2)
@@ -181,6 +179,14 @@ struct WeatherPanel: View {
                 TextField("04L 04R 09 22L 27", text: runwayBinding)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+            }
+
+            // Between the field and the rows: the two settings sit together at the top, and
+            // the picture sits directly above the list that picks what it draws.
+            if let selected = selectedRunway {
+                RunwayWindDiagram(selected: selected, all: winds)
+                    .frame(height: 162)
+                    .frame(maxWidth: .infinity)
             }
 
             if winds.isEmpty {
@@ -209,7 +215,9 @@ struct WeatherPanel: View {
     }
 
     private func row(_ entry: RunwayWind, isBest: Bool) -> some View {
-        let chosen = picked == entry.runway
+        // Compare against the resolved selection, not `picked`, so the highlighted row is
+        // always the runway the diagram is drawing.
+        let chosen = selectedRunway?.runway == entry.runway
         return Button {
             picked = chosen ? nil : entry.runway
         } label: {
@@ -269,78 +277,174 @@ struct WeatherPanel: View {
     }
 }
 
-// MARK: - The rose
+// MARK: - The runway diagram
 
-/// Runways as rays from the centre, with the wind blowing in from the rim. Drawn in magnetic
-/// degrees throughout, so the picture and the numbers agree.
-private struct WindRose: View {
+/// The wind resolved onto one runway, with that runway always drawn pointing up the page.
+///
+/// A compass rose makes you do the rotation in your head, and on approach the only thing that
+/// matters is the wind *relative to the runway*. So the picture is rotated instead: the selected
+/// runway is always vertical, and it is the only one carrying numbers — six designators' worth
+/// of labels is what made the rose a puzzle. The others stay as faint rays for the geometry,
+/// and the small N is the only thing saying that up the page is no longer north.
+///
+/// The wind arrow always reaches from the rim, so its length says nothing about speed. This is
+/// an angle picture; the knots are on the labels beside the two components.
+private struct RunwayWindDiagram: View {
 
-    let winds: [RunwayWind]
-    /// Magnetic bearing the wind is coming *from*.
-    let windFrom: Double?
-    let highlighted: String?
+    let selected: RunwayWind
+    /// Every runway on the list, for context rays.
+    let all: [RunwayWind]
+
+    /// Half the drawn pavement width. Labels are kept clear of it.
+    private let halfWidth: CGFloat = 17
 
     var body: some View {
         Canvas { context, size in
             let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = min(size.width, size.height) / 2 - 14
+            let radius = min(size.width, size.height) / 2 - 16
 
-            func point(_ bearing: Double, _ distance: Double) -> CGPoint {
-                let radians = bearing * .pi / 180
+            /// Screen point for an angle measured clockwise from the runway's own heading.
+            func point(_ relative: Double, _ distance: CGFloat) -> CGPoint {
+                let radians = relative * .pi / 180
                 return CGPoint(x: centre.x + sin(radians) * distance,
                                y: centre.y - cos(radians) * distance)
             }
 
-            context.stroke(Path(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius,
-                                                  width: radius * 2, height: radius * 2)),
-                           with: .color(Color.ngSeparator), lineWidth: 1)
-
-            for bearing in stride(from: 0.0, to: 360.0, by: 30) {
-                let length = bearing.truncatingRemainder(dividingBy: 90) == 0 ? 7.0 : 4.0
-                var tick = Path()
-                tick.move(to: point(bearing, radius - length))
-                tick.addLine(to: point(bearing, radius))
-                context.stroke(tick, with: .color(Color.ngSeparator), lineWidth: 1)
-            }
-
-            context.draw(Text("N")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.secondary),
-                         at: point(0, radius + 8))
-
-            for entry in winds {
-                let isChosen = entry.runway == highlighted
+            // The other runways, for the shape of the airfield. Anything collinear with the
+            // selected one — its reciprocal, or a parallel — is the same line and adds nothing.
+            var drawn: Set<Int> = [selected.magneticHeading]
+            for entry in all {
+                // Parallels share a heading, so 04L and 04R are one ray rather than two laid
+                // on top of each other.
+                guard drawn.insert(entry.magneticHeading).inserted else { continue }
+                let relative = Double(entry.magneticHeading - selected.magneticHeading)
+                guard abs(sin(relative * .pi / 180)) > 0.09 else { continue }
                 var ray = Path()
                 ray.move(to: centre)
-                ray.addLine(to: point(Double(entry.magneticHeading), radius - 11))
-                context.stroke(ray,
-                               with: .color(isChosen ? Color.ngAccentText : Color.secondary.opacity(0.4)),
-                               style: StrokeStyle(lineWidth: isChosen ? 4 : 2.5, lineCap: .round))
-                context.draw(Text(entry.runway)
-                    .font(.system(size: 8, weight: isChosen ? .semibold : .regular))
-                    .foregroundStyle(isChosen ? Color.ngAccentText : Color.secondary),
-                             at: point(Double(entry.magneticHeading), radius - 1))
+                ray.addLine(to: point(relative, radius - 6))
+                context.stroke(ray, with: .color(Color.secondary.opacity(0.3)),
+                               style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             }
 
-            if let windFrom = windFrom {
-                // Wind blows *from* its reported bearing, so the arrow comes in from the rim.
-                let head = point(windFrom, radius * 0.3)
-                var shaft = Path()
-                shaft.move(to: point(windFrom, radius - 2))
-                shaft.addLine(to: head)
-                context.stroke(shaft, with: .color(Color.orange),
-                               style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            // Where north went.
+            let north = Double(-selected.magneticHeading)
+            var tick = Path()
+            tick.move(to: point(north, radius - 5))
+            tick.addLine(to: point(north, radius))
+            context.stroke(tick, with: .color(Color.secondary.opacity(0.5)), lineWidth: 1)
+            context.draw(Text("N")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.tertiary),
+                         at: point(north, radius + 8))
 
-                var barbs = Path()
-                for spread in [-26.0, 26.0] {
-                    barbs.move(to: head)
-                    let radians = (windFrom + 180 + spread) * .pi / 180
-                    barbs.addLine(to: CGPoint(x: head.x + sin(radians) * 9,
-                                              y: head.y - cos(radians) * 9))
+            // The pavement, drawn as a strip rather than a ray so the threshold end is obvious.
+            let length = radius - 2
+            let strip = CGRect(x: centre.x - halfWidth, y: centre.y - length,
+                               width: halfWidth * 2, height: length * 2)
+            let pavement = Path(roundedRect: strip, cornerRadius: 2)
+            context.fill(pavement, with: .color(Color.secondary.opacity(0.22)))
+            context.stroke(pavement, with: .color(Color.secondary.opacity(0.5)), lineWidth: 1)
+
+            var centreline = Path()
+            centreline.move(to: CGPoint(x: centre.x, y: strip.minY + 8))
+            centreline.addLine(to: CGPoint(x: centre.x, y: strip.maxY - 36))
+            context.stroke(centreline, with: .color(.white.opacity(0.3)),
+                           style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+
+            // Threshold bars and the designator at the near end, where they are painted. The
+            // runway points up, so the threshold you cross is the bottom one.
+            var bars = Path()
+            for offset in [-11.0, -4.0, 4.0, 11.0] {
+                bars.move(to: CGPoint(x: centre.x + offset, y: strip.maxY - 4))
+                bars.addLine(to: CGPoint(x: centre.x + offset, y: strip.maxY - 15))
+            }
+            context.stroke(bars, with: .color(.white.opacity(0.4)), lineWidth: 2)
+
+            context.draw(Text(selected.runway)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.ngAccentText),
+                         at: CGPoint(x: centre.x, y: strip.maxY - 27))
+
+            // The wind, in the runway's own frame: 0 is straight down it, positive off the right
+            // side. The two dashed legs are the decomposition of the orange arrow, so they are
+            // to scale against each other without any scaling of their own.
+            let from = point(selected.windOffset, radius)
+            let corner = CGPoint(x: from.x, y: centre.y)
+
+            if abs(selected.headwind) >= 0.5 {
+                var leg = Path()
+                leg.move(to: from)
+                leg.addLine(to: corner)
+                context.stroke(leg, with: .color(Color.ngAccentText.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+
+                // Outboard of the leg, except once the crosswind dominates and the leg is
+                // short: its top is then the arrow's own tail, so the label crosses to the far
+                // side of the runway rather than sitting on it.
+                let stub = abs(from.y - centre.y) < 32
+                let side: CGFloat = (from.x >= centre.x) == !stub ? 1 : -1
+                let clear = stub ? halfWidth + 9 : max(abs(from.x - centre.x) + 7, halfWidth + 9)
+                let x = min(max(centre.x + side * clear, 54), size.width - 54)
+                context.draw(Text(selected.shortHeadwind)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(selected.isTailwind ? Color.orange : Color.ngAccentText),
+                             at: CGPoint(x: x, y: (from.y + corner.y) / 2),
+                             anchor: side > 0 ? .leading : .trailing)
+            }
+
+            // The across leg, labelled on the opposite side of the centreline from the side
+            // the wind comes in on. With a wind close to the runway heading both legs nearly
+            // collapse onto that line, and this is what keeps the two numbers off each other.
+            if selected.crosswind >= 0.5 {
+                var leg = Path()
+                leg.move(to: corner)
+                leg.addLine(to: centre)
+                context.stroke(leg, with: .color(Color.ngAccentText.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+
+                // Centred on the leg, unless that would print it across the pavement, in
+                // which case it starts just clear of the edge and runs outwards.
+                let midX = (corner.x + centre.x) / 2
+                let below = from.y <= centre.y
+                let side: CGFloat = corner.x >= centre.x ? 1 : -1
+                let tight = abs(midX - centre.x) < halfWidth + 6
+                let x = tight ? centre.x + side * (halfWidth + 6) : midX
+                let anchor: UnitPoint = tight
+                    ? (below ? (side > 0 ? .topLeading : .topTrailing)
+                             : (side > 0 ? .bottomLeading : .bottomTrailing))
+                    : (below ? .top : .bottom)
+
+                context.draw(Text(selected.crosswindTag)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.ngAccentText),
+                             at: CGPoint(x: x, y: centre.y + (below ? 5 : -5)),
+                             anchor: anchor)
+
+                // The gust crosswind is the number that actually limits you.
+                if let gust = selected.gustCrosswind, gust >= selected.crosswind + 1 {
+                    context.draw(Text("gust \(Int(gust.rounded()))")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.orange),
+                                 at: CGPoint(x: x, y: centre.y + (below ? 18 : -18)),
+                                 anchor: anchor)
                 }
-                context.stroke(barbs, with: .color(Color.orange),
-                               style: StrokeStyle(lineWidth: 2, lineCap: .round))
             }
+
+            // The wind itself, over the top of everything: it blows *from* its bearing, so the
+            // arrow comes in from the rim and the arrowhead lands on the runway.
+            var shaft = Path()
+            shaft.move(to: from)
+            shaft.addLine(to: centre)
+            context.stroke(shaft, with: .color(Color.orange),
+                           style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+
+            var barbs = Path()
+            for spread in [-24.0, 24.0] {
+                barbs.move(to: centre)
+                barbs.addLine(to: point(selected.windOffset + spread, 10))
+            }
+            context.stroke(barbs, with: .color(Color.orange),
+                           style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
         }
     }
 }

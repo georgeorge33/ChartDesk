@@ -113,9 +113,18 @@ VATSIM's fifteen-second polling guidance.
 ### Wind and crosswind
 
 The same panel resolves the wind against the runways you use. Type them once per airport and it
-remembers them; each gets its head and cross component, and a rose shows the wind blowing in
-from its bearing. Click a row to pick that runway out on the rose. **⇧⌘W** shows or hides the
-panel, and the ICAO field looks up any airport — including a destination you hold no charts for.
+remembers them; each gets its head and cross component. Click a row and the diagram draws that
+runway — always pointing up the page whatever its heading, because on approach the only thing
+that matters is the wind *relative to the runway*, and a compass rose makes you do that rotation
+in your head. It is also the only runway carrying numbers: the others stay as faint rays for the
+geometry, and the small **N** is what tells you up the page is no longer north.
+
+The orange arrow is the wind, blowing in from its bearing. The two dashed legs are what it
+resolves to — the head or tail component along the runway, and the direct crosswind across it.
+They are the two sides of one triangle, so they are already to scale against each other.
+
+**⇧⌘W** shows or hides the panel, and the ICAO field looks up any airport — including a
+destination you hold no charts for.
 
 > [!IMPORTANT]
 > Set the **variation** from the chart. METAR wind is referenced to true north while runway
