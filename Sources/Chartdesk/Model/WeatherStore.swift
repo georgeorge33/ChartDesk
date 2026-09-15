@@ -1,4 +1,5 @@
 import Combine
+import CoreGraphics
 import Foundation
 
 // MARK: - Reports
@@ -163,15 +164,19 @@ final class WeatherStore: ObservableObject {
     @Published private(set) var isFetching = false
     @Published private(set) var problem: String?
 
-    /// Runways the user cares about, per airport, and the local magnetic variation. Typed once
-    /// and remembered, because neither changes between flights.
-    @Published var runwayLists: [String: String] {
-        didSet { UserDefaults.standard.set(runwayLists, forKey: DefaultsKey.weatherRunways) }
-    }
+    /// Runways typed per airport while this was a text field. Only ever read now — the menu
+    /// takes its choices from the charts you hold — but kept so an airport set up by hand
+    /// before the change keeps its list.
+    @Published private(set) var runwayLists: [String: String]
 
     @Published var variations: [String: Double] {
         didSet { UserDefaults.standard.set(variations, forKey: DefaultsKey.weatherVariation) }
     }
+
+    /// How tall the panel is allowed to get, dragged by its top edge. A cap rather than a fixed
+    /// height: with a short report there is nothing to reveal, so the panel still sizes to its
+    /// content and the chart list keeps the space.
+    @Published var panelHeight: CGFloat
 
     private var cache: [String: AirportWeather] = [:]
     /// The VATSIM feed covers every airport at once, so it is fetched once and shared.
@@ -190,6 +195,16 @@ final class WeatherStore: ObservableObject {
         isExpanded = defaults.bool(forKey: DefaultsKey.weatherExpanded)
         runwayLists = defaults.dictionary(forKey: DefaultsKey.weatherRunways) as? [String: String] ?? [:]
         variations = defaults.dictionary(forKey: DefaultsKey.weatherVariation) as? [String: Double] ?? [:]
+        let saved = defaults.double(forKey: DefaultsKey.weatherHeight)
+        panelHeight = saved > 0 ? CGFloat(saved) : WeatherStore.defaultPanelHeight
+    }
+
+    static let defaultPanelHeight: CGFloat = 380
+    static let panelHeightRange: ClosedRange<CGFloat> = 140...900
+
+    /// Written once the drag ends rather than on every frame of it.
+    func savePanelHeight() {
+        UserDefaults.standard.set(Double(panelHeight), forKey: DefaultsKey.weatherHeight)
     }
 
     func weather(for code: String?) -> AirportWeather? {
@@ -212,11 +227,6 @@ final class WeatherStore: ObservableObject {
     func runwayList(for code: String?) -> String {
         guard let code = code?.uppercased() else { return "" }
         return runwayLists[code] ?? ""
-    }
-
-    func setRunwayList(_ text: String, for code: String?) {
-        guard let code = code?.uppercased() else { return }
-        runwayLists[code] = text
     }
 
     func variation(for code: String?) -> Double {

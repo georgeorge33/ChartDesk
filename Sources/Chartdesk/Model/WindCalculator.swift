@@ -52,12 +52,6 @@ struct RunwayWind: Identifiable, Equatable {
         "\(Int(crosswind.rounded())) kt \(fromRight ? "R" : "L")"
     }
 
-    /// Beside the crosswind leg of the diagram, where the side has to be spelled out: the
-    /// arrow there shows which way the wind pushes you, not which side it comes from.
-    var crosswindTag: String {
-        "\(Int(crosswind.rounded())) kt cross \(fromRight ? "R" : "L")"
-    }
-
     var shortHeadwind: String {
         "\(Int(abs(headwind).rounded())) kt \(isTailwind ? "tail" : "head")"
     }
@@ -113,6 +107,55 @@ enum WindMath {
         guard let number = Int(digits), number >= 1, number <= 36 else { return nil }
         // Runway 36 is 360°, not 0° — the same convention the wind uses.
         return number * 10
+    }
+
+    /// The other end of the same strip: 04R is 22L, 09 is 27.
+    ///
+    /// Nothing to do with the wind. It is where half the menu's choices come from: a plate for
+    /// one end is proof the other end exists, and the wind decides which of the two you want.
+    static func reciprocal(of runway: String) -> String? {
+        guard let heading = magneticHeading(of: runway) else { return nil }
+        let number = (heading / 10 + 17) % 36 + 1
+        let side = runway.uppercased().drop { $0.isNumber }
+        let flipped: String
+        switch side {
+        case "L": flipped = "R"
+        case "R": flipped = "L"
+        default: flipped = String(side)
+        }
+        return String(format: "%02d", number) + flipped
+    }
+
+    /// Every designator, for an airport we know nothing else about.
+    static let allDesignators: [String] = (1...36).map { String(format: "%02d", $0) }
+
+    /// The runways to offer for an airport.
+    ///
+    /// Taken from the charts you hold rather than typed: a plate named `IAC ILS Z RWY 04R` is
+    /// proof that 04R exists, and `reciprocal` turns it into proof of 22L as well. `remembered`
+    /// carries whatever was typed while this was a text field, so an airport set up by hand
+    /// keeps its list, and `picked` is held on even if nothing else vouches for it.
+    static func candidates(fromCharts charts: some Sequence<String>,
+                           remembered: String = "",
+                           including picked: String? = nil) -> [String] {
+        var found = Set(runways(from: remembered))
+        for runway in charts {
+            let designator = runway.trimmingCharacters(in: .whitespaces).uppercased()
+            guard magneticHeading(of: designator) != nil else { continue }
+            found.insert(designator)
+            if let other = reciprocal(of: designator) { found.insert(other) }
+        }
+        if let picked = picked, magneticHeading(of: picked) != nil { found.insert(picked) }
+        return inOrder(found)
+    }
+
+    /// Sorts designators the way a chart does: by number, then L before C before R.
+    static func inOrder(_ list: some Collection<String>) -> [String] {
+        list.sorted {
+            let left = magneticHeading(of: $0) ?? 0
+            let right = magneticHeading(of: $1) ?? 0
+            return left == right ? $0 < $1 : left < right
+        }
     }
 
     /// Splits a typed list — "04L 04R, 09/27" — into designators.

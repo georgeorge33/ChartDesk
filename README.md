@@ -91,7 +91,8 @@ a one-line edit and a rebuild.
 ## Weather and ATIS
 
 A panel at the foot of the chart list shows the selected airport's **METAR**, **TAF**, real
-**ATIS** and **VATSIM ATIS**. Collapse it and the requests stop — it isn't just hidden.
+**ATIS** and **VATSIM ATIS**. Drag its top edge to give it more room, or collapse it — collapsed
+it stops requesting rather than just hiding.
 
 | | Source |
 |---|---|
@@ -112,19 +113,22 @@ VATSIM's fifteen-second polling guidance.
 
 ### Wind and crosswind
 
-The same panel resolves the wind against the runways you use. Type them once per airport and it
-remembers them; each gets its head and cross component. Click a row and the diagram draws that
-runway — always pointing up the page whatever its heading, because on approach the only thing
-that matters is the wind *relative to the runway*, and a compass rose makes you do that rotation
-in your head. It is also the only runway carrying numbers: the others stay as faint rays for the
-geometry, and the small **N** is what tells you up the page is no longer north.
+The same panel resolves the wind against the runways you use. **Pick one from the RWY menu** and
+the diagram draws it — always pointing up the page whatever its heading, because on approach the
+only thing that matters is the wind *relative to the runway*, and a compass rose makes you do
+that rotation in your head. It is also the only runway carrying numbers: the others stay as
+faint rays for the geometry, and the small **N** is what tells you up the page is no longer
+north.
 
-The orange arrow is the wind, blowing in from its bearing. The two dashed legs are what it
-resolves to — the head or tail component along the runway, and the direct crosswind across it.
-They are the two sides of one triangle, so they are already to scale against each other.
+The menu is filled from the charts you hold. A plate named `IAC ILS Z RWY 04R` is proof that 04R
+exists — and that 22L does, being the other end of the same strip — so nothing has to be typed.
+An airport with no charts, looked up by ICAO, offers all 36 instead.
 
-**⇧⌘W** shows or hides the panel, and the ICAO field looks up any airport — including a
-destination you hold no charts for.
+The only thing drawn over the runway is the wind vector, blowing in from its bearing. Its length
+says nothing about speed; it is there for the angle. The head or tail component and the direct
+crosswind are in the list underneath, one row per runway, and clicking a row picks it out too.
+
+Drag the grip at the top of the panel to make the whole weather section taller or shorter.
 
 > [!IMPORTANT]
 > Set the **variation** from the chart. METAR wind is referenced to true north while runway

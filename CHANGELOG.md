@@ -18,14 +18,21 @@
 **Wind and crosswind**
 
 - The weather panel now resolves the wind against your runways, each with its head and cross
-  component. Click a row and the diagram draws that runway.
+  component, and draws the one you pick.
 - **The selected runway is always drawn pointing up the page**, whatever its heading. On
   approach the only thing that matters is the wind relative to the runway, and a compass rose
   makes you do that rotation in your head. It is also the only runway carrying numbers — the
   others are faint rays for the geometry, and a small N says where north went.
-- The wind arrow is resolved into two dashed legs: the head or tail component along the runway
-  and the direct crosswind across it. They are the sides of one triangle with the arrow, so
-  they are to scale against each other without any scaling of their own.
+- The only thing drawn over the runway is the wind vector. Its length says nothing about speed
+  — it is there for the angle — and the head or tail component and the direct crosswind are in
+  the list underneath, one row per runway.
+- **Runways are a menu, filled from the charts you hold**, so there is nothing to type. A plate
+  named `IAC ILS Z RWY 04R` is proof that 04R exists, and that 22L does with it, being the other
+  end of the same strip. An airport with no charts — one typed into the ICAO field — offers all
+  36 designators instead. A list typed into the old text field is still honoured.
+- **The panel resizes.** Drag the grip on its top edge to trade height with the chart list; the
+  size is remembered. It is a cap rather than a fixed height, so a short report still leaves the
+  space to the chart list.
 - It sits in the chart list rather than a window of its own — the airport you want weather for
   is almost always the one whose charts you are reading, and a second window would have meant
   keeping two selections in step. **⇧⌘W** shows or hides it.
@@ -35,9 +42,8 @@
   a runway designator is magnetic, so at Boston's 15°W the two references differ by 15°. On
   runway 04R in a 050/20 wind that is 3.5 knots of crosswind ignored versus 8.5 knots resolved
   — a factor of two and a half. The panel says so rather than quietly computing the wrong one.
-- Runways and variation are remembered per airport, since neither changes between flights.
-- Gust crosswind is computed too: printed under the crosswind on the diagram, since that is
-  the number that actually limits you, and on hover in the list.
+- The variation is remembered per airport, since it does not change between flights.
+- Gust crosswind is computed too, and shown on hover in the list.
 - A calm or variable wind produces no components rather than a confident zero, and says which
   it was.
 - The star marks the most headwind of the runways listed. It is not a recommendation — Boston

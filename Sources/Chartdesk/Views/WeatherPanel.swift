@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Weather, ATIS and the wind against your runways, at the foot of the chart list.
@@ -10,19 +11,45 @@ import SwiftUI
 struct WeatherPanel: View {
 
     @EnvironmentObject private var weather: WeatherStore
+    @EnvironmentObject private var library: ChartLibrary
 
     /// The airport the chart list is showing. The panel follows it unless you type another.
     let icao: String?
 
     @State private var query = ""
     @State private var picked: String?
+    /// Panel height when the current drag started, so the drag is absolute rather than a
+    /// running sum of deltas.
+    @State private var heightAtDragStart: CGFloat?
 
     private var code: String? { weather.icao }
     private var report: AirportWeather? { weather.weather(for: code) }
     private var wind: WindObservation? { report?.metar.flatMap(WindMath.parse) }
 
+    private var chartRunways: [String] {
+        library.airport(code: code)?.charts.compactMap(\.runway) ?? []
+    }
+
+    /// What this airport is known to have, from the charts you hold rather than typed.
+    private var knownRunways: [String] {
+        WindMath.candidates(fromCharts: chartRunways, remembered: weather.runwayList(for: code))
+    }
+
+    /// What the menu offers: every designator when the library knows nothing about the airport,
+    /// which is the case for one typed into the field.
+    ///
+    /// Deliberately not derived from `runways` — that includes whatever is picked, so choosing
+    /// 18 at an unknown airport would leave 18 as the only thing left in the menu.
+    private var choices: [String] {
+        knownRunways.isEmpty ? WindMath.allDesignators : knownRunways
+    }
+
+    /// The runways to resolve the wind against: the known ones, plus whatever was picked out of
+    /// the full list when there are none.
     private var runways: [String] {
-        WindMath.runways(from: weather.runwayList(for: code))
+        WindMath.candidates(fromCharts: chartRunways,
+                            remembered: weather.runwayList(for: code),
+                            including: picked)
     }
 
     private var winds: [RunwayWind] {
@@ -32,14 +59,22 @@ struct WeatherPanel: View {
                                    runways: runways)
     }
 
-    /// The runway the diagram is drawn for. Whatever you clicked, or the one most into wind
-    /// until you do. Falls back when a picked runway is edited out of the list.
+    /// The runway the diagram is drawn for. Whatever you chose, or the one most into wind until
+    /// you do. Falls back when a chosen runway is no longer on the list.
     private var selectedRunway: RunwayWind? {
         winds.first { $0.runway == picked } ?? WindMath.best(winds)
     }
 
+    /// Optional, so an airport we know no runways for shows a placeholder rather than
+    /// volunteering 01 as though it were a real answer.
+    private var runwayChoice: Binding<String?> {
+        Binding(get: { picked ?? selectedRunway?.runway ?? knownRunways.first },
+                set: { picked = $0 })
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if weather.isExpanded { resizeHandle }
             header
             if weather.isExpanded {
                 Divider().overlay(Color.ngSeparator)
@@ -48,7 +83,30 @@ struct WeatherPanel: View {
         }
         .background(Color.ngPanelRaised)
         .onAppear { query = code ?? icao ?? "" }
-        .onChange(of: weather.icao) { _, newValue in query = newValue ?? "" }
+        .onChange(of: weather.icao) { _, newValue in
+            query = newValue ?? ""
+            // A runway chosen at the last airport means nothing at this one.
+            picked = nil
+        }
+    }
+
+    // MARK: Resizing
+
+    /// Drag the top edge to trade height with the chart list.
+    private var resizeHandle: some View {
+        PanelResizeGrip(onBegin: { heightAtDragStart = weather.panelHeight },
+                        onDrag: { up in
+                            let start = heightAtDragStart ?? weather.panelHeight
+                            let range = WeatherStore.panelHeightRange
+                            weather.panelHeight = min(max(start + up, range.lowerBound),
+                                                      range.upperBound)
+                        },
+                        onEnd: {
+                            heightAtDragStart = nil
+                            weather.savePanelHeight()
+                        })
+            .frame(height: 9)
+            .help("Drag to resize")
     }
 
     // MARK: Header
@@ -148,7 +206,7 @@ struct WeatherPanel: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 380)
+        .frame(maxHeight: weather.panelHeight)
     }
 
     // MARK: Wind
@@ -176,9 +234,18 @@ struct WeatherPanel: View {
                 Text("RWY")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                TextField("04L 04R 09 22L 27", text: runwayBinding)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+                Picker("", selection: runwayChoice) {
+                    if runwayChoice.wrappedValue == nil {
+                        Text("—").tag(String?.none)
+                    }
+                    ForEach(choices, id: \.self) { runway in
+                        Text(runway).tag(String?.some(runway))
+                    }
+                }
+                .labelsHidden()
+                .font(.caption)
+                .frame(width: 84)
+                Spacer(minLength: 0)
             }
 
             // Between the field and the rows: the two settings sit together at the top, and
@@ -191,10 +258,12 @@ struct WeatherPanel: View {
 
             if winds.isEmpty {
                 Text(runways.isEmpty
-                     ? "Type the runways you use and the wind will be resolved against them."
-                     : (wind?.isCalm == true
-                        ? "Wind is calm — nothing to resolve."
-                        : "Wind is variable — no steady direction to resolve."))
+                     ? "Pick a runway and the wind will be resolved against it."
+                     : (wind == nil
+                        ? "No wind in the report — nothing to resolve."
+                        : (wind?.isCalm == true
+                           ? "Wind is calm — nothing to resolve."
+                           : "Wind is variable — no steady direction to resolve.")))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -254,11 +323,6 @@ struct WeatherPanel: View {
                 set: { weather.setVariation($0, for: code) })
     }
 
-    private var runwayBinding: Binding<String> {
-        Binding(get: { weather.runwayList(for: code) },
-                set: { weather.setRunwayList($0, for: code) })
-    }
-
     private func block(_ title: String,
                        _ text: String,
                        accent: Color = Color.ngAccentText,
@@ -287,15 +351,16 @@ struct WeatherPanel: View {
 /// of labels is what made the rose a puzzle. The others stay as faint rays for the geometry,
 /// and the small N is the only thing saying that up the page is no longer north.
 ///
-/// The wind arrow always reaches from the rim, so its length says nothing about speed. This is
-/// an angle picture; the knots are on the labels beside the two components.
+/// Nothing is drawn but the runway and the wind vector. The arrow always reaches from the rim,
+/// so its length says nothing about speed — this is an angle picture, and the knots are in the
+/// list underneath it.
 private struct RunwayWindDiagram: View {
 
     let selected: RunwayWind
     /// Every runway on the list, for context rays.
     let all: [RunwayWind]
 
-    /// Half the drawn pavement width. Labels are kept clear of it.
+    /// Half the drawn pavement width.
     private let halfWidth: CGFloat = 17
 
     var body: some View {
@@ -365,73 +430,11 @@ private struct RunwayWindDiagram: View {
                 .foregroundStyle(Color.ngAccentText),
                          at: CGPoint(x: centre.x, y: strip.maxY - 27))
 
-            // The wind, in the runway's own frame: 0 is straight down it, positive off the right
-            // side. The two dashed legs are the decomposition of the orange arrow, so they are
-            // to scale against each other without any scaling of their own.
+            // The wind, in the runway's own frame: 0 is straight down it, positive off the
+            // right side. It blows *from* its bearing, so the arrow comes in from the rim and
+            // the arrowhead lands on the runway.
             let from = point(selected.windOffset, radius)
-            let corner = CGPoint(x: from.x, y: centre.y)
 
-            if abs(selected.headwind) >= 0.5 {
-                var leg = Path()
-                leg.move(to: from)
-                leg.addLine(to: corner)
-                context.stroke(leg, with: .color(Color.ngAccentText.opacity(0.85)),
-                               style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-
-                // Outboard of the leg, except once the crosswind dominates and the leg is
-                // short: its top is then the arrow's own tail, so the label crosses to the far
-                // side of the runway rather than sitting on it.
-                let stub = abs(from.y - centre.y) < 32
-                let side: CGFloat = (from.x >= centre.x) == !stub ? 1 : -1
-                let clear = stub ? halfWidth + 9 : max(abs(from.x - centre.x) + 7, halfWidth + 9)
-                let x = min(max(centre.x + side * clear, 54), size.width - 54)
-                context.draw(Text(selected.shortHeadwind)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(selected.isTailwind ? Color.orange : Color.ngAccentText),
-                             at: CGPoint(x: x, y: (from.y + corner.y) / 2),
-                             anchor: side > 0 ? .leading : .trailing)
-            }
-
-            // The across leg, labelled on the opposite side of the centreline from the side
-            // the wind comes in on. With a wind close to the runway heading both legs nearly
-            // collapse onto that line, and this is what keeps the two numbers off each other.
-            if selected.crosswind >= 0.5 {
-                var leg = Path()
-                leg.move(to: corner)
-                leg.addLine(to: centre)
-                context.stroke(leg, with: .color(Color.ngAccentText.opacity(0.85)),
-                               style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-
-                // Centred on the leg, unless that would print it across the pavement, in
-                // which case it starts just clear of the edge and runs outwards.
-                let midX = (corner.x + centre.x) / 2
-                let below = from.y <= centre.y
-                let side: CGFloat = corner.x >= centre.x ? 1 : -1
-                let tight = abs(midX - centre.x) < halfWidth + 6
-                let x = tight ? centre.x + side * (halfWidth + 6) : midX
-                let anchor: UnitPoint = tight
-                    ? (below ? (side > 0 ? .topLeading : .topTrailing)
-                             : (side > 0 ? .bottomLeading : .bottomTrailing))
-                    : (below ? .top : .bottom)
-
-                context.draw(Text(selected.crosswindTag)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.ngAccentText),
-                             at: CGPoint(x: x, y: centre.y + (below ? 5 : -5)),
-                             anchor: anchor)
-
-                // The gust crosswind is the number that actually limits you.
-                if let gust = selected.gustCrosswind, gust >= selected.crosswind + 1 {
-                    context.draw(Text("gust \(Int(gust.rounded()))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color.orange),
-                                 at: CGPoint(x: x, y: centre.y + (below ? 18 : -18)),
-                                 anchor: anchor)
-                }
-            }
-
-            // The wind itself, over the top of everything: it blows *from* its bearing, so the
-            // arrow comes in from the rim and the arrowhead lands on the runway.
             var shaft = Path()
             shaft.move(to: from)
             shaft.addLine(to: centre)
@@ -445,6 +448,89 @@ private struct RunwayWindDiagram: View {
             }
             context.stroke(barbs, with: .color(Color.orange),
                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        }
+    }
+}
+
+// MARK: - The resize grip
+
+/// The drag strip along the top of the panel.
+///
+/// AppKit rather than a SwiftUI `DragGesture` because the window is movable by its background:
+/// `mouseDownCanMoveWindow` is the only way to say that a drag here resizes the panel rather
+/// than dragging the window, and a cursor rect is the only way to get the resize cursor without
+/// pushing and popping one on every hover.
+private struct PanelResizeGrip: NSViewRepresentable {
+
+    let onBegin: () -> Void
+    /// Points dragged since the drag began, positive upwards.
+    let onDrag: (CGFloat) -> Void
+    let onEnd: () -> Void
+
+    func makeNSView(context: Context) -> Strip {
+        let strip = Strip()
+        strip.handlers = (onBegin, onDrag, onEnd)
+        return strip
+    }
+
+    func updateNSView(_ strip: Strip, context: Context) {
+        strip.handlers = (onBegin, onDrag, onEnd)
+    }
+
+    final class Strip: NSView {
+
+        var handlers: (begin: () -> Void, drag: (CGFloat) -> Void, end: () -> Void)?
+
+        private var startY: CGFloat = 0
+        private var isHovering = false
+
+        override var mouseDownCanMoveWindow: Bool { false }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .resizeUpDown)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas { removeTrackingArea(area) }
+            addTrackingArea(NSTrackingArea(rect: bounds,
+                                           options: [.mouseEnteredAndExited, .activeInActiveApp],
+                                           owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            isHovering = true
+            needsDisplay = true
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            isHovering = false
+            needsDisplay = true
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            startY = NSEvent.mouseLocation.y
+            handlers?.begin()
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            // Screen coordinates run upwards, and up is a taller panel.
+            handlers?.drag(NSEvent.mouseLocation.y - startY)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            handlers?.end()
+        }
+
+        /// A grip, because a 9-point strip is otherwise invisible and nobody drags what they
+        /// cannot see.
+        override func draw(_ dirtyRect: NSRect) {
+            let grip = NSRect(x: (bounds.width - 26) / 2, y: (bounds.height - 3) / 2,
+                              width: 26, height: 3)
+            NSColor.secondaryLabelColor
+                .withAlphaComponent(isHovering ? 0.8 : 0.45)
+                .setFill()
+            NSBezierPath(roundedRect: grip, xRadius: 1.5, yRadius: 1.5).fill()
         }
     }
 }
