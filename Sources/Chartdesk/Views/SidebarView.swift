@@ -72,6 +72,31 @@ struct SidebarView: View {
         }
     }
 
+    /// Where the flight section was, once it has been cleared. Without this, getting a flight
+    /// back means remembering that ⇧⌘B exists. Only shown when there is an account to fetch
+    /// from, so it costs nothing to anyone who does not use SimBrief.
+    private var loadFlightSection: some View {
+        Section {
+            Button {
+                flight.refresh()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "airplane.departure")
+                        .foregroundStyle(Color.ngAccentText)
+                    Text(flight.isFetching ? "Loading Flight…" : "Load SimBrief Flight")
+                    Spacer(minLength: 0)
+                    if flight.isFetching {
+                        ProgressView().progressViewStyle(.circular).controlSize(.mini)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(flight.isFetching)
+            .help("Fetch your latest flight from SimBrief")
+        }
+    }
+
     /// Airports you don't have charts for are listed but not selectable. Finding that out on
     /// the ground is the point — it is the same check you would otherwise do from memory.
     @ViewBuilder
@@ -96,8 +121,12 @@ struct SidebarView: View {
                 .padding(.bottom, 6)
 
             List(selection: $browser.sidebarSelection) {
-                if trimmedQuery.isEmpty, flight.plan != nil || flight.problem != nil {
-                    flightSection
+                if trimmedQuery.isEmpty {
+                    if flight.plan != nil || flight.problem != nil {
+                        flightSection
+                    } else if flight.hasAccount {
+                        loadFlightSection
+                    }
                 }
 
                 if !library.pinnedCharts.isEmpty {
@@ -141,7 +170,7 @@ struct SidebarView: View {
             footer
             Divider()
                 .overlay(Color.ngSeparator)
-            ZuluClock()
+            bottomBar
         }
         .frame(minWidth: 200)
         .background(Color.ngWindow)
@@ -158,6 +187,35 @@ struct SidebarView: View {
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    /// The clock, and the version when this build is a release candidate: a pre-release that
+    /// looks exactly like the real thing is how you end up reporting a bug from the wrong one.
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            ZuluClock()
+            Spacer(minLength: 0)
+            if let candidate = SidebarView.candidateVersion {
+                Text(candidate)
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.14),
+                                in: Capsule(style: .continuous))
+                    .help("This is a release candidate, not a final release")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    /// The bundle version, but only when it carries a pre-release suffix.
+    static var candidateVersion: String? {
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+              version.contains("-") else { return nil }
+        return version
     }
 
     private var footer: some View {
@@ -231,9 +289,6 @@ private struct ZuluClock: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
         .help("Current UTC time")
     }
 

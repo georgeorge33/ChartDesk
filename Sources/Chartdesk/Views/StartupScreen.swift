@@ -34,7 +34,8 @@ struct StartupScreen: View {
                     Text(version)
                         .font(.caption)
                         .monospacedDigit()
-                        .foregroundStyle(Color.ngAccentText)
+                        // Orange for a candidate, the same as the badge in the corner.
+                        .foregroundStyle(version.contains("-") ? Color.orange : Color.ngAccentText)
                         .padding(.top, 3)
                 }
 

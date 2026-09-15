@@ -60,7 +60,8 @@ itself. The sidebar footer warns when the newest file in your library is more th
 which is two LIDO cycles.
 
 A **UTC clock** sits in the bottom corner of the window — every clearance, report and OFP is in
-Zulu, and the menu bar clock is not.
+Zulu, and the menu bar clock is not. A release candidate prints its version beside it in orange,
+so a pre-release build cannot be mistaken for the real thing.
 
 Export and print use exactly what you're looking at: rotation and anything you've drawn on.
 
@@ -206,7 +207,9 @@ alternate is exactly the thing worth catching early — click it to open the MSF
 planner.
 
 It's a section, not a folder — nothing is copied and nothing is written to your chart library.
-Load it again any time to pick up a replanned flight, or turn on loading at launch.
+The ↻ beside the section reloads it to pick up a replanned flight and the × clears it, leaving
+a **Load SimBrief Flight** row in its place to fetch it back. You can also turn on loading at
+launch.
 
 ---
 

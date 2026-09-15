@@ -23,11 +23,14 @@
 - Marks were never inverted with the plate underneath them, which is part of why the mode never
   quite worked. The annotation palette stays as it was.
 
-**The SimBrief section can be cleared from the sidebar**
+**The SimBrief section can be cleared, and fetched back, from the sidebar**
 
-- An × beside the flight section's refresh button clears the flight and removes the section.
-  There were already a Clear in Settings ▸ General and one in the File menu, but neither is
-  where you are when you decide you are done with a flight.
+- An × beside the flight section's refresh button clears the flight. There were already a Clear
+  in Settings ▸ General and one in the File menu, but neither is where you are when you decide
+  you are done with a flight.
+- Clearing leaves a **Load SimBrief Flight** row where the section was, so getting a flight back
+  is a click rather than remembering that ⇧⌘B exists. It only appears once there is an account
+  to fetch from.
 
 **A startup screen**
 
@@ -102,6 +105,9 @@
   positioned it after zooming clamped the scroll origin to zero — which undid the clip view's
   centring and planted the chart against the left edge with all of its margin on the right.
   Only the axes the plate is actually bigger than the window on are scrolled now.
+- **A release candidate says so.** A build whose version carries a pre-release suffix prints it
+  in orange beside the clock, and the startup screen shows it in orange too. A candidate that
+  looks exactly like the real thing is how a bug gets reported against the wrong build.
 - A **UTC clock** in the bottom corner of the window, `hh:mm:ss Z`. Every clearance, report and
   OFP is in Zulu and the menu bar clock is not. It is a `TimelineView`, so it costs nothing
   while the window is hidden.
