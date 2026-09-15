@@ -55,7 +55,9 @@
   heading. On approach the only thing that matters is the wind relative to the runway, and a
   compass rose makes you do that rotation in your head.
 - Beside it the wind is drawn as its two components: one arrow along the runway for the head or
-  tail, one across it for the direct crosswind. Both are to one scale, so their lengths are
+  tail, one across it for the direct crosswind. Each label sits beyond its own arrowhead, since
+  a strong crosswind pushes the corner of the pair out to the edge and a label beside the shaft
+  there had its first character cut off against the arrow. Both are to one scale, so their lengths are
   comparable — a long arrow down the page beside a stub is a wind on the nose. Each points the
   way the air moves, which is also the way it pushes you, and a tailwind turns orange.
 - **Runways are a menu, filled from the charts you hold**, so there is nothing to type. A plate
@@ -82,6 +84,10 @@
 
 **Elsewhere**
 
+- **A chart opens centred.** A fitted plate is narrower than the window, and the code that
+  positioned it after zooming clamped the scroll origin to zero — which undid the clip view's
+  centring and planted the chart against the left edge with all of its margin on the right.
+  Only the axes the plate is actually bigger than the window on are scrolled now.
 - A **UTC clock** in the bottom corner of the window, `hh:mm:ss Z`. Every clearance, report and
   OFP is in Zulu and the menu bar clock is not. It is a `TimelineView`, so it costs nothing
   while the window is hidden.

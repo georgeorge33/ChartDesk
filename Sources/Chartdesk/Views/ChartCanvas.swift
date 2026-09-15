@@ -121,12 +121,26 @@ final class ChartViewerController: ObservableObject {
         magnification = scrollView.magnification
     }
 
+    /// Puts the plate where it should sit once its zoom has been set.
+    ///
+    /// Only the axes the plate is *bigger* than the window on are scrolled. On an axis where it
+    /// is smaller there is nothing to scroll to, and `CenteringClipView` has already centred it
+    /// — clamping an origin of zero here is what used to plant a freshly fitted chart against
+    /// the left edge with all of its margin on the right.
     private func centerDocument(verticallyCentered: Bool) {
         guard let scrollView = scrollView, let document = scrollView.documentView else { return }
         let visible = scrollView.documentVisibleRect
-        let x = max(0, (document.frame.width - visible.width) / 2)
-        let y = verticallyCentered ? max(0, (document.frame.height - visible.height) / 2) : 0
-        scrollView.contentView.scroll(to: NSPoint(x: x, y: y))
+        var origin = scrollView.contentView.bounds.origin
+
+        if document.frame.width > visible.width {
+            origin.x = (document.frame.width - visible.width) / 2
+        }
+        if document.frame.height > visible.height {
+            // Opening at 100% shows the top of the plate, which is where a chart is read from.
+            origin.y = verticallyCentered ? (document.frame.height - visible.height) / 2 : 0
+        }
+
+        scrollView.contentView.scroll(to: origin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 }

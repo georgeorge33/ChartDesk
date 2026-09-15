@@ -514,12 +514,17 @@ private struct RunwayWindDiagram: View {
                 let tip = CGPoint(x: origin.x, y: origin.y + along)
                 let colour = selected.isTailwind ? Color.orange : Color.ngAccentText
                 arrow(to: tip, from: origin, colour: colour)
+                // Beyond the arrowhead rather than beside the shaft. A strong crosswind pushes
+                // the corner of the pair out to the edge, and a label set beside the shaft
+                // there had to be clamped back on top of it — which cut the first character
+                // off against the arrow.
+                let head = along > 0
                 context.draw(Text(selected.shortHeadwind)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(colour),
-                             at: CGPoint(x: min(origin.x + 9, size.width - 54),
-                                         y: (origin.y + tip.y) / 2),
-                             anchor: .leading)
+                             at: CGPoint(x: min(max(origin.x, 34), size.width - 34),
+                                         y: tip.y + (head ? 11 : -11)),
+                             anchor: head ? .top : .bottom)
             }
 
             // Across it, blowing towards the side it pushes you.
