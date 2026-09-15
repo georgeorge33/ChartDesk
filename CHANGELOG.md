@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0-rc.6
+
+*A candidate's notes list only what that candidate adds. The full 1.0.0 notes are below.*
+
+- **The clock moves up beside the airport code** in the chart list, out of the sidebar's bottom
+  corner, and now shows **local time and its offset** next to Zulu: `23:11:57 Z  00:11  (+1)`.
+- Local is this Mac's time zone, which is the only one the app can know — the time at the
+  airport in front of you would need a zone for every ICAO code, and nothing here carries one.
+- Zulu keeps its seconds and local runs to the minute. Zulu is the clock you time a report
+  against; local only has to say roughly where the day is.
+- The bottom corner of the sidebar now holds nothing but the release-candidate badge, and
+  disappears entirely on a final build.
+
 ## 1.0.0
 
 **Taxi routing is gone**
@@ -108,9 +121,10 @@
 - **A release candidate says so.** A build whose version carries a pre-release suffix prints it
   in orange beside the clock, and the startup screen shows it in orange too. A candidate that
   looks exactly like the real thing is how a bug gets reported against the wrong build.
-- A **UTC clock** in the bottom corner of the window, `hh:mm:ss Z`. Every clearance, report and
-  OFP is in Zulu and the menu bar clock is not. It is a `TimelineView`, so it costs nothing
-  while the window is hidden.
+- A **UTC clock beside the airport code** in the chart list, with this Mac's local time and its
+  offset from UTC: `23:11:57 Z  00:11  (+1)`. Every clearance, report and OFP is in Zulu and the
+  menu bar clock is not. It is a `TimelineView`, so it costs nothing while the window is
+  hidden.
 
 **Weather and ATIS**
 

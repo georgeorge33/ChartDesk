@@ -60,12 +60,22 @@ jobs:
       - name: Release notes
         id: notes
         run: |
-          VERSION="${{ steps.version.outputs.base }}"
-          awk -v want="## ${VERSION}" '
-            $0 == want { found = 1; next }
-            found && /^## / { exit }
-            found { print }
-          ' CHANGELOG.md > notes.md
+          extract() {
+            awk -v want="## $1" '
+              $0 == want { found = 1; next }
+              found && /^## / { exit }
+              found { print }
+            ' CHANGELOG.md
+          }
+
+          # A candidate's notes should be what that candidate adds, so its own section wins
+          # when there is one. Without it every candidate carried the whole release's
+          # changelog, which buries the one thing a tester needs to look at. A final release
+          # has no suffix, so it takes the release section as before.
+          extract "${{ steps.version.outputs.version }}" > notes.md
+          if [ ! -s notes.md ]; then
+            extract "${{ steps.version.outputs.base }}" > notes.md
+          fi
           if [ -s notes.md ]; then
             echo "have_notes=yes" >> "$GITHUB_OUTPUT"
           else

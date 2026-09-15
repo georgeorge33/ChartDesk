@@ -118,6 +118,7 @@ struct ChartListColumn: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                ZuluClock()
             }
 
             if !isPinnedList {

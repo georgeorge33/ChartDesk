@@ -168,9 +168,11 @@ struct SidebarView: View {
             Divider()
                 .overlay(Color.ngSeparator)
             footer
-            Divider()
-                .overlay(Color.ngSeparator)
-            bottomBar
+            if SidebarView.candidateVersion != nil {
+                Divider()
+                    .overlay(Color.ngSeparator)
+                candidateBar
+            }
         }
         .frame(minWidth: 200)
         .background(Color.ngWindow)
@@ -189,23 +191,19 @@ struct SidebarView: View {
         }
     }
 
-    /// The clock, and the version when this build is a release candidate: a pre-release that
-    /// looks exactly like the real thing is how you end up reporting a bug from the wrong one.
-    private var bottomBar: some View {
+    /// The version, when this build is a release candidate: a pre-release that looks exactly
+    /// like the real thing is how you end up reporting a bug from the wrong one.
+    private var candidateBar: some View {
         HStack(spacing: 8) {
-            ZuluClock()
+            Text(SidebarView.candidateVersion ?? "")
+                .font(.caption2.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color.orange)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.14), in: Capsule(style: .continuous))
+                .help("This is a release candidate, not a final release")
             Spacer(minLength: 0)
-            if let candidate = SidebarView.candidateVersion {
-                Text(candidate)
-                    .font(.caption2.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.14),
-                                in: Capsule(style: .continuous))
-                    .help("This is a release candidate, not a final release")
-            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -263,44 +261,6 @@ struct SidebarView: View {
         guard let first = filteredAirports.first else { return }
         browser.sidebarSelection = .airport(first.code)
     }
-}
-
-// MARK: - Zulu clock
-
-/// The UTC clock in the bottom corner of the window.
-///
-/// Every clearance, METAR, TAF and OFP is in Zulu and the menu bar clock is not, so the
-/// conversion is a small recurring cost worth removing. It sits on its own line rather than
-/// sharing the folder row, which already gives up space to the stale-charts warning.
-///
-/// `TimelineView` rather than a `Timer`: SwiftUI stops asking for dates while the view is off
-/// screen, so an occluded or minimised window costs nothing.
-private struct ZuluClock: View {
-
-    var body: some View {
-        // Anchored to the current whole second, so it ticks on the second rather than whenever
-        // the view happened to be built.
-        let start = Date(timeIntervalSinceReferenceDate:
-                            Date().timeIntervalSinceReferenceDate.rounded(.down))
-
-        TimelineView(.periodic(from: start, by: 1)) { context in
-            Text(ZuluClock.formatter.string(from: context.date))
-                .font(.callout)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
-        .help("Current UTC time")
-    }
-
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        // A 24-hour aviation clock, not a localised time of day: the format is fixed whatever
-        // the Mac's region is set to.
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "HH:mm:ss 'Z'"
-        return formatter
-    }()
 }
 
 // MARK: - Rows
