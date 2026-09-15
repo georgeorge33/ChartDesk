@@ -42,7 +42,7 @@ struct ContentView: View {
             }
         }
         .task {
-            try? await Task.sleep(for: .milliseconds(850))
+            try? await Task.sleep(for: .milliseconds(2000))
             minimumShown = true
             finishStartingIfReady()
         }

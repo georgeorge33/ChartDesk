@@ -4,8 +4,8 @@ import SwiftUI
 /// What you see for the first moment after launching, over the top of everything.
 ///
 /// It is held until the library's first scan finishes, so a big folder no longer opens onto an
-/// empty sidebar that fills in a beat later, and for a short minimum beyond that — a splash
-/// that flashes for a tenth of a second reads as a glitch rather than a start.
+/// empty sidebar that fills in a beat later, and for two seconds beyond that — long enough to
+/// read, rather than a flash that registers as a glitch.
 struct StartupScreen: View {
 
     /// What is being waited for, if anything.

@@ -35,9 +35,9 @@
 **A startup screen**
 
 - The app opens on its icon, its version and the caution line while the library's first scan
-  runs, so a big folder no longer opens onto an empty sidebar that fills in a beat later. It
-  holds for a readable minimum beyond that — a splash that flashes for a tenth of a second
-  reads as a glitch rather than a start.
+  runs, so a big folder no longer opens onto an empty sidebar that fills in a beat later, and
+  for two seconds beyond that — long enough to read, rather than a flash that registers as a
+  glitch.
 - The caution line is red on both the startup screen and the welcome screen. A chart browser
   for a simulator is exactly the thing somebody might one day reach for in a cockpit.
 
