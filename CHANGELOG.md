@@ -2,7 +2,8 @@
 
 ## 1.0.0-rc.6
 
-*A candidate's notes list only what that candidate adds. The full 1.0.0 notes are below.*
+*A candidate's notes list only what that candidate adds. The full 1.0.0 notes come with the
+release itself.*
 
 - **The clock moves up beside the airport code** in the chart list, out of the sidebar's bottom
   corner, and now shows **local time and its offset** next to Zulu: `23:11:57 Z  00:11  (+1)`.
