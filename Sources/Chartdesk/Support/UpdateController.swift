@@ -85,12 +85,7 @@ final class UpdateController: ObservableObject {
                     if manual { self.report(text) }
 
                 case .none:
-                    if manual {
-                        self.report("No published release yet. Every release so far is marked "
-                                    + "as a pre-release, and those are not offered "
-                                    + "automatically — install one by hand with: "
-                                    + "gh release download <tag>")
-                    }
+                    if manual { self.report("No releases have been published yet.") }
 
                 case .success(let info):
                     if Self.isNewer(info.version, than: self.currentVersion) {
@@ -164,13 +159,19 @@ final class UpdateController: ObservableObject {
             let right = index < old.count ? old[index] : 0
             if left != right { return left > right }
         }
-        // Same numbers: a release beats a candidate for it, so 1.0.0 is offered to someone
-        // running 1.0.0-rc.1 rather than leaving them on the candidate for good.
-        return isCandidate(current) && !isCandidate(candidate)
+        // Same numbers: rank the suffixes. A final release outranks every candidate for it,
+        // and a later candidate outranks an earlier one, so rc.2 reaches rc.1.
+        return rank(candidate) > rank(current)
     }
 
-    private static func isCandidate(_ version: String) -> Bool {
-        version.contains("-")
+    /// How far along a version is within its own release number: a final release is top, and a
+    /// candidate is ordered by the number in its suffix.
+    private static func rank(_ version: String) -> Int {
+        let pieces = version.split(separator: "-")
+        guard pieces.count > 1 else { return .max }
+        let tail = pieces.dropFirst().joined(separator: "-")
+        let digits = tail.split(whereSeparator: { !$0.isNumber })
+        return digits.last.flatMap { Int($0) } ?? 0
     }
 
     /// The numeric part only. A candidate's suffix is dropped rather than parsed, so
@@ -194,22 +195,34 @@ final class UpdateController: ObservableObject {
         case failure(String)
     }
 
-    /// The newest *published* release, which deliberately excludes pre-releases: a candidate
-    /// is for whoever asks for it by name, not for everybody's update check.
+    /// The highest-numbered release, pre-releases and candidates included.
+    ///
+    /// `gh release view` with no tag would be shorter, but it means the newest release that is
+    /// *not* a pre-release — and every release so far is one, candidates included, so it finds
+    /// nothing at all. Listing instead is what makes a candidate installable.
+    ///
+    /// Picked by version rather than by date, so a patch cut after a candidate cannot look
+    /// like the newest thing going, and by the same comparison the caller then applies.
     private static func latestRelease(gh: String, repo: String) -> CheckOutcome {
-        let result = run(gh, ["release", "view", "--repo", repo, "--json", "tagName"])
+        let result = run(gh, ["release", "list", "--repo", repo,
+                              "--limit", "30", "--json", "tagName,isDraft"])
         guard result.status == 0 else {
-            // Nothing published yet reads as an error from `gh`, but it is an ordinary state
-            // and saying "release not found" out loud makes the menu item look broken.
-            if result.error.localizedCaseInsensitiveContains("not found") { return .none }
             return .failure(result.error.isEmpty ? "Could not reach GitHub." : result.error)
         }
         guard let data = result.output.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tag = object["tagName"] as? String, !tag.isEmpty else {
+              let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+        else {
             return .failure("Could not read the release information from GitHub.")
         }
-        return .success(ReleaseInfo(tag: tag, version: normalize(tag)))
+
+        let tags = entries
+            .filter { ($0["isDraft"] as? Bool) != true }
+            .compactMap { $0["tagName"] as? String }
+            .filter { !$0.isEmpty }
+        guard let newest = tags.max(by: { isNewer(normalize($1), than: normalize($0)) }) else {
+            return .none
+        }
+        return .success(ReleaseInfo(tag: newest, version: normalize(newest)))
     }
 
     private static func stage(gh: String, repo: String, tag: String) -> StageOutcome {

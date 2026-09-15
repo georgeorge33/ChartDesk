@@ -15,16 +15,25 @@
 - `georeference.json` and the `taxi/` folder under `~/Library/Application Support/Chartdesk/`
   are no longer read. Nothing deletes them for you; they are yours to remove.
 
+**A startup screen**
+
+- The app opens on its icon, its version and the caution line while the library's first scan
+  runs, so a big folder no longer opens onto an empty sidebar that fills in a beat later. It
+  holds for a readable minimum beyond that — a splash that flashes for a tenth of a second
+  reads as a glitch rather than a start.
+- The caution line is red on both the startup screen and the welcome screen. A chart browser
+  for a simulator is exactly the thing somebody might one day reach for in a cockpit.
+
 **Every release before this one is marked as a pre-release**
 
-- 0.9 through 0.14.0 are now flagged as pre-releases on GitHub, which is what they were: this
-  is the first release that is not.
-- That leaves nothing published for an update check to find until 1.0.0 itself ships, so the
-  check says so plainly instead of reporting `release not found` and looking broken. Candidates
-  and pre-releases are still never offered automatically — install one by name with
-  `gh release download <tag>`.
-- `./update.sh` falls through to the newest green CI build, which is the behaviour it always
-  had when there was no release to install.
+- 0.9 through 0.14.0 are now flagged as pre-releases on GitHub, which is what they were.
+- **The update check follows pre-releases and candidates.** It used to ask for the newest
+  release that was *not* a pre-release, which now means it found nothing at all. It lists them
+  instead and takes the highest version — by version rather than by date, so a patch cut after
+  a candidate cannot look like the newest thing going.
+- Candidates are ordered against each other too. `1.0.0-rc.1` used to parse as though `rc.1`
+  were a fourth version component, which sorted it *above* `1.0.0`; a release now outranks
+  every candidate for it, and `rc.10` outranks `rc.9` rather than losing on string order.
 
 **Now requires macOS 26**
 

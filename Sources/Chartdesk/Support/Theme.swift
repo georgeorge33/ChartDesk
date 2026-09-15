@@ -27,6 +27,9 @@ enum Theme {
     static let accentText       = rgb(0x30B8F0)
     /// Backdrop behind a chart.
     static let canvas           = rgb(0x000810)
+    /// The "not for real-world navigation" red. Brighter than the system red, which goes
+    /// muddy at caption sizes against this navy.
+    static let warning          = rgb(0xFF5A5A)
 
     /// A tint per chart category, matching the colour coding Navigraph Charts uses on its own
     /// tab strip. Bright enough to read as a label on the navy, and dark text sits on top of
@@ -53,4 +56,5 @@ extension Color {
     static let ngSeparator   = Color(nsColor: Theme.separator)
     static let ngAccent      = Color(nsColor: Theme.accent)
     static let ngAccentText  = Color(nsColor: Theme.accentText)
+    static let ngWarning     = Color(nsColor: Theme.warning)
 }

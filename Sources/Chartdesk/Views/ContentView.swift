@@ -11,6 +11,11 @@ struct ContentView: View {
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
+    /// The splash, up until the first scan is done and a readable minimum has passed. Two
+    /// pieces of state rather than one so whichever finishes second dismisses it.
+    @State private var isStarting = true
+    @State private var minimumShown = false
+
     var body: some View {
         Group {
             if library.hasLibrary {
@@ -30,6 +35,20 @@ struct ContentView: View {
             }
         }
         .background(WindowDragEnabler())
+        .overlay {
+            if isStarting {
+                StartupScreen(status: library.isScanning ? "Scanning your charts…" : "")
+                    .transition(.opacity)
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(850))
+            minimumShown = true
+            finishStartingIfReady()
+        }
+        .onChange(of: library.isScanning) { _, scanning in
+            if !scanning { finishStartingIfReady() }
+        }
         .onAppear {
             restoreSelection()
             updater.checkOnLaunchIfWanted()
@@ -52,6 +71,11 @@ struct ContentView: View {
         } message: {
             Text(updater.message ?? "")
         }
+    }
+
+    private func finishStartingIfReady() {
+        guard isStarting, minimumShown, !library.isScanning else { return }
+        withAnimation(.easeOut(duration: 0.28)) { isStarting = false }
     }
 
     /// Picks something sensible to show after a scan: the chart you were last on, else the
@@ -161,8 +185,8 @@ struct WelcomeView: View {
             Spacer(minLength: 0)
 
             Text("For flight simulation use. Not for real-world navigation.")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Color.ngWarning)
                 .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
