@@ -10,6 +10,7 @@ struct ChartListColumn: View {
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var annotations: AnnotationStore
+    @EnvironmentObject private var flight: FlightPlanStore
 
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
@@ -22,7 +23,23 @@ struct ChartListColumn: View {
     private var baseCharts: [Chart] {
         if isPinnedList { return library.pinnedCharts }
         guard let airport = selectedAirport else { return [] }
-        return airport.chartList(in: browser.category)
+        return prioritised(airport.chartList(in: browser.category))
+    }
+
+    /// The runway SimBrief planned here, if this airport is in the loaded flight.
+    private var plannedRunway: String? {
+        guard let code = selectedAirport?.code else { return nil }
+        return flight.plannedRunway(at: code)
+    }
+
+    /// Floats the plates for the planned runway to the top, keeping the existing order within
+    /// each group. Eleven approaches at a big field is a lot to read through when the flight
+    /// plan already says which one you want.
+    private func prioritised(_ list: [Chart]) -> [Chart] {
+        guard let planned = plannedRunway else { return list }
+        let matching = list.filter { $0.serves(runway: planned) }
+        guard !matching.isEmpty, matching.count < list.count else { return list }
+        return matching + list.filter { !$0.serves(runway: planned) }
     }
 
     private var charts: [Chart] {
@@ -69,6 +86,8 @@ struct ChartListColumn: View {
     private var headerSubtitle: String? {
         if isPinnedList { return "\(library.pinnedCharts.count) charts" }
         guard let airport = selectedAirport else { return nil }
+        // The reordering is invisible unless it says so, and then it explains itself.
+        if let planned = plannedRunway { return "RWY \(planned) planned" }
         if let name = airport.displaySubtitle, !name.isEmpty { return name }
         return "\(airport.charts.count) charts"
     }
@@ -128,7 +147,8 @@ struct ChartListColumn: View {
     private func row(for chart: Chart, showsAirport: Bool) -> some View {
         ChartRow(chart: chart,
                  showsAirport: showsAirport,
-                 isPinned: library.isPinned(chart)) {
+                 isPinned: library.isPinned(chart),
+                 servesPlannedRunway: plannedRunway.map { chart.serves(runway: $0) } ?? false) {
             library.togglePin(chart)
         }
         .tag(chart.id)
@@ -216,6 +236,8 @@ private struct ChartRow: View {
     let chart: Chart
     let showsAirport: Bool
     let isPinned: Bool
+    /// Matches the runway the flight plan named, so the badge stands out from the rest.
+    let servesPlannedRunway: Bool
     let togglePin: () -> Void
 
     @State private var isHovering = false
@@ -242,6 +264,8 @@ private struct ChartRow: View {
                         .foregroundStyle(chart.category.tint)
                     if let runway = chart.runway {
                         Text("RWY \(runway)")
+                            .fontWeight(servesPlannedRunway ? .semibold : .regular)
+                            .foregroundStyle(servesPlannedRunway ? Color.ngAccentText : Color.secondary)
                     }
                 }
                 .font(.caption)

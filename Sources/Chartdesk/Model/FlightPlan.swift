@@ -262,6 +262,15 @@ final class FlightPlanStore: ObservableObject {
         return url
     }
 
+    /// The runway SimBrief planned at this airport, when it is part of the loaded flight.
+    func plannedRunway(at icao: String) -> String? {
+        guard let plan = plan else { return nil }
+        let code = icao.uppercased()
+        return plan.airfields.first { field in
+            field.icao == code && !(field.runway ?? "").isEmpty
+        }?.runway
+    }
+
     func clear() {
         plan = nil
         problem = nil

@@ -57,6 +57,11 @@ orange, so Settings ▸ Viewing has *Remove colour when inverted* for a clean ne
 **Pinned** charts sit at the top of the sidebar, grouped by airport — your working set for a
 flight. Recent airports follow underneath.
 
+When a SimBrief flight is loaded, plates for the **planned runway float to the top** of the list
+and their runway badge is highlighted — the header says which runway, so the ordering explains
+itself. The sidebar footer warns when the newest file in your library is more than 60 days old,
+which is two LIDO cycles.
+
 Export and print use exactly what you're looking at: rotation, night mode, and anything you've
 drawn on.
 

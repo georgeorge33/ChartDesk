@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.14.0
+
+**Charts for the runway you're actually using**
+
+- With a SimBrief flight loaded, plates for the planned runway float to the top of the list and
+  their runway badge is highlighted. Eleven approaches at a big field is a lot to read through
+  when the flight plan already says which one you want.
+- The header says "RWY 04R planned", so the reordering explains itself rather than looking like
+  an arbitrary sort.
+- Matching is forgiving in the way charts actually are: 04 and 4 agree, a plate charted for
+  "04" matches a planned 04R because LIDO issues one plate for both sides, and a plan naming
+  "04" matches the plate for 04R. Reciprocals don't match — 09 is not 27.
+- Nothing moves if no plate matches, or if they all do.
+
+**A warning for stale charts**
+
+- The sidebar footer shows the age of your chart library when the newest file in it is over 60
+  days old — two LIDO cycles, so no longer a near miss. Flying a stale set is the kind of
+  mistake you only notice afterwards.
+- The date is the newest file's, not the effective date printed on the plate, which would mean
+  reading it off the image. It moves whenever you update a set, which is what matters.
+
+**Fixed**
+
+- `webp` files were being skipped. The README listed them as supported but the scanner's
+  extension list did not, and ImageIO decodes them perfectly well.
+
 ## 0.13.0
 
 **Zoom and pan**

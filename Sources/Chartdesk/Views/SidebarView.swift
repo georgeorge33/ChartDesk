@@ -154,6 +154,18 @@ struct SidebarView: View {
                 .help(library.folderPath)
             Spacer(minLength: 0)
 
+            // Flying a stale chart set is the kind of mistake you only notice afterwards, so
+            // the age sits next to the folder rather than behind a menu.
+            if library.chartsAreStale, let days = library.chartAgeInDays {
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("\(days) days old")
+                }
+                .foregroundStyle(Color.orange)
+                .help("The newest file in your chart library is \(days) days old. "
+                      + "A LIDO cycle is 28 days, so this set is likely out of date.")
+            }
+
             if library.isScanning {
                 ProgressView()
                     .progressViewStyle(.circular)

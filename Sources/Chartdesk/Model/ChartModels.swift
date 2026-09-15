@@ -106,6 +106,27 @@ struct Chart: Identifiable, Hashable {
         return number * 10 + side
     }
 
+    /// Whether this plate serves a given runway.
+    ///
+    /// Exact where both name a side, and a match where either omits one: LIDO commonly issues
+    /// a single plate for "04" covering both 04L and 04R, and a flight plan naming "04" should
+    /// still surface the plate for 04R. Numbers are compared numerically so 04 and 4 agree.
+    func serves(runway planned: String) -> Bool {
+        guard let mine = Chart.runwayParts(runway), let theirs = Chart.runwayParts(planned) else {
+            return false
+        }
+        guard mine.number == theirs.number else { return false }
+        return mine.side == theirs.side || mine.side.isEmpty || theirs.side.isEmpty
+    }
+
+    private static func runwayParts(_ value: String?) -> (number: Int, side: String)? {
+        guard let value = value?.trimmingCharacters(in: .whitespaces).uppercased(),
+              !value.isEmpty else { return nil }
+        let digits = value.prefix { $0.isNumber }
+        guard let number = Int(digits) else { return nil }
+        return (number, String(value.dropFirst(digits.count)))
+    }
+
     func withCategory(_ newCategory: ChartCategory) -> Chart {
         Chart(id: id,
               url: url,

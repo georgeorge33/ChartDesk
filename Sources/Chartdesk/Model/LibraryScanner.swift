@@ -4,14 +4,21 @@ struct ScanResult {
     let airports: [Airport]
     let chartsByID: [String: Chart]
     let fileCount: Int
+    /// Newest file in the library, used to warn when a chart set has gone stale. A file date
+    /// is a proxy for the plate's effective date — the real one is printed on the chart and
+    /// would need reading off the image — but it moves when you update a set, which is what
+    /// matters here.
+    let newestFileDate: Date?
 }
 
 /// Walks the chart folder and builds the airport/chart tree. Pure and synchronous, so it
 /// can run on a background queue; it never writes to the library folder.
 enum LibraryScanner {
 
+    /// Everything ImageIO can decode that a chart is likely to arrive as. `webp` was listed in
+    /// the README but missing here, so those files were being skipped silently.
     static let imageExtensions: Set<String> = [
-        "png", "jpg", "jpeg", "tif", "tiff", "gif", "bmp", "heic"
+        "png", "jpg", "jpeg", "tif", "tiff", "gif", "bmp", "heic", "webp"
     ]
 
     static func scan(root: URL, overrides: [String: ChartCategory]) -> ScanResult {
@@ -20,26 +27,29 @@ enum LibraryScanner {
         let rootComponents = standardRoot.pathComponents
         let rootName = standardRoot.lastPathComponent
 
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey]
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
         guard let enumerator = fileManager.enumerator(
             at: standardRoot,
             includingPropertiesForKeys: keys,
             options: [.skipsHiddenFiles, .skipsPackageDescendants],
             errorHandler: { _, _ in true }
         ) else {
-            return ScanResult(airports: [], chartsByID: [:], fileCount: 0)
+            return ScanResult(airports: [], chartsByID: [:], fileCount: 0, newestFileDate: nil)
         }
 
         var charts: [Chart] = []
         var fileCount = 0
+        var newest: Date?
 
         for case let url as URL in enumerator {
             guard imageExtensions.contains(url.pathExtension.lowercased()) else { continue }
-            if let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
-               values.isRegularFile == false {
-                continue
-            }
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+            if values?.isRegularFile == false { continue }
             fileCount += 1
+            if let modified = values?.contentModificationDate,
+               modified > (newest ?? .distantPast) {
+                newest = modified
+            }
 
             let components = relativeComponents(of: url, rootComponents: rootComponents)
             let identifier = components.joined(separator: "/")
@@ -67,7 +77,8 @@ enum LibraryScanner {
         return ScanResult(
             airports: group(charts: charts),
             chartsByID: Dictionary(charts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-            fileCount: fileCount
+            fileCount: fileCount,
+            newestFileDate: newest
         )
     }
 

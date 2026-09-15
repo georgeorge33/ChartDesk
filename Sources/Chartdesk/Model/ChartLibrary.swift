@@ -100,11 +100,25 @@ final class ChartLibrary: ObservableObject {
     @Published private(set) var airports: [Airport] = []
     @Published private(set) var isScanning = false
     @Published private(set) var fileCount = 0
+    @Published private(set) var newestChartDate: Date?
     /// Bumped after every completed scan, so views can react cheaply.
     @Published private(set) var scanID = 0
     @Published private(set) var pinnedIDs: Set<String> = []
     @Published private(set) var recentAirportCodes: [String] = []
     @Published private(set) var categoryOverrides: [String: ChartCategory] = [:]
+
+    /// How stale a chart set has to be before it is worth saying so. A LIDO cycle is 28 days,
+    /// so 60 means two cycles have passed and it is no longer a near miss.
+    static let staleAfterDays = 60
+
+    var chartAgeInDays: Int? {
+        guard let newest = newestChartDate else { return nil }
+        return Calendar.current.dateComponents([.day], from: newest, to: Date()).day
+    }
+
+    var chartsAreStale: Bool {
+        (chartAgeInDays ?? 0) > ChartLibrary.staleAfterDays
+    }
 
     private var chartsByID: [String: Chart] = [:]
     private var scanGeneration = 0
@@ -202,6 +216,7 @@ final class ChartLibrary: ObservableObject {
                 self.airports = result.airports
                 self.chartsByID = result.chartsByID
                 self.fileCount = result.fileCount
+                self.newestChartDate = result.newestFileDate
                 self.isScanning = false
                 self.scanID += 1
             }
