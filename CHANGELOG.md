@@ -2,6 +2,23 @@
 
 ## 0.15.0
 
+**Wind and crosswind**
+
+- New **Weather window** (⇧⌘W) for looking up any airport, not just the one whose charts you
+  have open. Type an ICAO and it fetches.
+- A wind rose draws your runways as rays with the wind blowing in from its bearing, and a table
+  gives the head and cross component for each. Click a row to pick it out on the rose.
+- **Magnetic variation is a field, and it matters.** METAR reports wind against true north while
+  a runway designator is magnetic, so at Boston's 15°W the two references differ by 15°. On
+  runway 04R in a 050/20 wind that is 3.5 knots of crosswind ignored versus 8.5 knots resolved
+  — a factor of two and a half. The window says so rather than quietly computing the wrong one.
+- Runways and variation are remembered per airport, since neither changes between flights.
+- Gust crosswind is computed too, and shown on hover.
+- A calm or variable wind produces no components rather than a confident zero, and says which
+  it was.
+- The star marks the most headwind of the runways listed. It is not a recommendation — Boston
+  often runs 04L/04R when the wind favours 09, and 09 is frequently closed.
+
 **Weather and ATIS**
 
 - A new panel at the foot of the chart list shows the selected airport's METAR, TAF, real ATIS

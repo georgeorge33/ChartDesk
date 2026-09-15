@@ -129,20 +129,33 @@ final class WeatherStore: ObservableObject {
     @Published var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: DefaultsKey.weatherEnabled)
-            if isEnabled { fetchIfStale() } 
+            if isEnabled { fetchIfStale(icao) }
         }
     }
 
     @Published var isExpanded: Bool {
         didSet {
             UserDefaults.standard.set(isExpanded, forKey: DefaultsKey.weatherExpanded)
-            if isExpanded { fetchIfStale() }
+            if isExpanded, isEnabled { fetchIfStale(icao) }
         }
     }
 
+    /// The airport the chart list is showing.
     @Published private(set) var icao: String?
+    /// The airport the Weather window is looking at, which need not be the same one.
+    @Published private(set) var lookupICAO: String?
     @Published private(set) var isFetching = false
     @Published private(set) var problem: String?
+
+    /// Runways the user cares about, per airport, and the local magnetic variation. Typed once
+    /// and remembered, because neither changes between flights.
+    @Published var runwayLists: [String: String] {
+        didSet { UserDefaults.standard.set(runwayLists, forKey: DefaultsKey.weatherRunways) }
+    }
+
+    @Published var variations: [String: Double] {
+        didSet { UserDefaults.standard.set(variations, forKey: DefaultsKey.weatherVariation) }
+    }
 
     private var cache: [String: AirportWeather] = [:]
     /// The VATSIM feed covers every airport at once, so it is fetched once and shared.
@@ -159,45 +172,85 @@ final class WeatherStore: ObservableObject {
                                      DefaultsKey.weatherExpanded: true])
         isEnabled = defaults.bool(forKey: DefaultsKey.weatherEnabled)
         isExpanded = defaults.bool(forKey: DefaultsKey.weatherExpanded)
+        runwayLists = defaults.dictionary(forKey: DefaultsKey.weatherRunways) as? [String: String] ?? [:]
+        variations = defaults.dictionary(forKey: DefaultsKey.weatherVariation) as? [String: Double] ?? [:]
     }
 
-    var weather: AirportWeather? {
-        guard let icao = icao else { return nil }
-        return cache[icao]
+    func weather(for code: String?) -> AirportWeather? {
+        guard let code = code else { return nil }
+        return cache[code.uppercased()]
     }
 
-    var age: String? {
-        guard let fetched = weather?.fetchedAt else { return nil }
+    var weather: AirportWeather? { weather(for: icao) }
+
+    func age(for code: String?) -> String? {
+        guard let fetched = weather(for: code)?.fetchedAt else { return nil }
         let minutes = Int(Date().timeIntervalSince(fetched) / 60)
         return minutes < 1 ? "just now" : "\(minutes)m ago"
     }
 
-    /// Called when the selected airport changes.
+    var age: String? { age(for: icao) }
+
+    // MARK: Runways and variation
+
+    func runwayList(for code: String?) -> String {
+        guard let code = code?.uppercased() else { return "" }
+        return runwayLists[code] ?? ""
+    }
+
+    func setRunwayList(_ text: String, for code: String?) {
+        guard let code = code?.uppercased() else { return }
+        runwayLists[code] = text
+    }
+
+    func variation(for code: String?) -> Double {
+        guard let code = code?.uppercased() else { return 0 }
+        return variations[code] ?? 0
+    }
+
+    func setVariation(_ degrees: Double, for code: String?) {
+        guard let code = code?.uppercased() else { return }
+        variations[code] = degrees
+    }
+
+    // MARK: Fetching
+
+    /// Called when the chart list's airport changes. Respects the panel being collapsed.
     func show(icao newICAO: String?) {
         let code = newICAO?.uppercased()
         guard code != icao else { return }
         icao = code
         problem = nil
-        fetchIfStale()
+        guard isEnabled, isExpanded else { return }
+        fetchIfStale(code)
     }
 
-    func refresh() {
-        guard let icao = icao else { return }
-        cache[icao] = nil
+    /// Called by the Weather window, which is its own reason to fetch — the panel being
+    /// collapsed says nothing about whether the window wants data.
+    func lookUp(_ code: String?) {
+        let wanted = code?.uppercased()
+        lookupICAO = wanted
+        problem = nil
+        fetchIfStale(wanted)
+    }
+
+    func refresh(_ code: String? = nil) {
+        guard let target = (code ?? icao)?.uppercased() else { return }
+        cache[target] = nil
         vatsimFeed = nil
-        fetch(icao)
+        fetch(target)
     }
 
-    private func fetchIfStale() {
-        guard isEnabled, isExpanded, let icao = icao else { return }
-        if let existing = cache[icao],
+    private func fetchIfStale(_ code: String?) {
+        guard let code = code else { return }
+        if let existing = cache[code],
            Date().timeIntervalSince(existing.fetchedAt) < Self.cacheSeconds { return }
-        fetch(icao)
+        fetch(code)
     }
 
     private func fetch(_ code: String) {
-        guard isEnabled, isExpanded,
-              code.count == 4, code != Airport.unsortedCode else { return }
+        guard code.count == 4, code != Airport.unsortedCode,
+              code.allSatisfy({ $0.isLetter || $0.isNumber }) else { return }
 
         generation += 1
         let token = generation

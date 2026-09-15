@@ -164,6 +164,11 @@ struct ChartdeskCommands: Commands {
 
             Divider()
 
+            Button("Weather…") {
+                NotificationCenter.default.post(name: .showWeather, object: nil)
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+
             Button("Performance…") {
                 NotificationCenter.default.post(name: .showPerformance, object: nil)
             }

@@ -52,6 +52,16 @@ struct ChartdeskApp: App {
         }
         .defaultSize(width: 400, height: 700)
 
+        Window("Weather", id: "weather") {
+            WeatherWindow()
+                .environmentObject(weather)
+                .environmentObject(library)
+                .environmentObject(browser)
+                .preferredColorScheme(.dark)
+                .tint(.ngAccent)
+        }
+        .defaultSize(width: 560, height: 620)
+
         Settings {
             SettingsView()
                 .environmentObject(library)

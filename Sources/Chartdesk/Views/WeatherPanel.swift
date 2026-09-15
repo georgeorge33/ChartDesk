@@ -55,7 +55,7 @@ struct WeatherPanel: View {
                 ProgressView().progressViewStyle(.circular).controlSize(.mini)
             } else if weather.isExpanded {
                 Button {
-                    weather.refresh()
+                    weather.refresh(icao)
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }

@@ -109,6 +109,20 @@ and crane advisories, which would push the two things you actually glance at out
 Results are cached for a minute, which keeps a Refresh meaningful and stays well inside
 VATSIM's fifteen-second polling guidance.
 
+### Wind and crosswind
+
+**⇧⌘W** opens a Weather window for any airport, with the wind drawn against the runways you
+use. Type the runways once per airport and it remembers them; each one gets its head and cross
+component, and the rose shows the wind blowing in from its bearing.
+
+> [!IMPORTANT]
+> Set the **variation** from the chart. METAR wind is referenced to true north while runway
+> numbers are magnetic, so at Boston's 15°W the two differ by 15°. On runway 04R in a 050/20
+> wind that is the difference between 3.5 and 8.5 knots of crosswind.
+
+The star marks the most headwind of the runways you listed. It is not what ATC will give you —
+Boston often runs 04L/04R when the wind favours 09, and 09 is frequently closed.
+
 ---
 
 ## Marking up a chart
