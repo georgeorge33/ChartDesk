@@ -93,6 +93,26 @@ final class ChartViewerController: ObservableObject {
         min(max(value, scrollView.minMagnification), scrollView.maxMagnification)
     }
 
+    /// Zooms about a point in the document, so the feature under the pointer stays under it.
+    func zoom(by factor: CGFloat, at point: NSPoint) {
+        guard let scrollView = scrollView, scrollView.documentView != nil,
+              factor > 0, factor.isFinite else { return }
+        scrollView.setMagnification(clamp(magnification * factor, in: scrollView),
+                                    centeredAt: point)
+        magnification = scrollView.magnification
+    }
+
+    /// Drags the plate under the pointer. `delta` is in screen points.
+    func pan(by delta: NSSize) {
+        guard let scrollView = scrollView, scrollView.documentView != nil else { return }
+        let scale = max(scrollView.magnification, 0.0001)
+        var origin = scrollView.contentView.bounds.origin
+        origin.x -= delta.width / scale
+        origin.y += delta.height / scale
+        scrollView.contentView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
     private func setMagnification(_ target: CGFloat) {
         guard let scrollView = scrollView, scrollView.documentView != nil else { return }
         let visible = scrollView.documentVisibleRect
@@ -138,6 +158,10 @@ final class CenteringClipView: NSClipView {
 final class FlippedImageView: NSImageView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
+
+    /// Transparent to the mouse. The plate is not interactive in itself — dragging it pans and
+    /// double-clicking it toggles zoom, both of which belong to the document view underneath.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// The scroll view's document: the plate, with the annotation layer pinned exactly on top of
@@ -170,6 +194,40 @@ final class ChartDocumentView: NSView {
         fatalError("init(coder:) is not used")
     }
 
+    var onPan: ((NSSize) -> Void)?
+    var onDoubleClick: (() -> Void)?
+
+    private var panAnchor: NSPoint?
+
+    override func mouseDown(with event: NSEvent) {
+        // Handled here rather than with a click recogniser, which would have to delay every
+        // drag to find out whether a second click was coming.
+        if event.clickCount == 2 {
+            panAnchor = nil
+            onDoubleClick?()
+            return
+        }
+        panAnchor = event.locationInWindow
+        NSCursor.closedHand.push()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let anchor = panAnchor else { return }
+        let now = event.locationInWindow
+        panAnchor = now
+        onPan?(NSSize(width: now.x - anchor.x, height: now.y - anchor.y))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard panAnchor != nil else { return }
+        panAnchor = nil
+        NSCursor.pop()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
     func resize(to size: CGSize) {
         frame = NSRect(origin: .zero, size: size)
         imageView.frame = bounds
@@ -178,9 +236,24 @@ final class ChartDocumentView: NSView {
     }
 }
 
-/// A scroll view that does not hand its drags to the window.
+/// A scroll view where the wheel zooms instead of scrolling; panning is a drag.
 final class ChartScrollView: NSScrollView {
+
     override var mouseDownCanMoveWindow: Bool { false }
+
+    var onScrollZoom: ((CGFloat, NSPoint) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard delta != 0 else { return }
+
+        // A trackpad reports many small precise deltas where a wheel reports a few large
+        // ones, so each needs its own sensitivity to feel the same.
+        let step = event.hasPreciseScrollingDeltas ? delta * 0.004 : delta * 0.06
+        let point = documentView?.convert(event.locationInWindow, from: nil)
+            ?? NSPoint(x: documentVisibleRect.midX, y: documentVisibleRect.midY)
+        onScrollZoom?(exp(step), point)
+    }
 }
 
 // MARK: - Canvas
@@ -241,12 +314,13 @@ struct ChartCanvas: NSViewRepresentable {
         let document = ChartDocumentView()
         scrollView.documentView = document
 
-        // Attached to the image rather than the document view: while annotate mode is on the
-        // overlay is the view under the pointer, so a double-click draws instead of zooming.
-        let doubleClick = NSClickGestureRecognizer(target: context.coordinator,
-                                                   action: #selector(Coordinator.handleDoubleClick(_:)))
-        doubleClick.numberOfClicksRequired = 2
-        document.imageView.addGestureRecognizer(doubleClick)
+        // While annotate mode is on the overlay is the view under the pointer, so drawing wins
+        // over panning without either needing to know about the other.
+        document.onPan = { [weak controller] delta in controller?.pan(by: delta) }
+        document.onDoubleClick = { [weak controller] in controller?.toggleFitAndActualSize() }
+        scrollView.onScrollZoom = { [weak controller] factor, point in
+            controller?.zoom(by: factor, at: point)
+        }
 
         context.coordinator.configure(scrollView: scrollView, document: document)
         return scrollView
@@ -347,10 +421,6 @@ struct ChartCanvas: NSViewRepresentable {
                     self?.controller.applyInitialZoom(fit: shouldFit)
                 }
             }
-        }
-
-        @objc func handleDoubleClick(_ sender: NSClickGestureRecognizer) {
-            controller.toggleFitAndActualSize()
         }
     }
 }

@@ -47,8 +47,9 @@ Supported: `png`, `jpg`, `jpeg`, `tif`, `tiff`, `gif`, `bmp`, `heic`, `webp`.
 
 ## Reading charts
 
-The viewer is a real `NSScrollView` — pinch to zoom, two-finger scroll to pan, double-click to
-toggle fit and 100%. Zoom holds through a night-mode toggle and resets when you change chart.
+**Scroll to zoom** — centred on the pointer, so the feature under it stays put. **Drag to pan**,
+double-click to toggle fit and 100%. Pinch works too. Zoom holds through a night-mode toggle and
+resets when you change chart.
 
 **Night mode** inverts the plate for a dark cockpit. Straight inversion turns chart blue into
 orange, so Settings ▸ Viewing has *Remove colour when inverted* for a clean negative instead.

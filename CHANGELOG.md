@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.13.0
+
+**Zoom and pan**
+
+- **The scroll wheel now zooms** rather than scrolls, centred on the pointer so whatever is
+  under it stays under it. A trackpad reports many small deltas where a wheel reports a few
+  large ones, so the two are scaled separately to feel the same.
+- **Dragging pans.** Grab the plate and pull: dragging right reveals what was to its left.
+- Double-click still toggles fit and 100%, and pinch still zooms.
+- Annotate mode is unaffected — while it is on, a drag draws. The overlay takes the mouse back,
+  so neither behaviour needs to know about the other.
+
+**Internal**
+
+- The plate is now transparent to the mouse, and panning and double-clicking are handled by the
+  document view underneath. Double-click no longer goes through a click recogniser, which would
+  have had to delay every drag to find out whether a second click was coming.
+
 ## 0.12.1
 
 - An airport in the flight list that you have no charts for is now clickable, and opens the
