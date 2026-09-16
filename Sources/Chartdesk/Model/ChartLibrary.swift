@@ -15,6 +15,7 @@ enum DefaultsKey {
     static let zoomToFitOnOpen = "zoomToFitOnOpen"
     static let restoreLastChart = "restoreLastChart"
     static let checkForUpdates = "checkForUpdates"
+    static let importOnLaunch = "importOnLaunch"
     static let lastAutoUpdate = "lastAutoUpdate"
     static let showAnnotations = "showAnnotations"
     static let annotationTool = "annotationTool"

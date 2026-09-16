@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.4
+
+**Charts file themselves**
+
+- Charts downloaded from the MSFS planner are offered up on launch: a banner says what is
+  waiting in Downloads and files it after ten seconds, or straight away on **File now**. **Not
+  now** leaves them alone for that launch only — the charts are still there next time, and
+  skipping them once is not a decision to skip them for ever.
+- Two shapes are recognised: `KMKE/AGC.png`, the airport folder a browser makes for a download,
+  and a flat `KMKE AGC.png`. Both land as `KMKE/AGC.png`, which is how a library is already
+  laid out — a folder per airport with the chart's code as the name.
+- The airport code has to be four **capital** letters. That is what keeps `Scan 1.png` and a
+  folder called `Docs` out of your library, both of which are otherwise four letters.
+- **A chart you already have is never replaced.** It is reported back and its download left
+  where it is. This is the first thing in Chartdesk that writes to the chart folder at all, and
+  adding files is a very different promise from changing them.
+- Chart ▸ File Downloaded Charts… runs it whenever you like, and answers even when there is
+  nothing waiting. Settings ▸ Startup turns the launch offer off.
+
 ## 1.0.3
 
 **An update shows itself installing**

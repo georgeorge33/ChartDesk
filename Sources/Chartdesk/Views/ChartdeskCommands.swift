@@ -26,6 +26,7 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var marks: AnnotationStore
     @ObservedObject var flight: FlightPlanStore
     @ObservedObject var weather: WeatherStore
+    @ObservedObject var importer: ImportController
 
     private var chart: Chart? {
         library.chart(id: browser.selectedChartID)
@@ -57,6 +58,12 @@ struct ChartdeskCommands: Commands {
                 library.rescan()
             }
             .keyboardShortcut("r", modifiers: .command)
+            .disabled(!library.hasLibrary)
+
+            Button("File Downloaded Charts…") {
+                guard let root = library.rootURL else { return }
+                importer.checkNow(libraryRoot: root) { library.rescan() }
+            }
             .disabled(!library.hasLibrary)
 
             Divider()

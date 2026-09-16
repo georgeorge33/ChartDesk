@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
     @EnvironmentObject private var flight: FlightPlanStore
+    @EnvironmentObject private var importer: ImportController
 
     @Environment(\.openWindow) private var openWindow
 
@@ -45,6 +46,19 @@ struct ContentView: View {
         // For an update asked for from the menu, where this screen arrives over a window you
         // were using rather than over a launch.
         .animation(.easeOut(duration: 0.22), value: updater.installing != nil)
+        .overlay(alignment: .bottom) {
+            // Never while an update is installing: that window is about to close.
+            if updater.installing == nil, !isStarting {
+                if !importer.waiting.isEmpty {
+                    ImportBanner(onImport: { importer.performImport() })
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if importer.report != nil || importer.trouble != nil {
+                    ImportReport()
+                        .transition(.opacity)
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.24), value: importer.waiting.count)
         .task {
             try? await Task.sleep(for: .milliseconds(2000))
             minimumShown = true
@@ -80,6 +94,10 @@ struct ContentView: View {
     private func finishStartingIfReady() {
         guard isStarting, minimumShown, !library.isScanning else { return }
         withAnimation(.easeOut(duration: 0.28)) { isStarting = false }
+        // Only now, so the ten seconds the offer stands are ten seconds you can see.
+        if let root = library.rootURL, updater.installing == nil {
+            importer.checkOnLaunch(libraryRoot: root) { library.rescan() }
+        }
     }
 
     /// Picks something sensible to show after a scan: the chart you were last on, else the

@@ -19,6 +19,7 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
+    @EnvironmentObject private var importer: ImportController
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var weather: WeatherStore
 
@@ -52,6 +53,12 @@ private struct GeneralSettingsView: View {
             Section("Startup") {
                 Toggle("Reopen the last chart on launch", isOn: $browser.restoreLastChart)
                 Toggle("Install updates on launch", isOn: $updater.checkOnLaunch)
+                Toggle("File charts waiting in Downloads", isOn: $importer.importOnLaunch)
+                Text("Charts saved as KMKE/AGC.png, or KMKE AGC.png, are moved into the "
+                     + "matching airport folder. A chart you already have is never replaced.")
+                    .font(.ngSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("A newer release is fetched and installed when the app opens, and it "
                      + "reopens on the new version. Turn this off and Check for Updates in "
                      + "the Chartdesk menu still asks first. Updating uses the GitHub CLI, "

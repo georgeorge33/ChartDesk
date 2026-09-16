@@ -13,6 +13,7 @@ struct ChartdeskApp: App {
     @StateObject private var annotations = AnnotationStore()
     @StateObject private var flight = FlightPlanStore()
     @StateObject private var weather = WeatherStore()
+    @StateObject private var importer = ImportController()
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,7 @@ struct ChartdeskApp: App {
                 .environmentObject(annotations)
                 .environmentObject(flight)
                 .environmentObject(weather)
+                .environmentObject(importer)
                 .frame(minWidth: 940, minHeight: 620)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
@@ -38,7 +40,8 @@ struct ChartdeskApp: App {
                               updater: updater,
                               marks: annotations,
                               flight: flight,
-                              weather: weather)
+                              weather: weather,
+                              importer: importer)
         }
 
         Window("Performance", id: "performance") {
@@ -57,6 +60,7 @@ struct ChartdeskApp: App {
                 .environmentObject(annotations)
                 .environmentObject(flight)
                 .environmentObject(weather)
+                .environmentObject(importer)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }
