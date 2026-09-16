@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- **The chart filter no longer holds the caret when the app opens.** SwiftUI hands a new
+  window's focus to the first text field it finds, which was the filter, so the first thing you
+  typed after launch went into it instead of reaching the chart list. Focus now starts nowhere.
+  Clicking either search field, tabbing into it and ⌘F all work exactly as before.
+
 ## 1.0.1
 
 **Chartdesk updates itself**

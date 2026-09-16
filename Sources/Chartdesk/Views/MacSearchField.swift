@@ -17,12 +17,35 @@ struct MacSearchField: NSViewRepresentable {
     var focusNotification: Notification.Name?
     var onSubmit: (() -> Void)?
 
+    /// A search field that will not take the caret unless something asked for it.
+    ///
+    /// SwiftUI gives the window's initial first responder to its own hosting view, which passes
+    /// the caret down to the first focusable thing it finds. That was the chart filter, so the app
+    /// opened with it highlighted and the first thing you typed went into the filter instead of
+    /// reaching the chart list.
+    ///
+    /// What tells that hand-off apart from real focus is that no event is behind it:
+    /// `currentEvent` is nil, because nothing has come off the event queue yet. Clicking the field
+    /// focuses it from inside a mouse-down, tabbing to it from inside a key-down, and the ⌘F path
+    /// says outright that it asked. The window being key is no help here — it already is by the
+    /// time the hand-off arrives, which is how the first attempt at this got it wrong.
+    final class Field: NSSearchField {
+
+        /// Set around a deliberate `makeFirstResponder`, so asking for focus always works.
+        var isFocusRequested = false
+
+        override func becomeFirstResponder() -> Bool {
+            guard isFocusRequested || NSApp.currentEvent != nil else { return false }
+            return super.becomeFirstResponder()
+        }
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, onSubmit: onSubmit)
     }
 
-    func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
+    func makeNSView(context: Context) -> Field {
+        let field = Field()
         field.placeholderString = placeholder
         field.delegate = context.coordinator
         field.sendsWholeSearchString = false
@@ -34,7 +57,7 @@ struct MacSearchField: NSViewRepresentable {
         return field
     }
 
-    func updateNSView(_ nsView: NSSearchField, context: Context) {
+    func updateNSView(_ nsView: Field, context: Context) {
         context.coordinator.text = $text
         context.coordinator.onSubmit = onSubmit
         if nsView.stringValue != text {
@@ -45,7 +68,7 @@ struct MacSearchField: NSViewRepresentable {
         }
     }
 
-    static func dismantleNSView(_ nsView: NSSearchField, coordinator: Coordinator) {
+    static func dismantleNSView(_ nsView: Field, coordinator: Coordinator) {
         coordinator.stopObserving()
     }
 
@@ -53,7 +76,7 @@ struct MacSearchField: NSViewRepresentable {
         var text: Binding<String>
         var onSubmit: (() -> Void)?
 
-        private weak var field: NSSearchField?
+        private weak var field: Field?
         private var focusObserver: NSObjectProtocol?
 
         init(text: Binding<String>, onSubmit: (() -> Void)?) {
@@ -62,7 +85,7 @@ struct MacSearchField: NSViewRepresentable {
             super.init()
         }
 
-        func startObserving(name: Notification.Name?, field: NSSearchField) {
+        func startObserving(name: Notification.Name?, field: Field) {
             self.field = field
             guard let name = name else { return }
             focusObserver = NotificationCenter.default.addObserver(
@@ -71,7 +94,9 @@ struct MacSearchField: NSViewRepresentable {
                 queue: .main
             ) { [weak self] _ in
                 guard let searchField = self?.field else { return }
+                searchField.isFocusRequested = true
                 searchField.window?.makeFirstResponder(searchField)
+                searchField.isFocusRequested = false
             }
         }
 
