@@ -57,6 +57,31 @@ enum WeatherSource {
 
     static let vatsimFeedURL = URL(string: "https://data.vatsim.net/v3/vatsim-data.json")
 
+    /// Fetches and parses everything for one airport.
+    ///
+    /// Deliberately here rather than in the store: `WeatherSource` is isolated to no actor, so
+    /// this runs on the global executor even when a `@MainActor` store awaits it, which keeps
+    /// a megabyte of JSON parsing off the main thread.
+    static func reports(for code: String, vatsimStations: [String: [AtisReport]]) async -> AirportWeather {
+        // Three independent requests.  states that plainly; the DispatchGroup and
+        // lock this replaces only implied it, and needed a mutable capture to work.
+        async let metar = text(from: metarURL(code))
+        async let taf = text(from: tafURL(code))
+        async let datis = data(from: datisURL(code))
+
+        var result = AirportWeather()
+        result.metar = await metar
+        result.taf = await taf
+        if let datis = await datis { result.realAtis = parseDatis(datis) }
+        result.vatsimAtis = vatsimStations[code.uppercased()] ?? []
+        return result
+    }
+
+    /// Parses the feed away from whatever actor asked for it.
+    static func stations(in data: Data) async -> [String: [AtisReport]] {
+        parseVatsim(data)
+    }
+
     // MARK: Parsing
 
     static func parseDatis(_ data: Data) -> [AtisReport] {
@@ -74,32 +99,6 @@ enum WeatherSource {
         }
     }
 
-    static func parseVatsim(_ data: Data, icao: String) -> [AtisReport] {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let stations = root["atis"] as? [[String: Any]] else { return [] }
-
-        let code = icao.uppercased()
-        return stations.compactMap { station in
-            // Callsigns are ICAO_ATIS, or ICAO_A_ATIS / ICAO_D_ATIS where arrival and
-            // departure are worked separately.
-            guard let callsign = (station["callsign"] as? String)?.uppercased(),
-                  callsign.hasPrefix(code + "_"), callsign.hasSuffix("_ATIS") else { return nil }
-
-            let lines = (station["text_atis"] as? [String]) ?? []
-            let text = lines.joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
-
-            let middle = String(callsign.dropFirst(code.count + 1).dropLast(5))
-            let letter = (station["atis_code"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return AtisReport(id: "vatsim-\(callsign)",
-                              label: [name(for: middle), letter?.isEmpty == false ? letter : nil]
-                                  .compactMap { $0 }.joined(separator: " "),
-                              text: text)
-        }
-    }
-
     private static func name(for kind: String) -> String {
         switch kind.uppercased() {
         case "A", "ARR", "ARRIVAL": return "Arrival"
@@ -107,6 +106,43 @@ enum WeatherSource {
         case "", "COMBINED": return "ATIS"
         default: return kind.uppercased()
         }
+    }
+
+    /// Every VATSIM ATIS on the network, grouped by airport.
+    ///
+    /// The feed covers the world in one 1.4 MB document, and parsing it takes about six
+    /// milliseconds. Looking up one airport used to re-parse the whole thing, so browsing five
+    /// airports inside the cache window paid that cost five times over; now the parse happens
+    /// once per fetch and each airport is a dictionary lookup.
+    static func parseVatsim(_ data: Data) -> [String: [AtisReport]] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let stations = root["atis"] as? [[String: Any]] else { return [:] }
+
+        var byAirport: [String: [AtisReport]] = [:]
+        for station in stations {
+            // Callsigns are ICAO_ATIS, or ICAO_A_ATIS / ICAO_D_ATIS where arrival and
+            // departure are worked separately.
+            guard let callsign = (station["callsign"] as? String)?.uppercased(),
+                  callsign.hasSuffix("_ATIS") else { continue }
+            let parts = callsign.dropLast(5).split(separator: "_", omittingEmptySubsequences: true)
+            guard let code = parts.first, code.count == 4 else { continue }
+
+            let lines = (station["text_atis"] as? [String]) ?? []
+            let text = lines.joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            let middle = parts.count > 1 ? String(parts[1]) : ""
+            let letter = (station["atis_code"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let report = AtisReport(id: "vatsim-\(callsign)",
+                                    label: [name(for: middle),
+                                            letter?.isEmpty == false ? letter : nil]
+                                        .compactMap { $0 }.joined(separator: " "),
+                                    text: text)
+            byAirport[String(code), default: []].append(report)
+        }
+        return byAirport
     }
 
     // MARK: Fetching
@@ -182,8 +218,9 @@ final class WeatherStore: ObservableObject {
     @Published var panelHeight: CGFloat
 
     private var cache: [String: AirportWeather] = [:]
-    /// The VATSIM feed covers every airport at once, so it is fetched once and shared.
-    private var vatsimFeed: (data: Data, at: Date)?
+    /// The VATSIM feed covers every airport at once, so it is fetched *and parsed* once and
+    /// shared. Keeping the raw bytes meant re-parsing a megabyte for every airport looked at.
+    private var vatsimFeed: (stations: [String: [AtisReport]], at: Date)?
     private var generation = 0
 
     /// METAR is issued hourly and VATSIM asks for no more than one poll every fifteen
@@ -287,19 +324,14 @@ final class WeatherStore: ObservableObject {
         problem = nil
 
         Task { [weak self] in
-            // Four independent requests. `async let` states that plainly; the DispatchGroup
-            // and lock this replaces only implied it, and needed a mutable capture to work.
-            async let metar = WeatherSource.text(from: WeatherSource.metarURL(code))
-            async let taf = WeatherSource.text(from: WeatherSource.tafURL(code))
-            async let datis = WeatherSource.data(from: WeatherSource.datisURL(code))
+            // The feed is cached on the store, so fetching it has to happen here.
+            let stations = await self?.vatsimStations() ?? [:]
 
-            let feed = await self?.vatsimData()
-
-            var result = AirportWeather()
-            result.metar = await metar
-            result.taf = await taf
-            if let datis = await datis { result.realAtis = WeatherSource.parseDatis(datis) }
-            if let feed = feed { result.vatsimAtis = WeatherSource.parseVatsim(feed, icao: code) }
+            // Everything else happens in `WeatherSource`, which is not isolated to an actor,
+            // so a non-isolated async function runs on the global executor rather than the
+            // caller's. That matters: this store is `@MainActor`, and the VATSIM feed is 1.4 MB
+            // of JSON that took 6 milliseconds to parse on the main thread.
+            var result = await WeatherSource.reports(for: code, vatsimStations: stations)
 
             guard let self = self, token == self.generation else { return }
             self.isFetching = false
@@ -319,16 +351,18 @@ final class WeatherStore: ObservableObject {
         }
     }
 
-    /// The feed covers every airport at once, so it is fetched once and shared.
-    private func vatsimData() async -> Data? {
+    /// The feed covers every airport at once, so it is fetched and parsed once and shared.
+    private func vatsimStations() async -> [String: [AtisReport]] {
         if let cached = vatsimFeed, Date().timeIntervalSince(cached.at) < Self.cacheSeconds {
-            return cached.data
+            return cached.stations
         }
         guard let data = await WeatherSource.data(from: WeatherSource.vatsimFeedURL) else {
-            return nil
+            return [:]
         }
-        vatsimFeed = (data, Date())
-        return data
+        // Off the main actor, where the six milliseconds of parsing belongs.
+        let stations = await WeatherSource.stations(in: data)
+        vatsimFeed = (stations, Date())
+        return stations
     }
 
 }

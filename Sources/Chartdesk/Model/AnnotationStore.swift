@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 
@@ -23,9 +24,28 @@ enum AnnotationFileStore {
     static func save(_ marks: [String: [Annotation]]) {
         guard let url = fileURL else { return }
         // An empty list for a chart is the same as no entry; don't grow the file with them.
+        // The dictionary copy is cheap — the mark arrays are shared until one is mutated.
         let pruned = marks.filter { !$0.value.isEmpty }
-        guard let data = try? JSONEncoder().encode(pruned) else { return }
-        try? data.write(to: url, options: .atomic)
+
+        // Encoded and written away from the main thread. This is called on every stroke, and
+        // for a realistically annotated library — forty charts, a dozen marks each, a 650 KB
+        // file — encoding it took 24 milliseconds. That is a frame and a half dropped every
+        // time you lift the pen, and the encode, not the write, was almost all of it.
+        //
+        // Serial, so the last snapshot handed over is the last one written.
+        writeQueue.async {
+            guard let data = try? JSONEncoder().encode(pruned) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    private static let writeQueue = DispatchQueue(label: "local.chartdesk.annotations",
+                                                 qos: .utility)
+
+    /// A stroke drawn and the app quit in the same breath should still be saved, so quitting
+    /// waits for whatever is in flight. The queue is serial, so an empty block is a barrier.
+    static func flush() {
+        writeQueue.sync { }
     }
 }
 
@@ -83,6 +103,13 @@ final class AnnotationStore: ObservableObject {
         // The eraser is a transient choice; coming back to a fresh launch holding it would
         // mean the first click deletes something.
         if tool == .eraser { tool = .pen }
+
+        // Saving is asynchronous now, so quitting has to wait for a stroke still being
+        // written rather than taking the app down with it in flight.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                               object: nil, queue: .main) { _ in
+            AnnotationFileStore.flush()
+        }
     }
 
     // MARK: Reading

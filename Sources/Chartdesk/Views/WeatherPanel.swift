@@ -25,52 +25,62 @@ struct WeatherPanel: View {
     @State private var heightAtDragStart: CGFloat?
 
     private var code: String? { weather.icao }
-    private var report: AirportWeather? { weather.weather(for: code) }
-    private var wind: WindObservation? { report?.metar.flatMap(WindMath.parse) }
 
-    private var chartRunways: [String] {
-        library.airport(code: code)?.charts.compactMap(\.runway) ?? []
-    }
-
-    /// What this airport is known to have, from the charts you hold rather than typed.
-    private var knownRunways: [String] {
-        WindMath.candidates(fromCharts: chartRunways, remembered: weather.runwayList(for: code))
-    }
-
-    /// What the menu offers: every designator when the library knows nothing about the airport,
-    /// which is the case for one typed into the field.
+    /// Everything the panel needs to draw itself, worked out once.
     ///
-    /// Deliberately not derived from `runways` — that includes whatever is picked, so choosing
-    /// 18 at an unknown airport would leave 18 as the only thing left in the menu.
-    private var choices: [String] {
-        knownRunways.isEmpty ? WindMath.allDesignators : knownRunways
+    /// These used to be computed properties, and SwiftUI evaluates one of those every time it
+    /// is read: the runway list came out of the library three times per redraw, the METAR was
+    /// parsed four times, and the wind resolved three. Same answers each time. On a large
+    /// library the runway derivation alone was 60 microseconds a go.
+    private struct Resolved {
+        let report: AirportWeather?
+        let wind: WindObservation?
+        /// What the airport is known to have, independent of what is picked.
+        let known: [String]
+        /// What the wind is resolved against: the known runways, plus a pick from the full list.
+        let runways: [String]
+        let winds: [RunwayWind]
+        let selected: RunwayWind?
+        let best: String?
+
+        /// What the menu offers: every designator when the library knows nothing about the
+        /// airport, which is the case for one typed into the field.
+        ///
+        /// Deliberately not derived from `runways` — that includes whatever is picked, so
+        /// choosing 18 at an unknown airport would leave 18 as the only thing in the menu.
+        var choices: [String] { known.isEmpty ? WindMath.allDesignators : known }
     }
 
-    /// The runways to resolve the wind against: the known ones, plus whatever was picked out of
-    /// the full list when there are none.
-    private var runways: [String] {
-        WindMath.candidates(fromCharts: chartRunways,
-                            remembered: weather.runwayList(for: code),
-                            including: picked)
-    }
+    private func resolve() -> Resolved {
+        let report = weather.weather(for: code)
+        let wind = report?.metar.flatMap(WindMath.parse)
 
-    private var winds: [RunwayWind] {
-        guard let wind = wind else { return [] }
-        return WindMath.components(wind: wind,
-                                   variationWest: weather.variation(for: code),
-                                   runways: runways)
-    }
+        let fromCharts = library.airport(code: code)?.charts.compactMap(\.runway) ?? []
+        let remembered = weather.runwayList(for: code)
+        let known = WindMath.candidates(fromCharts: fromCharts, remembered: remembered)
+        // With nothing picked the two lists are the same, so the expensive derivation runs
+        // once rather than twice.
+        let runways = picked == nil
+            ? known
+            : WindMath.candidates(fromCharts: fromCharts, remembered: remembered, including: picked)
 
-    /// The runway the diagram is drawn for. Whatever you chose, or the one most into wind until
-    /// you do. Falls back when a chosen runway is no longer on the list.
-    private var selectedRunway: RunwayWind? {
-        winds.first { $0.runway == picked } ?? WindMath.best(winds)
+        var winds: [RunwayWind] = []
+        if let wind = wind {
+            winds = WindMath.components(wind: wind,
+                                        variationWest: weather.variation(for: code),
+                                        runways: runways)
+        }
+        let best = WindMath.best(winds)
+        let selected = winds.first { $0.runway == picked } ?? best
+
+        return Resolved(report: report, wind: wind, known: known, runways: runways,
+                        winds: winds, selected: selected, best: best?.runway)
     }
 
     /// Optional, so an airport we know no runways for shows a placeholder rather than
     /// volunteering 01 as though it were a real answer.
-    private var runwayChoice: Binding<String?> {
-        Binding(get: { picked ?? selectedRunway?.runway ?? knownRunways.first },
+    private func runwayChoice(_ resolved: Resolved) -> Binding<String?> {
+        Binding(get: { picked ?? resolved.selected?.runway ?? resolved.known.first },
                 set: { picked = $0 })
     }
 
@@ -80,7 +90,9 @@ struct WeatherPanel: View {
             header
             if weather.isExpanded {
                 Divider().overlay(Color.ngSeparator)
-                content
+                // Worked out once here and handed down, rather than each reader triggering
+                // its own evaluation.
+                content(resolve())
             }
         }
         .background(Color.ngPanelRaised)
@@ -188,20 +200,20 @@ struct WeatherPanel: View {
 
     // MARK: Content
 
-    private var content: some View {
+    private func content(_ resolved: Resolved) -> some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 10) {
                 if let problem = weather.problem {
                     Text(problem).font(.ngSmall).foregroundStyle(Color.orange)
-                } else if report == nil {
+                } else if resolved.report == nil {
                     Text(weather.isFetching ? "Fetching…" : "No weather loaded.")
                         .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                 }
 
-                if report != nil { windSection }
+                if resolved.report != nil { windSection(resolved) }
 
-                if let report = report {
+                if let report = resolved.report {
                     // METAR and TAF above ATIS: a full ATIS runs to ten lines of hold-short
                     // and crane advisories and would push them out of view.
                     if let metar = report.metar { reportBlock("METAR", metar, mono: true) }
@@ -232,10 +244,10 @@ struct WeatherPanel: View {
     // MARK: Wind
 
     @ViewBuilder
-    private var windSection: some View {
+    private func windSection(_ resolved: Resolved) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(wind?.summary ?? "No wind reported")
+                Text(resolved.wind?.summary ?? "No wind reported")
                     .font(.callout.weight(.medium))
                 Spacer(minLength: 0)
                 Text("var")
@@ -254,11 +266,11 @@ struct WeatherPanel: View {
                 Text("RWY")
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
-                Picker("", selection: runwayChoice) {
-                    if runwayChoice.wrappedValue == nil {
+                Picker("", selection: runwayChoice(resolved)) {
+                    if runwayChoice(resolved).wrappedValue == nil {
                         Text("—").tag(String?.none)
                     }
-                    ForEach(choices, id: \.self) { runway in
+                    ForEach(resolved.choices, id: \.self) { runway in
                         Text(runway).tag(String?.some(runway))
                     }
                 }
@@ -270,27 +282,27 @@ struct WeatherPanel: View {
 
             // Between the field and the rows: the two settings sit together at the top, and
             // the picture sits directly above the list that picks what it draws.
-            if let selected = selectedRunway {
+            if let selected = resolved.selected {
                 RunwayWindDiagram(selected: selected)
                     .frame(height: 162)
                     .frame(maxWidth: .infinity)
             }
 
-            if winds.isEmpty {
-                Text(runways.isEmpty
+            if resolved.winds.isEmpty {
+                Text(resolved.runways.isEmpty
                      ? "Pick a runway and the wind will be resolved against it."
-                     : (wind == nil
+                     : (resolved.wind == nil
                         ? "No wind in the report — nothing to resolve."
-                        : (wind?.isCalm == true
+                        : (resolved.wind?.isCalm == true
                            ? "Wind is calm — nothing to resolve."
                            : "Wind is variable — no steady direction to resolve.")))
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                let best = WindMath.best(winds)?.runway
-                ForEach(winds) { entry in
-                    row(entry, isBest: entry.runway == best)
+                ForEach(resolved.winds) { entry in
+                    row(entry, isBest: entry.runway == resolved.best,
+                        selected: resolved.selected?.runway)
                 }
                 // METAR wind is true north, runway numbers are magnetic. Without the variation
                 // the components are quietly wrong by exactly that much.
@@ -303,10 +315,10 @@ struct WeatherPanel: View {
         }
     }
 
-    private func row(_ entry: RunwayWind, isBest: Bool) -> some View {
+    private func row(_ entry: RunwayWind, isBest: Bool, selected: String?) -> some View {
         // Compare against the resolved selection, not `picked`, so the highlighted row is
         // always the runway the diagram is drawing.
-        let chosen = selectedRunway?.runway == entry.runway
+        let chosen = selected == entry.runway
         return Button {
             picked = chosen ? nil : entry.runway
         } label: {

@@ -49,89 +49,130 @@ enum AtisMarkup {
     /// than "RWY 4R GS OTS" is hail.
     private static let hazardousWeather = ["TS", "FZ", "FG", "GR", "PL", "FC", "SQ", "SS", "DS"]
 
+    /// Compiled once: the time group a report carries, and the pressure group that ends its
+    /// coded run. A `Calendar` too, which is not cheap to build and was being built per call.
+    private static let timeGroup = try! NSRegularExpression(pattern: #"\b(\d{2})(\d{2})Z\b"#)
+    private static let pressureGroup = try! NSRegularExpression(
+        pattern: #"\b(?:A\d{4}|Q\d{3,4}|QNH\s?\d{3,4}|ALTIMETER\s+\d{4})\b"#)
+    private static let zulu: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
+    }()
+
     // MARK: - Marking up
+
+    /// One pattern, what it means, and the test a match has to pass.
+    ///
+    /// The regexes are compiled once into `rules` rather than per call. Building fifteen
+    /// `NSRegularExpression`s every time cost 180 microseconds a report, and the weather panel
+    /// marks up three of them on every redraw.
+    private struct Rule {
+        let regex: NSRegularExpression
+        let kind: Kind
+        /// Present weather is only read in the coded run at the top of a report; everything
+        /// else is looked for throughout.
+        let codedRunOnly: Bool
+        let accept: (String) -> Bool
+
+        init(_ pattern: String, _ kind: Kind, codedRunOnly: Bool = false,
+             accept: @escaping (String) -> Bool = { _ in true }) {
+            // Every pattern here is a literal checked by the tests, so a failure to compile is
+            // a programming error rather than something to handle at runtime.
+            self.regex = try! NSRegularExpression(pattern: pattern, options: [])
+            self.kind = kind
+            self.codedRunOnly = codedRunOnly
+            self.accept = accept
+        }
+    }
+
+    private static let rules: [Rule] = [
+        // The information letter, spoken or coded: "INFO B", "INFORMATION BRAVO".
+        Rule(#"\bINFO(?:RMATION)?\s+[A-Z]+\b"#, .key),
+
+        // The wind. Coded as a METAR group, or spelled out the way a controller says it.
+        Rule(#"\b(?:WIND\s+)?(?:\d{3}|VRB)P?\d{2,3}(?:GP?\d{2,3})?(?:KT|MPS|KMH)\b"#, .key),
+        Rule(#"\bWIND\s+(?:CALM|LIGHT AND VARIABLE)\b"#, .key),
+        Rule(#"\bWIND\s+(?:\d{3}|VRB)\s*(?:AT|/)\s*\d{1,3}(?:\s*(?:KT|KNOTS))?\b"#, .key),
+
+        // Visibility. Statute miles carry their own unit; metres have to be labelled, since a
+        // bare four-digit number in an ATIS is as likely to be a frequency or a time.
+        Rule(#"\bM?(?:\d{1,2} \d/\d|\d/\d|\d{1,2})SM\b"#, .caution) { match in
+            guard let miles = statuteMiles(match) else { return false }
+            return miles < lowVisibilityMiles
+        },
+        Rule(#"\bVIS(?:IBILITY)?\s+(\d{3,4})\b"#, .caution) { match in
+            guard let metres = Double(digits(match)) else { return false }
+            return metres < lowVisibilityMetres
+        },
+        // An RVR is only ever reported when the visibility is already a problem.
+        Rule(#"\bRVR\s*\d{3,4}\b"#, .caution),
+        Rule(#"\bR\d{2}[LCR]?/[MP]?\d{4}(?:V[MP]?\d{4})?(?:FT|[UDN])?\b"#, .caution),
+
+        // Ceiling: the lowest broken or overcast layer, or a vertical visibility.
+        Rule(#"\b(?:BKN|OVC|VV)\d{3}\b"#, .caution) { match in
+            guard let hundreds = Double(digits(match)) else { return false }
+            return hundreds * 100 < lowCeilingFeet
+        },
+        Rule(#"\b(?:CEILING|CIG)\s+\d{3,5}\b"#, .caution) { match in
+            guard let feet = Double(digits(match)) else { return false }
+            return feet < lowCeilingFeet
+        },
+
+        // Temperature and dew point, together as they are reported.
+        Rule(#"\b(M|MINUS )?\d{1,2}/(M|MINUS )?\d{1,2}\b"#, .caution) { match in
+            guard let celsius = temperature(match) else { return false }
+            return celsius <= lowTemperature || celsius >= highTemperature
+        },
+        Rule(#"\bTEMP(?:ERATURE)?\s+(?:M|MINUS\s+)?\d{1,2}\b"#, .caution) { match in
+            guard let celsius = temperature(match) else { return false }
+            return celsius <= lowTemperature || celsius >= highTemperature
+        },
+
+        // Pressure, in either unit and under any of its names.
+        Rule(#"\bA\d{4}\b"#, .caution) { match in
+            guard let hundredths = Double(digits(match)) else { return false }
+            return outsideOrdinary(hPa: hundredths / 100 * 33.8639)
+        },
+        Rule(#"\b(?:ALTIMETER|ALTIMETER SETTING)\s+\d{4}\b"#, .caution) { match in
+            guard let hundredths = Double(digits(match)) else { return false }
+            return outsideOrdinary(hPa: hundredths / 100 * 33.8639)
+        },
+        Rule(#"\bQ(?:NH)?\s?\d{3,4}\b"#, .caution) { match in
+            guard let hPa = Double(digits(match)) else { return false }
+            return outsideOrdinary(hPa: hPa)
+        },
+
+        // Present weather, judged on what it is rather than that it is there. Past the pressure
+        // group an ATIS is plain English, where these two-letter codes mean other things.
+        Rule(#"(?<![A-Z])[+-]?(?:VC)?(?:TS|FZ|SH|BL|DR|MI|BC|PR)*(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PY|PO|SQ|FC|SS|DS)(?![A-Z])"#,
+             .caution, codedRunOnly: true) { match in
+            if match.hasPrefix("+") { return true }
+            return hazardousWeather.contains { match.contains($0) }
+        },
+    ]
 
     /// Spans to colour, in order and never overlapping.
     static func spans(in text: String) -> [Span] {
         var found: [(Span, Int)] = []
+        let whole = NSRange(text.startIndex..<text.endIndex, in: text)
+        // Worked out once, and only if a rule actually needs it.
+        var coded: NSRange?
 
-        func add(_ pattern: String, _ kind: Kind, group: Int = 0,
-                 within limit: Range<String.Index>? = nil,
-                 when accept: (String) -> Bool = { _ in true }) {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
-            let searched = NSRange(limit ?? text.startIndex..<text.endIndex, in: text)
-            for match in regex.matches(in: text, range: searched) {
-                guard let marked = Range(match.range(at: group), in: text) else { continue }
-                // The test reads the whole match, so a pattern can decide on a capture it does
-                // not colour -- "CEILING 400 OVC" is judged on the number and marked on both.
-                guard let all = Range(match.range, in: text), accept(String(text[all])) else { continue }
-                found.append((Span(range: marked, kind: kind), found.count))
+        for (order, rule) in rules.enumerated() {
+            let searched: NSRange
+            if rule.codedRunOnly {
+                if coded == nil { coded = NSRange(codedRun(of: text), in: text) }
+                searched = coded ?? whole
+            } else {
+                searched = whole
             }
-        }
 
-        // The information letter, spoken or coded: "INFO B", "INFORMATION BRAVO".
-        add(#"\bINFO(?:RMATION)?\s+[A-Z]+\b"#, .key)
-
-        // The wind. Coded as a METAR group, or spelled out the way a controller says it.
-        add(#"\b(?:WIND\s+)?(?:\d{3}|VRB)P?\d{2,3}(?:GP?\d{2,3})?(?:KT|MPS|KMH)\b"#, .key)
-        add(#"\bWIND\s+(?:CALM|LIGHT AND VARIABLE)\b"#, .key)
-        add(#"\bWIND\s+(?:\d{3}|VRB)\s*(?:AT|/)\s*\d{1,3}(?:\s*(?:KT|KNOTS))?\b"#, .key)
-
-        // Visibility. Statute miles carry their own unit; metres have to be labelled, since a
-        // bare four-digit number in an ATIS is as likely to be a frequency or a time.
-        add(#"\bM?(?:\d{1,2} \d/\d|\d/\d|\d{1,2})SM\b"#, .caution) { match in
-            guard let miles = statuteMiles(match) else { return false }
-            return miles < lowVisibilityMiles
-        }
-        add(#"\bVIS(?:IBILITY)?\s+(\d{3,4})\b"#, .caution) { match in
-            guard let metres = Double(digits(match)) else { return false }
-            return metres < lowVisibilityMetres
-        }
-        // An RVR is only ever reported when the visibility is already a problem.
-        add(#"\bRVR\s*\d{3,4}\b"#, .caution)
-        add(#"\bR\d{2}[LCR]?/[MP]?\d{4}(?:V[MP]?\d{4})?(?:FT|[UDN])?\b"#, .caution)
-
-        // Ceiling: the lowest broken or overcast layer, or a vertical visibility.
-        add(#"\b(?:BKN|OVC|VV)\d{3}\b"#, .caution) { match in
-            guard let hundreds = Double(digits(match)) else { return false }
-            return hundreds * 100 < lowCeilingFeet
-        }
-        add(#"\b(?:CEILING|CIG)\s+\d{3,5}\b"#, .caution) { match in
-            guard let feet = Double(digits(match)) else { return false }
-            return feet < lowCeilingFeet
-        }
-
-        // Temperature and dew point, together as they are reported.
-        add(#"\b(M|MINUS )?\d{1,2}/(M|MINUS )?\d{1,2}\b"#, .caution) { match in
-            guard let celsius = temperature(match) else { return false }
-            return celsius <= lowTemperature || celsius >= highTemperature
-        }
-        add(#"\bTEMP(?:ERATURE)?\s+(?:M|MINUS\s+)?\d{1,2}\b"#, .caution) { match in
-            guard let celsius = temperature(match) else { return false }
-            return celsius <= lowTemperature || celsius >= highTemperature
-        }
-
-        // Pressure, in either unit and under any of its names.
-        add(#"\bA\d{4}\b"#, .caution) { match in
-            guard let hundredths = Double(digits(match)) else { return false }
-            return outsideOrdinary(hPa: hundredths / 100 * 33.8639)
-        }
-        add(#"\b(?:ALTIMETER|ALTIMETER SETTING)\s+\d{4}\b"#, .caution) { match in
-            guard let hundredths = Double(digits(match)) else { return false }
-            return outsideOrdinary(hPa: hundredths / 100 * 33.8639)
-        }
-        add(#"\bQ(?:NH)?\s?\d{3,4}\b"#, .caution) { match in
-            guard let hPa = Double(digits(match)) else { return false }
-            return outsideOrdinary(hPa: hPa)
-        }
-
-        // Present weather, judged on what it is rather than that it is there, and looked for
-        // only in the coded run at the top of the report. Past the pressure group an ATIS is
-        // plain English, where these two-letter codes mean other things entirely.
-        add(#"(?<![A-Z])[+-]?(?:VC)?(?:TS|FZ|SH|BL|DR|MI|BC|PR)*(?:DZ|RA|SN|SG|IC|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PY|PO|SQ|FC|SS|DS)(?![A-Z])"#,
-            .caution, within: codedRun(of: text)) { match in
-            if match.hasPrefix("+") { return true }
-            return hazardousWeather.contains { match.contains($0) }
+            for match in rule.regex.matches(in: text, range: searched) {
+                guard let marked = Range(match.range, in: text),
+                      rule.accept(String(text[marked])) else { continue }
+                found.append((Span(range: marked, kind: rule.kind), order))
+            }
         }
 
         // Sorted, and overlaps dropped: a doubled mark reads as a mistake, and the earlier
@@ -152,9 +193,8 @@ enum AtisMarkup {
     /// The coded run at the top of a report: everything up to and including the pressure group,
     /// which is the last coded field before a controller starts talking about taxiways.
     static func codedRun(of text: String) -> Range<String.Index> {
-        let pattern = #"\b(?:A\d{4}|Q\d{3,4}|QNH\s?\d{3,4}|ALTIMETER\s+\d{4})\b"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+        guard let match = pressureGroup.firstMatch(in: text,
+                                                   range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text) else {
             // No pressure group to end it, so there is nothing better to go on than all of it.
             return text.startIndex..<text.endIndex
@@ -168,15 +208,14 @@ enum AtisMarkup {
     /// clock. An ATIS is reissued at least hourly, so an age much past that says you are
     /// reading one that has been superseded.
     static func issueTime(in text: String, now: Date) -> Date? {
-        guard let regex = try? NSRegularExpression(pattern: #"\b(\d{2})(\d{2})Z\b"#),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+        guard let match = timeGroup.firstMatch(in: text,
+                                               range: NSRange(text.startIndex..., in: text)),
               let hourRange = Range(match.range(at: 1), in: text),
               let minuteRange = Range(match.range(at: 2), in: text),
               let hour = Int(text[hourRange]), let minute = Int(text[minuteRange]),
               hour < 24, minute < 60 else { return nil }
 
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let calendar = AtisMarkup.zulu
         var parts = calendar.dateComponents([.year, .month, .day], from: now)
         parts.hour = hour
         parts.minute = minute

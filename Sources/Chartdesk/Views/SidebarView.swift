@@ -13,7 +13,9 @@ struct SidebarView: View {
 
     private var filteredAirports: [Airport] {
         guard !trimmedQuery.isEmpty else { return library.airports }
-        return library.airports.filter { $0.searchText.localizedCaseInsensitiveContains(trimmedQuery) }
+        // Folded once here rather than per airport.
+        let query = SearchKey.fold(trimmedQuery)
+        return library.airports.filter { $0.matches(foldedQuery: query) }
     }
 
     /// The airports this flight needs, straight from the SimBrief plan. A section rather than

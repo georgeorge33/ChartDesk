@@ -48,7 +48,9 @@ struct ChartListColumn: View {
     private var charts: [Chart] {
         let query = browser.chartQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return baseCharts }
-        return baseCharts.filter { $0.searchText.localizedCaseInsensitiveContains(query) }
+        // Folded once here rather than per chart.
+        let folded = SearchKey.fold(query)
+        return baseCharts.filter { $0.matches(foldedQuery: folded) }
     }
 
     private var pinnedGroups: [PinnedGroup] {

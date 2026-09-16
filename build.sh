@@ -237,10 +237,14 @@ else
 
 	BINARY="build/${APP_NAME}.bin"
 	rm -f "$BINARY"
+	# Extra frontend flags for a one-off investigation, e.g. finding what is slow to compile:
+	#   CHARTDESK_SWIFT_FLAGS="-Xfrontend -warn-long-function-bodies=100" ./build.sh
+	read -r -a EXTRA_FLAGS <<<"${CHARTDESK_SWIFT_FLAGS:-}"
 	xcrun swiftc \
 		-swift-version 5 \
 		-parse-as-library \
 		-O \
+		${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
 		-sdk "$SDK_PATH" \
 		-target "$(uname -m)-apple-macos${DEPLOYMENT_TARGET}" \
 		${PLUGIN_FLAGS[@]+"${PLUGIN_FLAGS[@]}"} \

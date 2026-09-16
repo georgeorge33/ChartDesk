@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+**A measured optimisation pass**
+
+Every file read through, with before-and-after numbers for each change rather than guesses.
+Nothing at rest moved — launch, memory and idle CPU are unchanged, because none of this is
+work the app does while sitting still.
+
+- **Two stalls left the main thread.** Saving marks encoded the whole annotations file on every
+  stroke: 25ms for a realistically annotated library, a frame and a half dropped each time you
+  lifted the pen. It is now 40ns on the main thread and the encoding happens on a utility
+  queue, with a barrier on quit so a stroke and a quit in the same breath still saves. Fetching
+  weather parsed the 1.4 MB VATSIM feed on the main thread too — six milliseconds — because a
+  `Task` started inside a `@MainActor` store inherits it; the fetch and parse moved into
+  `WeatherSource`, which is isolated to no actor.
+- **Compiled regular expressions are built once, not per call.** The ATIS markup was rebuilding
+  fifteen of them every time it marked a report, and the weather panel marks up three reports on
+  every redraw: 180µs down to 45µs for an ATIS, 160 to 18 for a METAR. Reading the wind out of
+  a METAR went from 23µs to 0.8, and an ATIS's issue time from 21µs to 0.7.
+- **The VATSIM feed is parsed once per fetch, not once per airport.** Looking up an airport used
+  to re-parse the whole megabyte; it is a dictionary lookup now — 6.5ms to 11ns — and the
+  grouping was checked against the old code across 102 real stations at 85 airports.
+- **Filtering the chart list is 9x faster.** `searchText` assembled six strings per chart on
+  every keystroke and then asked Foundation for a case-insensitive search. The key is now built
+  once when the chart is read and compared over UTF-8 bytes: 2.0ms to 0.23ms for two thousand
+  charts, agreeing with the old behaviour across 2,807 comparisons including accented and
+  decomposed names.
+- **Sort keys are worked out once instead of inside comparators.** Ordering an airport's charts
+  called a linear search for the category and re-parsed the runway designator on every
+  comparison — 1.16ms to 0.65ms for five hundred charts. Runway designators sort the same way
+  now, and reading a heading off one is 20x faster by taking it from the UTF-8 bytes.
+- **The weather panel resolves its state once per redraw.** Those were computed properties, and
+  each reader triggered its own evaluation: the runway list came out of the library three times,
+  the METAR was parsed four times.
+
+Two things measured and deliberately left alone: hit-testing marks for the eraser costs 11µs
+per mouse move, which is 0.1% of a core while erasing, and the chart image cache's limits do
+not govern its memory — clearing it frees nothing, because the 33 MB a drawn plate costs is
+held inside CoreGraphics. Capping the cache by bytes changed the footprint by nothing
+measurable, so that change was reverted. If memory ever matters, the lever is drawing plates at
+screen resolution rather than full plate resolution.
+
 ## 1.0.0
 
 The first release that isn't a pre-release. Everything here is new since 0.14.0.

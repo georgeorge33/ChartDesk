@@ -112,15 +112,25 @@ enum LibraryScanner {
         return airports
     }
 
+    /// Category, then runway, then title in natural order.
+    ///
+    /// The keys are worked out once per chart and carried through the sort. Read inside the
+    /// comparator instead, each one was recomputed on every comparison: the category order was
+    /// a linear search and the runway value re-parsed the designator out of a string, both of
+    /// them n log n times.
     private static func sortCharts(_ charts: [Chart]) -> [Chart] {
-        charts.sorted { lhs, rhs in
-            if lhs.category != rhs.category {
-                return lhs.category.sortIndex < rhs.category.sortIndex
-            }
-            if lhs.runwaySortValue != rhs.runwaySortValue {
-                return lhs.runwaySortValue < rhs.runwaySortValue
-            }
-            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+        var keyed: [(category: Int, runway: Int, chart: Chart)] = []
+        keyed.reserveCapacity(charts.count)
+        for chart in charts {
+            keyed.append((category: chart.category.sortIndex,
+                          runway: chart.runwaySortValue,
+                          chart: chart))
         }
+        keyed.sort { lhs, rhs in
+            if lhs.category != rhs.category { return lhs.category < rhs.category }
+            if lhs.runway != rhs.runway { return lhs.runway < rhs.runway }
+            return lhs.chart.title.localizedStandardCompare(rhs.chart.title) == .orderedAscending
+        }
+        return keyed.map { $0.chart }
     }
 }
