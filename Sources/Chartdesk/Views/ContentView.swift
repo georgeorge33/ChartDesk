@@ -36,11 +36,15 @@ struct ContentView: View {
         }
         .background(WindowDragEnabler())
         .overlay {
-            if isStarting {
-                StartupScreen(status: library.isScanning ? "Scanning your charts…" : "")
+            if isStarting || updater.installing != nil {
+                StartupScreen(status: library.isScanning ? "Scanning your charts…" : "",
+                              update: updater.installing)
                     .transition(.opacity)
             }
         }
+        // For an update asked for from the menu, where this screen arrives over a window you
+        // were using rather than over a launch.
+        .animation(.easeOut(duration: 0.22), value: updater.installing != nil)
         .task {
             try? await Task.sleep(for: .milliseconds(2000))
             minimumShown = true
@@ -191,6 +195,15 @@ struct WelcomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.ngWindow)
+        // The same corner the sidebar puts it in, for the one screen that has no sidebar.
+        .overlay(alignment: .bottomLeading) {
+            Text(Bundle.main.appVersion)
+                .font(.ngSmall)
+                .monospacedDigit()
+                .foregroundStyle(Bundle.main.isCandidateBuild ? Color.orange : .secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+        }
     }
 
     private func layoutExample(title: String, lines: [String]) -> some View {

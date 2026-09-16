@@ -18,9 +18,20 @@ final class UpdateController: ObservableObject {
     private static let appName = "Chartdesk"
     private static let destination = "/Applications/\(appName).app"
 
+    /// An install in flight, which the launch screen shows in place of the spinner. The app is
+    /// about to quit and reopen, so that screen is what covers the wait either way — whether the
+    /// update was found at launch or asked for from the menu.
+    struct Installing: Equatable {
+        /// The version being installed, for the label.
+        let version: String
+        /// The new bundle is staged and all that is left is quitting and reopening.
+        var isFinishing = false
+    }
+
     @Published var available: ReleaseInfo?
     @Published var showAvailable = false
     @Published var isWorking = false
+    @Published private(set) var installing: Installing?
     @Published var message: String?
     @Published var showMessage = false
 
@@ -39,7 +50,8 @@ final class UpdateController: ObservableObject {
     // MARK: - Environment
 
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let version = Bundle.main.appVersion
+        return version.isEmpty ? "0" : version
     }
 
     private var repository: String? {
@@ -146,6 +158,7 @@ final class UpdateController: ObservableObject {
 
         showAvailable = false
         isWorking = true
+        installing = Installing(version: info.version)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let outcome = Self.stage(gh: gh, repo: repo, tag: info.tag)
@@ -155,13 +168,18 @@ final class UpdateController: ObservableObject {
 
                 switch outcome {
                 case .failure(let text):
+                    self.installing = nil
                     if announce { self.report(text) }
 
                 case .staged(let script, let arguments):
+                    self.installing?.isFinishing = true
                     // The helper outlives us: it waits for this process to exit, swaps the
-                    // bundle, then relaunches.
+                    // bundle, then relaunches. Since it waits, holding on here delays only the
+                    // reopen — long enough for a finished bar to be seen rather than guessed at.
                     Self.launchDetached(script: script, arguments: arguments)
-                    NSApp.terminate(nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        NSApp.terminate(nil)
+                    }
                 }
             }
         }

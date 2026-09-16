@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.3
+
+**An update shows itself installing**
+
+- The startup screen now stays up while an update installs, with a progress bar under the
+  version: *Updating to x.y.z*, then *Restarting…* with the bar full. The same screen appears
+  whether the update was found at launch or asked for from the Chartdesk menu — better than the
+  window simply vanishing and coming back.
+- The bar is a shape rather than a measurement, because `gh` reports no byte totals on the way
+  through: quick off the mark, then flattening, and short of the end. Only the new bundle being
+  staged fills it, and the quit waits a beat after that so a full bar is seen rather than
+  guessed at.
+
+**The version is always in the corner**
+
+- The bottom left of the sidebar now carries the version on every build, not only on release
+  candidates. A candidate keeps its orange badge, since a pre-release that looks exactly like
+  the real thing is how you report a bug from the wrong one; a final release states itself
+  quietly.
+- The welcome screen shows it in the same corner, for the one screen that has no sidebar.
+
 ## 1.0.2
 
 - **The chart filter no longer holds the caret when the app opens.** SwiftUI hands a new

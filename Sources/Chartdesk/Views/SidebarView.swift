@@ -170,11 +170,9 @@ struct SidebarView: View {
             Divider()
                 .overlay(Color.ngSeparator)
             footer
-            if SidebarView.candidateVersion != nil {
-                Divider()
-                    .overlay(Color.ngSeparator)
-                candidateBar
-            }
+            Divider()
+                .overlay(Color.ngSeparator)
+            versionBar
         }
         .frame(minWidth: 200)
         .background(Color.ngWindow)
@@ -193,30 +191,36 @@ struct SidebarView: View {
         }
     }
 
-    /// The version, when this build is a release candidate: a pre-release that looks exactly
-    /// like the real thing is how you end up reporting a bug from the wrong one.
-    private var candidateBar: some View {
+    /// The version this copy is, always on show.
+    ///
+    /// A candidate is called out in orange, which is what this row was first for: a pre-release
+    /// that looks exactly like the real thing is how you end up reporting a bug from the wrong
+    /// one. A final release says which one it is and otherwise keeps quiet.
+    private var versionBar: some View {
         HStack(spacing: 8) {
-            Text(SidebarView.candidateVersion ?? "")
-                .font(.ngSmallBold)
-                .monospacedDigit()
-                .foregroundStyle(Color.orange)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.14), in: Capsule(style: .continuous))
-                .help("This is a release candidate, not a final release")
+            if Bundle.main.isCandidateBuild {
+                Text(version)
+                    .font(.ngSmallBold)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.14), in: Capsule(style: .continuous))
+                    .help("This is a release candidate, not a final release")
+            } else {
+                Text(version)
+                    .font(.ngSmall)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .help("Chartdesk \(version)")
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
     }
 
-    /// The bundle version, but only when it carries a pre-release suffix.
-    static var candidateVersion: String? {
-        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-              version.contains("-") else { return nil }
-        return version
-    }
+    private var version: String { Bundle.main.appVersion }
 
     private var footer: some View {
         HStack(spacing: 6) {
