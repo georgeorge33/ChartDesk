@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.0.1
+
+**Chartdesk updates itself**
+
+- A newer release is now **installed when the app opens**, and the app reopens on it, rather
+  than asking. The chore of noticing a release and clicking through a dialog is gone.
+- Settings ▸ General turns it off. **Check for Updates** in the Chartdesk menu still asks
+  first, and still reports what it found either way — an update you asked about should answer
+  you, and one you did not should not interrupt you, including when it fails.
+- **A tag is only ever installed once automatically.** If a build's stamped version did not
+  match the tag it came from, the app would install, relaunch and install again for ever, and
+  an automatic updater is exactly where that loop would go unnoticed.
+- It follows release candidates as well as final releases, which is what the check has done
+  since 1.0.0. If you tag a candidate, machines running the automatic update will take it.
 
 **A measured optimisation pass**
 

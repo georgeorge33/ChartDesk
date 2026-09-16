@@ -5,8 +5,8 @@ as PNGs, laid out the way Navigraph Charts is: airports on the left, chart list 
 plate on the right.
 
 macOS 26+. SwiftUI and AppKit, no dependencies. Nothing is sent anywhere. The things that
-reach out do so when you ask: checking for updates, loading a SimBrief flight, and fetching
-weather.
+reach out are updating, loading a SimBrief flight, and fetching weather — the last two when you
+ask, and updating when the app opens.
 
 > [!NOTE]
 > This app is created fully with Claude Opus 5 Max.
@@ -23,6 +23,10 @@ weather.
 Compiles, bundles, signs and installs to `/Applications`. You need Xcode, or at minimum its
 command line tools (`xcode-select --install`). On a machine without Xcode, `./update.sh`
 downloads the latest build instead.
+
+Chartdesk **updates itself when it opens**: a newer release is installed and the app reopens on
+it. Settings ▸ General turns that off, and **Check for Updates** in the Chartdesk menu then asks
+before installing anything.
 
 Then click **Choose Charts Folder…** and point it at your plates. The folder is **read only** —
 Chartdesk never renames, moves, or writes anything inside it. macOS remembers the permission,

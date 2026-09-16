@@ -51,8 +51,11 @@ private struct GeneralSettingsView: View {
 
             Section("Startup") {
                 Toggle("Reopen the last chart on launch", isOn: $browser.restoreLastChart)
-                Toggle("Check for updates on launch", isOn: $updater.checkOnLaunch)
-                Text("Updating uses the GitHub CLI, because the repository is private.")
+                Toggle("Install updates on launch", isOn: $updater.checkOnLaunch)
+                Text("A newer release is fetched and installed when the app opens, and it "
+                     + "reopens on the new version. Turn this off and Check for Updates in "
+                     + "the Chartdesk menu still asks first. Updating uses the GitHub CLI, "
+                     + "because the repository is private.")
                     .font(.ngSmall)
                     .foregroundStyle(.secondary)
             }

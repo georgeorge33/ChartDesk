@@ -61,8 +61,8 @@ final class UpdateController: ObservableObject {
         check(manual: false)
     }
 
-    /// An automatic check stays silent unless there is genuinely something to install; a manual
-    /// one always says something, otherwise the menu item looks broken.
+    /// An automatic check installs what it finds and says nothing; a manual one always reports
+    /// something and asks first, otherwise the menu item looks broken.
     func check(manual: Bool) {
         guard !isWorking else { return }
 
@@ -88,11 +88,17 @@ final class UpdateController: ObservableObject {
                     if manual { self.report("No releases have been published yet.") }
 
                 case .success(let info):
-                    if Self.isNewer(info.version, than: self.currentVersion) {
-                        self.available = info
+                    guard Self.isNewer(info.version, than: self.currentVersion) else {
+                        if manual {
+                            self.report("Chartdesk \(self.currentVersion) is the newest version.")
+                        }
+                        return
+                    }
+                    self.available = info
+                    if manual {
                         self.showAvailable = true
-                    } else if manual {
-                        self.report("Chartdesk \(self.currentVersion) is the newest version.")
+                    } else {
+                        self.installAutomatically(info)
                     }
                 }
             }
@@ -106,14 +112,35 @@ final class UpdateController: ObservableObject {
 
     // MARK: - Installing
 
+    /// The launch check's own install: no alert on the way in, and none on the way out if it
+    /// fails. An update you did not ask about should not interrupt you to say it went wrong;
+    /// Check for Updates still reports everything.
+    ///
+    /// A tag is only ever tried once. That guard is the point: if a build's stamped version
+    /// never matched the tag it came from, the app would install, relaunch, and install again
+    /// for ever, and an automatic updater is exactly where that loop would go unnoticed.
+    private func installAutomatically(_ info: ReleaseInfo) {
+        let key = DefaultsKey.lastAutoUpdate
+        guard UserDefaults.standard.string(forKey: key) != info.tag else { return }
+        UserDefaults.standard.set(info.tag, forKey: key)
+        install(info, announcingFailures: false)
+    }
+
     func installAvailable() {
-        guard let info = available, let gh = Self.ghPath, let repo = repository else { return }
+        guard let info = available else { return }
+        install(info, announcingFailures: true)
+    }
+
+    private func install(_ info: ReleaseInfo, announcingFailures announce: Bool) {
+        guard let gh = Self.ghPath, let repo = repository else { return }
 
         // Checked before quitting, so a permissions problem surfaces in the app rather than
         // leaving the user with nothing installed.
         guard FileManager.default.isWritableFile(atPath: "/Applications") else {
             showAvailable = false
-            report("/Applications is not writable, so the update cannot be installed there.")
+            if announce {
+                report("/Applications is not writable, so the update cannot be installed there.")
+            }
             return
         }
 
@@ -128,7 +155,7 @@ final class UpdateController: ObservableObject {
 
                 switch outcome {
                 case .failure(let text):
-                    self.report(text)
+                    if announce { self.report(text) }
 
                 case .staged(let script, let arguments):
                     // The helper outlives us: it waits for this process to exit, swaps the
