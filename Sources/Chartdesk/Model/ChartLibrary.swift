@@ -28,7 +28,6 @@ enum DefaultsKey {
     static let weatherExpanded = "weatherExpanded"
     static let weatherRunways = "weatherRunways"
     static let weatherVariation = "weatherVariation"
-    static let weatherHeight = "weatherHeight"
 }
 
 // MARK: - Folder bookmark
@@ -229,6 +228,17 @@ final class ChartLibrary: ObservableObject {
     }
 
     // MARK: Pins
+
+    /// Whether any plate at this airport serves a runway.
+    ///
+    /// What tells a planned runway apart from a covered one. Deliberately not category-aware:
+    /// a departure needs a SID and an arrival an approach, but a plate covering both ends of a
+    /// strip is normal and so is one plate serving a whole airport, so asking for the right
+    /// *kind* of plate would warn about flights that are perfectly well served.
+    func hasChart(serving runway: String, at code: String) -> Bool {
+        guard !runway.isEmpty, let airport = airport(code: code) else { return false }
+        return airport.charts.contains { $0.serves(runway: runway) }
+    }
 
     func isPinned(_ chart: Chart) -> Bool {
         pinnedIDs.contains(chart.id)

@@ -43,29 +43,44 @@ final class ImportController: ObservableObject {
 
     /// The same check from the menu, which should answer even when there is nothing to do.
     func checkNow(libraryRoot root: URL, onFinish finish: @escaping () -> Void) {
-        look(libraryRoot: root, onFinish: finish, countdown: false)
-        if waiting.isEmpty && trouble == nil {
-            report = "No charts are waiting in \(ChartImporter.downloadsFolder.lastPathComponent)."
+        look(libraryRoot: root, onFinish: finish, countdown: false) { [weak self] charts, trouble in
+            guard let self = self, charts.isEmpty, trouble == nil else { return }
+            self.report = "No charts are waiting in "
+                + "\(ChartImporter.downloadsFolder.lastPathComponent)."
         }
     }
 
+    /// Reads the folder off the main thread, which is not an optimisation.
+    ///
+    /// The first read of `~/Downloads` is what makes macOS put its permission dialog up, and
+    /// that call does not return until the dialog is answered. On the main thread that freezes
+    /// the window behind it: splash, spinner and all, until you notice the dialog and click.
     private func look(libraryRoot root: URL,
                       onFinish finish: @escaping () -> Void,
-                      countdown: Bool = true) {
+                      countdown: Bool = true,
+                      then report: (([WaitingChart], ChartImporter.Trouble?) -> Void)? = nil) {
         libraryRoot = root
         onFinish = finish
+        let folder = ChartImporter.downloadsFolder
 
-        var found: ChartImporter.Trouble?
-        let charts = ChartImporter.waiting(in: ChartImporter.downloadsFolder, trouble: &found)
-        trouble = found
-        waiting = charts
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var found: ChartImporter.Trouble?
+            let charts = ChartImporter.waiting(in: folder, trouble: &found)
 
-        guard !charts.isEmpty else { return }
-        secondsLeft = Self.grace
-        guard countdown else { return }
-        ticker = Timer.publish(every: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in self?.tick() }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.trouble = found
+                self.waiting = charts
+                report?(charts, found)
+
+                guard !charts.isEmpty else { return }
+                self.secondsLeft = Self.grace
+                guard countdown else { return }
+                self.ticker = Timer.publish(every: 1, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { [weak self] _ in self?.tick() }
+            }
+        }
     }
 
     private func tick() {
@@ -78,10 +93,18 @@ final class ImportController: ObservableObject {
         stopCounting()
         guard let root = libraryRoot, !waiting.isEmpty else { return }
 
-        let outcome = ChartImporter.move(waiting, into: root)
+        // Off the main thread for the same reason as the read, and because a library in
+        // iCloud can make a move wait on the network.
+        let charts = waiting
         waiting = []
-        report = describe(outcome)
-        if !outcome.imported.isEmpty { onFinish?() }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let outcome = ChartImporter.move(charts, into: root)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.report = self.describe(outcome)
+                if !outcome.imported.isEmpty { self.onFinish?() }
+            }
+        }
     }
 
     /// Left alone for this launch. Deliberately not remembered: the charts are still there next

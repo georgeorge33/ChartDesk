@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// Weather, ATIS and the wind against your runways, at the foot of the chart list.
+/// Weather, ATIS and the wind against your runways — the chart column's Weather tab.
 ///
-/// Everything lives here rather than in a window of its own: the airport you want weather for
-/// is almost always the one whose charts you are reading, and a second window would mean
+/// It lives beside the charts rather than in a window of its own: the airport you want weather
+/// for is almost always the one whose charts you are reading, and a second window would mean
 /// keeping two selections in step.
 ///
-/// Collapsed it fetches nothing, so closing it stops the traffic rather than hiding it.
+/// Another tab being on top counts as collapsed, and collapsed it fetches nothing, so looking
+/// away stops the traffic rather than hiding it.
 struct WeatherPanel: View {
 
     @EnvironmentObject private var weather: WeatherStore
@@ -15,14 +16,9 @@ struct WeatherPanel: View {
 
     /// The airport the chart list is showing. The panel follows it unless you type another.
     let icao: String?
-    /// Height of the whole chart-list column, so the panel cannot be dragged over the list.
-    let available: CGFloat
 
     @State private var query = ""
     @State private var picked: String?
-    /// Panel height when the current drag started, so the drag is absolute rather than a
-    /// running sum of deltas.
-    @State private var heightAtDragStart: CGFloat?
 
     private var code: String? { weather.icao }
 
@@ -92,16 +88,13 @@ struct WeatherPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if weather.isExpanded { resizeHandle }
             header
-            if weather.isExpanded {
-                Divider().overlay(Color.ngSeparator)
-                // Worked out once here and handed down, rather than each reader triggering
-                // its own evaluation.
-                content(resolve())
-            }
+            Divider().overlay(Color.ngSeparator)
+            // Worked out once here and handed down, rather than each reader triggering its
+            // own evaluation.
+            content(resolve())
         }
-        .background(Color.ngPanelRaised)
+        .frame(maxHeight: .infinity, alignment: .top)
         .onAppear { query = code ?? icao ?? "" }
         .onChange(of: weather.icao) { _, newValue in
             query = newValue ?? ""
@@ -110,78 +103,29 @@ struct WeatherPanel: View {
         }
     }
 
-    // MARK: Resizing
-
-    /// The tallest the panel may be drawn: what the column can spare while leaving the chart
-    /// list a usable stub. Permissive until the first layout pass has measured anything.
-    private var ceiling: CGFloat {
-        available <= 0
-            ? WeatherStore.panelHeightRange.upperBound
-            : max(WeatherStore.panelHeightRange.lowerBound, available - 240)
-    }
-
-    /// Fixed rather than a maximum. Two greedy siblings in a stack split the space between
-    /// them, so a cap stopped the panel at half the column however far you dragged.
-    private var contentHeight: CGFloat {
-        min(weather.panelHeight, ceiling)
-    }
-
-    /// Drag the top edge to trade height with the chart list.
-    private var resizeHandle: some View {
-        PanelResizeGrip(onBegin: { heightAtDragStart = weather.panelHeight },
-                        onDrag: { up in
-                            let start = heightAtDragStart ?? weather.panelHeight
-                            heightAtDragStart = start
-                            weather.panelHeight =
-                                min(max(start + up, WeatherStore.panelHeightRange.lowerBound),
-                                    ceiling)
-                        },
-                        onEnd: {
-                            heightAtDragStart = nil
-                            weather.savePanelHeight()
-                        })
-            .frame(height: 9)
-            .help("Drag to resize")
-    }
-
     // MARK: Header
 
+    /// No title and no disclosure arrow: the tab above says what this is. What is left is the
+    /// part that does something — which airport, how old, and fetch again.
     private var header: some View {
         HStack(spacing: 6) {
-            Button {
-                weather.isExpanded.toggle()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: weather.isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.ngSmallBold)
-                    Text("Weather")
-                        .font(.ngSmallMedium)
-                }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
-            if weather.isExpanded {
-                // Typed rather than fixed to the selection, so weather for a destination you
-                // hold no charts for is still one field away.
-                TextField("ICAO", text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.ngSmall)
-                    .frame(width: 66)
-                    .onSubmit(lookUp)
-            } else if let code = code {
-                Text(code).font(.ngSmall).foregroundStyle(Color.ngAccentText)
-            }
+            // Typed rather than fixed to the selection, so weather for a destination you hold
+            // no charts for is still one field away.
+            TextField("ICAO", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .font(.ngSmall)
+                .frame(width: 66)
+                .onSubmit(lookUp)
 
             Spacer(minLength: 0)
 
-            if let age = weather.age(for: code), weather.isExpanded {
+            if let age = weather.age(for: code) {
                 Text(age).font(.ngSmall).foregroundStyle(.tertiary)
             }
 
             if weather.isFetching {
                 ProgressView().progressViewStyle(.circular).controlSize(.mini)
-            } else if weather.isExpanded {
+            } else {
                 Button {
                     weather.refresh(code)
                 } label: {
@@ -244,7 +188,6 @@ struct WeatherPanel: View {
             .padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: contentHeight)
     }
 
     // MARK: Wind
@@ -579,88 +522,3 @@ private struct RunwayWindDiagram: View {
 /// `mouseDownCanMoveWindow` is the only way to say that a drag here resizes the panel rather
 /// than dragging the window, and a cursor rect is the only way to get the resize cursor without
 /// pushing and popping one on every hover.
-private struct PanelResizeGrip: NSViewRepresentable {
-
-    let onBegin: () -> Void
-    /// Points dragged since the drag began, positive upwards.
-    let onDrag: (CGFloat) -> Void
-    let onEnd: () -> Void
-
-    func makeNSView(context: Context) -> Strip {
-        let strip = Strip()
-        strip.handlers = (onBegin, onDrag, onEnd)
-        return strip
-    }
-
-    func updateNSView(_ strip: Strip, context: Context) {
-        strip.handlers = (onBegin, onDrag, onEnd)
-    }
-
-    final class Strip: NSView {
-
-        var handlers: (begin: () -> Void, drag: (CGFloat) -> Void, end: () -> Void)?
-
-        private var startY: CGFloat = 0
-        private var isDragging = false
-        private var isHovering = false
-
-        override var mouseDownCanMoveWindow: Bool { false }
-
-        override func resetCursorRects() {
-            addCursorRect(bounds, cursor: .resizeUpDown)
-        }
-
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            for area in trackingAreas { removeTrackingArea(area) }
-            addTrackingArea(NSTrackingArea(rect: bounds,
-                                           options: [.mouseEnteredAndExited, .activeInActiveApp],
-                                           owner: self))
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            isHovering = true
-            needsDisplay = true
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            isHovering = false
-            needsDisplay = true
-        }
-
-        override func mouseDown(with event: NSEvent) {
-            begin()
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            // A drag can arrive without the mouse-down that should have preceded it —
-            // dismissing a menu eats one — and measuring from a stale origin would make the
-            // deltas compound instead of tracking the pointer.
-            if !isDragging { begin() }
-            // Screen coordinates run upwards, and up is a taller panel.
-            handlers?.drag(NSEvent.mouseLocation.y - startY)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            isDragging = false
-            handlers?.end()
-        }
-
-        private func begin() {
-            startY = NSEvent.mouseLocation.y
-            isDragging = true
-            handlers?.begin()
-        }
-
-        /// A grip, because a 9-point strip is otherwise invisible and nobody drags what they
-        /// cannot see.
-        override func draw(_ dirtyRect: NSRect) {
-            let grip = NSRect(x: (bounds.width - 26) / 2, y: (bounds.height - 3) / 2,
-                              width: 26, height: 3)
-            NSColor.secondaryLabelColor
-                .withAlphaComponent(isHovering ? 0.8 : 0.45)
-                .setFill()
-            NSBezierPath(roundedRect: grip, xRadius: 1.5, yRadius: 1.5).fill()
-        }
-    }
-}

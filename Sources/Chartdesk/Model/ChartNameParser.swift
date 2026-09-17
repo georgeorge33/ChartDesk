@@ -226,7 +226,18 @@ enum ChartNameParser {
     private static let runwayExpressions: [NSRegularExpression] = {
         let patterns = [
             "(?:RWY|RUNWAY|RW)[ _.\\-]?([0-3][0-9])([LCR])?",
-            "(?<![A-Z0-9])([0-3][0-9])([LCR])(?![A-Z0-9])"
+            "(?<![A-Z0-9])([0-3][0-9])([LCR])(?![A-Z0-9])",
+            // A bare number with no side letter and no "RWY" in front of it, which is how
+            // planner downloads are named: "LOC 25", "ILS OR LOC 01L", "SID 28". It has to be
+            // the last thing in the name, because a two-digit number loose in a chart name is
+            // usually not a runway — "AGC 24 JUL 2025" and "APC 2 OF 3" would both read as
+            // one. Anchoring costs "LOC 25 DME" and keeps the dates out, which is the right
+            // way round: a runway this misses is only a chart that fails to sort beside its
+            // fellows, while one it invents is a chart filed under a runway it has nothing to
+            // do with.
+            "(?:ILS|LOC|LLZ|RNAV|RNP|GLS|GBAS|VOR|NDB|IGS|LDA|MLS|TACAN|IAC|VAC|MVC|SID|STAR|EOSID|APPROACH|APCH)"
+                + "(?:[ _.\\-]+(?:OR|AND|GPS|\\(GPS\\)|RWY|RUNWAY|CAT|Z|Y|X|W|V|U|I{1,3}))*"
+                + "[ _.\\-]+(?<![0-9])([0-3]?[0-9])([LCR])?$"
         ]
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: []) }
     }()

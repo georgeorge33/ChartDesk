@@ -13,7 +13,7 @@ struct ChartListColumn: View {
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var weather: WeatherStore
 
-    @State private var columnHeight: CGFloat = 0
+    @State private var tab: ColumnTab = .charts
 
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
@@ -66,29 +66,76 @@ struct ChartListColumn: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+
+            if showsTabs {
+                ColumnTabStrip(selection: $tab, tabs: availableTabs)
+            }
+
             Divider()
                 .overlay(Color.ngSeparator)
+
+            switch showsTabs ? tab : .charts {
+            case .info:
+                if let airport = selectedAirport {
+                    AirportInfoTab(airport: airport, plannedRunway: plannedRunway)
+                }
+            case .charts:
+                chartsTab
+            case .weather:
+                if let airport = selectedAirport {
+                    WeatherPanel(icao: airport.code)
+                }
+            }
+        }
+        .frame(minWidth: 250)
+        .background(Color.ngPanel)
+        .onAppear {
+            weather.show(icao: selectedAirport?.code)
+            weather.isExpanded = tab == .weather
+        }
+        .onChange(of: browser.sidebarSelection) {
+            handleSelectionChange()
+            weather.show(icao: selectedAirport?.code)
+            if !availableTabs.contains(tab) { tab = .charts }
+        }
+        // Another tab on top is the new "collapsed": the store fetches nothing while it is.
+        .onChange(of: tab) { weather.isExpanded = tab == .weather }
+    }
+
+    /// The pinned list is not an airport: it has no runways to describe and no weather.
+    private var showsTabs: Bool { !isPinnedList && selectedAirport != nil }
+
+    private var availableTabs: [ColumnTab] {
+        weather.isEnabled ? ColumnTab.allCases : [.info, .charts]
+    }
+
+    /// The category strip, the filter and the list — what the column used to be on its own.
+    private var chartsTab: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                if !isPinnedList {
+                    CategoryStrip(selection: $browser.category, isEnabled: selectedAirport != nil)
+                        .help("Airport, Departure, Arrival, Approach and Reference charts")
+                }
+
+                MacSearchField(text: $browser.chartQuery,
+                               placeholder: "Filter charts",
+                               focusNotification: .focusChartSearch,
+                               onSubmit: selectFirstChart)
+                    .frame(height: 22)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 9)
+            .padding(.bottom, 9)
+
+            Divider()
+                .overlay(Color.ngSeparator)
+
             if charts.isEmpty {
                 emptyState
             } else {
                 list
             }
-
-            if !isPinnedList, weather.isEnabled, let airport = selectedAirport {
-                Divider().overlay(Color.ngSeparator)
-                WeatherPanel(icao: airport.code, available: columnHeight)
-            }
-        }
-        // The panel is resizable, and this is what stops it being dragged over the list. Safe
-        // to read here: the column's own height comes from the split view, not from its
-        // children, so nothing circles back.
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { columnHeight = $0 }
-        .frame(minWidth: 250)
-        .background(Color.ngPanel)
-        .onAppear { weather.show(icao: selectedAirport?.code) }
-        .onChange(of: browser.sidebarSelection) {
-            handleSelectionChange()
-            weather.show(icao: selectedAirport?.code)
         }
     }
 
@@ -99,44 +146,79 @@ struct ChartListColumn: View {
         return selectedAirport?.displayTitle ?? "No Airport Selected"
     }
 
-    private var headerSubtitle: String? {
+    /// The flight plans a runway here and nothing in the library serves it. Worth saying where
+    /// you would go looking for the plate, not only in the flight section that named it.
+    private var plannedRunwayHasNoChart: Bool {
+        guard let planned = plannedRunway, let code = selectedAirport?.code else { return false }
+        return !library.hasChart(serving: planned, at: code)
+    }
+
+    /// The airport's name: from its folder if it carries one, otherwise from the flight plan,
+    /// which is the only other place the app has been told what an ICAO is called.
+    private var headerName: String? {
+        guard !isPinnedList, let airport = selectedAirport else { return nil }
+        if let name = airport.displaySubtitle, !name.isEmpty { return name }
+        return flight.name(at: airport.code)
+    }
+
+    private var headerDetail: String? {
         if isPinnedList { return "\(library.pinnedCharts.count) charts" }
         guard let airport = selectedAirport else { return nil }
         // The reordering is invisible unless it says so, and then it explains itself.
         if let planned = plannedRunway { return "RWY \(planned) planned" }
-        if let name = airport.displaySubtitle, !name.isEmpty { return name }
         return "\(airport.charts.count) charts"
     }
 
+    /// Centred, with the airport's own name under its code — the identity of what you are
+    /// looking at, rather than a line of statistics with the code buried in it.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(headerTitle)
-                    .font(.headline)
-                if let subtitle = headerSubtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        VStack(spacing: 1) {
+            Text(headerTitle)
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                // Only this line keeps clear of the clock, so it stays centred in the column
+                // rather than in what is left of it. The lines below get the full width —
+                // reserving it for them truncated the warning to "No plate for plann…".
+                .padding(.horizontal, 64)
+
+            if let name = headerName, !name.isEmpty {
+                Text(name)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            // One line, not two: the warning replaces the plain "RWY 19R planned" rather than
+            // sitting under it saying the same thing in a different colour. When a plate does
+            // serve the runway, that plain line is what comes back.
+            if plannedRunwayHasNoChart, let planned = plannedRunway {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("No plate for planned RWY \(planned)")
                 }
-                Spacer(minLength: 0)
-                ZuluClock()
+                .font(.ngSmallMedium)
+                .foregroundStyle(Color.orange)
+                .lineLimit(1)
+                .help("The flight plans RWY \(planned) here and none of this airport's plates "
+                      + "serve it. Check the runway, or download the plate.")
+            } else if let detail = headerDetail {
+                Text(detail)
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
-
-            if !isPinnedList {
-                CategoryStrip(selection: $browser.category, isEnabled: selectedAirport != nil)
-                    .help("Airport, Departure, Arrival, Approach and Reference charts")
-            }
-
-            MacSearchField(text: $browser.chartQuery,
-                           placeholder: "Filter charts",
-                           focusNotification: .focusChartSearch,
-                           onSubmit: selectFirstChart)
-                .frame(height: 22)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 9)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+        .overlay(alignment: .topTrailing) {
+            ZuluClock()
+                .padding(.trailing, 12)
+                // Matched to the title's own top padding, so the clock sits on its line.
+                .padding(.top, 18)
+        }
     }
 
     // MARK: - List
@@ -280,9 +362,23 @@ private struct ChartRow: View {
                     Text(chart.category.shortName)
                         .foregroundStyle(chart.category.tint)
                     if let runway = chart.runway {
-                        Text("RWY \(runway)")
-                            .fontWeight(servesPlannedRunway ? .semibold : .regular)
-                            .foregroundStyle(servesPlannedRunway ? Color.ngAccentText : Color.secondary)
+                        // A chip rather than a third word in a run of faint text: the
+                        // designator is the thing you scan this list for, and "APP RWY 25L"
+                        // ran together as one phrase at this size. Digits are tabular so
+                        // 25L sits under 04R down the list rather than drifting.
+                        Text(runway)
+                            .font(.ngSmallBold)
+                            .monospacedDigit()
+                            .foregroundStyle(servesPlannedRunway ? Color.ngAccentText : Color.primary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(servesPlannedRunway
+                                        ? Color.ngAccent.opacity(0.45)
+                                        : Color.ngSeparator,
+                                        in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            .help(servesPlannedRunway
+                                  ? "Runway \(runway) — the one this flight plans"
+                                  : "Runway \(runway)")
                     }
                 }
                 .font(.ngSmall)
@@ -360,5 +456,213 @@ private struct CategoryStrip: View {
         .buttonStyle(.plain)
         .accessibilityLabel(category.displayName)
         .help(category.displayName)
+    }
+}
+
+// MARK: - Tabs
+
+enum ColumnTab: String, CaseIterable, Identifiable {
+    case info, charts, weather
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .info: return "Info"
+        case .charts: return "Charts"
+        case .weather: return "Weather"
+        }
+    }
+}
+
+/// Info / Charts / Weather. Built by hand rather than with a Picker for the same reason the
+/// category strip is: a segmented control takes the window tint for every segment, with no way
+/// in to style the selection.
+private struct ColumnTabStrip: View {
+
+    @Binding var selection: ColumnTab
+    let tabs: [ColumnTab]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs) { tab in
+                let chosen = selection == tab
+                Button {
+                    selection = tab
+                } label: {
+                    Text(tab.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 23)
+                        .foregroundStyle(chosen ? Color.white : Color.secondary)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(chosen ? Color.ngAccent : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.ngPanelRaised)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.ngSeparator, lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 9)
+    }
+}
+
+// MARK: - Info
+
+/// What the app knows about an airport without opening a chart: its runways, what you hold for
+/// it, and where those files are. Everything here is already to hand — nothing is fetched.
+private struct AirportInfoTab: View {
+
+    let airport: Airport
+    let plannedRunway: String?
+
+    private var runways: [String] {
+        WindMath.candidates(fromCharts: airport.charts.compactMap(\.runway),
+                            database: RunwayDatabase.runways(at: airport.code))
+    }
+
+    private var categories: [ChartCategory] {
+        ChartCategory.displayOrder.filter { airport.count(in: $0) > 0 }
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 14) {
+                section("Runways") {
+                    if runways.isEmpty {
+                        Text("Not in the runway table, and no plate here names one.")
+                            .font(.ngSmall)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        RunwayChips(items: runways, planned: plannedRunway)
+                    }
+                }
+
+                section("Charts") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if categories.isEmpty {
+                            Text("No charts filed here yet.")
+                                .font(.ngSmall)
+                                .foregroundStyle(.tertiary)
+                        }
+                        ForEach(categories) { category in
+                            HStack(spacing: 6) {
+                                Text(category.displayName)
+                                    .foregroundStyle(category.tint)
+                                Spacer(minLength: 8)
+                                Text("\(airport.count(in: category))")
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.ngSmall)
+                        }
+                    }
+                }
+
+                if let folder = airport.charts.first?.folderPath {
+                    section("Folder") {
+                        Text(folder)
+                            .font(.ngSmallMono)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.ngSmallBold)
+                .foregroundStyle(.secondary)
+            content()
+        }
+    }
+}
+
+private struct RunwayChips: View {
+
+    let items: [String]
+    let planned: String?
+
+    var body: some View {
+        FlowLayout(spacing: 4) {
+            ForEach(items, id: \.self) { item in
+                let isPlanned = planned.map { Chart.designatorsAgree(item, $0) } ?? false
+                Text(item)
+                    .font(.ngSmallBold)
+                    .monospacedDigit()
+                    .foregroundStyle(isPlanned ? Color.ngAccentText : Color.primary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(isPlanned ? Color.ngAccent.opacity(0.45) : Color.ngSeparator,
+                                in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .help(isPlanned ? "RWY \(item) — the one this flight plans" : "RWY \(item)")
+            }
+        }
+    }
+}
+
+/// A row of chips that wraps. SwiftUI has no flow layout of its own, and a fixed grid leaves
+/// ragged gaps when the items are three and four characters wide.
+private struct FlowLayout: Layout {
+
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 260
+        let rows = arrange(subviews, in: width)
+        return CGSize(width: width, height: rows.last.map { $0.y + $0.height } ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize,
+                       subviews: Subviews, cache: inout ()) {
+        for row in arrange(subviews, in: bounds.width) {
+            for placed in row.items {
+                subviews[placed.index].place(at: CGPoint(x: bounds.minX + placed.x,
+                                                         y: bounds.minY + row.y),
+                                             proposal: ProposedViewSize(placed.size))
+            }
+        }
+    }
+
+    private struct Placed { let index: Int; let x: CGFloat; let size: CGSize }
+    private struct Row { var y: CGFloat; var height: CGFloat; var items: [Placed] }
+
+    private func arrange(_ subviews: Subviews, in width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var current = Row(y: 0, height: 0, items: [])
+        var x: CGFloat = 0
+
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                rows.append(current)
+                current = Row(y: current.y + current.height + spacing, height: 0, items: [])
+                x = 0
+            }
+            current.items.append(Placed(index: index, x: x, size: size))
+            current.height = max(current.height, size.height)
+            x += size.width + spacing
+        }
+        if !current.items.isEmpty { rows.append(current) }
+        return rows
     }
 }

@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.0.6
+
+**The chart column has tabs**
+
+- The airport's code sits centred at the top with its name beneath it, and below that three
+  tabs: **Info**, **Charts** and **Weather**. The name comes from the chart folder when it
+  carries one, otherwise from the SimBrief plan — the only other place the app has been told
+  what an ICAO is called.
+- **Info** is new: the airport's runways as chips, with the planned one picked out, how many
+  charts you hold in each category, and the folder they are in. Nothing is fetched for it.
+- **Weather** is the same panel in a tab of its own, filling the column. Its drag-to-resize
+  grip and remembered height are gone with the split it used to divide — a tab has nothing to
+  trade height with. Another tab being on top now counts as collapsed, so looking away still
+  stops the polling rather than hiding it.
+
+**A warning when the flight plans a runway you have no plate for**
+
+- With a flight loaded, each airport is checked against the runway the plan names. The flight
+  section's row says `RWY 04R — no chart` in orange, and the chart column's header replaces its
+  `RWY 04R planned` line with the warning — one line, not two. As soon as a plate serves that
+  runway the plain line comes back.
+- The check asks whether *any* plate serves the runway rather than insisting on the right kind:
+  one plate covering both ends of a strip is normal, so demanding a SID specifically would warn
+  about flights that are perfectly well served.
+
+**Charts named `LOC 25` now know their runway**
+
+- The name parser only read a runway from a name carrying `RWY`, or from a designator with a
+  side letter like `04R`. A plate called `LOC 25` had neither, so it carried no runway at all:
+  it never sorted with its fellows, never showed a runway, and the new warning called it
+  missing while it sat in the list. A procedure word followed by a bare number now counts,
+  **anchored to the end of the name** — a loose two-digit number is more often a date
+  (`AGC 24 JUL 2025`), a page (`APC 2 OF 3`) or a frequency (`ILS 118`) than a runway.
+- The runway in a chart row is a chip rather than a third word in a run of faint text, with
+  tabular digits so designators line up down the list.
+
+**Fixed**
+
+- **The app could freeze on the startup screen.** Reading the download folder is what makes
+  macOS put its permission dialog up, and that call does not return until the dialog is
+  answered — on the main thread, that left the window unresponsive behind a dialog easy to miss.
+  The read and the file moves now happen off the main thread.
+
 ## 1.0.5
 
 **The runway menu holds the airport's own runways**

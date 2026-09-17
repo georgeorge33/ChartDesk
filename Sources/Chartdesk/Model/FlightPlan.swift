@@ -258,6 +258,17 @@ final class FlightPlanStore: ObservableObject {
         return url
     }
 
+    /// The airport's name as SimBrief gave it.
+    ///
+    /// A chart folder named plainly `KMKE` carries no name for the app to show, and the plan is
+    /// the one place that has one without going to the network for it.
+    func name(at icao: String) -> String? {
+        guard let plan = plan else { return nil }
+        let code = icao.uppercased()
+        let found = plan.airfields.first { $0.icao == code }?.name
+        return (found?.isEmpty ?? true) ? nil : found
+    }
+
     /// The runway SimBrief planned at this airport, when it is part of the loaded flight.
     func plannedRunway(at icao: String) -> String? {
         guard let plan = plan else { return nil }

@@ -212,10 +212,6 @@ final class WeatherStore: ObservableObject {
         didSet { UserDefaults.standard.set(variations, forKey: DefaultsKey.weatherVariation) }
     }
 
-    /// How tall the panel is allowed to get, dragged by its top edge. A cap rather than a fixed
-    /// height: with a short report there is nothing to reveal, so the panel still sizes to its
-    /// content and the chart list keeps the space.
-    @Published var panelHeight: CGFloat
 
     private var cache: [String: AirportWeather] = [:]
     /// The VATSIM feed covers every airport at once, so it is fetched *and parsed* once and
@@ -235,16 +231,6 @@ final class WeatherStore: ObservableObject {
         isExpanded = defaults.bool(forKey: DefaultsKey.weatherExpanded)
         runwayLists = defaults.dictionary(forKey: DefaultsKey.weatherRunways) as? [String: String] ?? [:]
         variations = defaults.dictionary(forKey: DefaultsKey.weatherVariation) as? [String: Double] ?? [:]
-        let saved = defaults.double(forKey: DefaultsKey.weatherHeight)
-        panelHeight = saved > 0 ? CGFloat(saved) : WeatherStore.defaultPanelHeight
-    }
-
-    static let defaultPanelHeight: CGFloat = 380
-    static let panelHeightRange: ClosedRange<CGFloat> = 140...900
-
-    /// Written once the drag ends rather than on every frame of it.
-    func savePanelHeight() {
-        UserDefaults.standard.set(Double(panelHeight), forKey: DefaultsKey.weatherHeight)
     }
 
     func weather(for code: String?) -> AirportWeather? {

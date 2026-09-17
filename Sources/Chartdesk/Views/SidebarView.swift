@@ -104,7 +104,13 @@ struct SidebarView: View {
     @ViewBuilder
     private func flightRow(_ field: FlightPlan.Airfield) -> some View {
         if let airport = library.airport(code: field.icao) {
-            FlightAirportRow(field: field, chartCount: airport.charts.count, name: airport.name)
+            // Only worth saying for an airport you actually hold charts for: one that is
+            // missing entirely says so already, and both at once is just noise.
+            let planned = field.runway ?? ""
+            FlightAirportRow(field: field,
+                             chartCount: airport.charts.count,
+                             name: airport.name,
+                             hasRunwayChart: library.hasChart(serving: planned, at: field.icao))
                 .tag(SidebarItem.airport(field.icao))
         } else {
             FlightAirportRow(field: field, chartCount: nil, name: field.name)
@@ -329,6 +335,16 @@ private struct FlightAirportRow: View {
     /// nil when the airport isn't in the library at all.
     let chartCount: Int?
     let name: String?
+    /// Whether a plate covers the runway the flight plans. True when it plans none.
+    var hasRunwayChart = true
+
+    /// The runway this flight plans here, when there is one.
+    private var planned: String? {
+        let runway = field.runway ?? ""
+        return runway.isEmpty ? nil : runway
+    }
+
+    private var isMissingChart: Bool { chartCount != nil && planned != nil && !hasRunwayChart }
 
     var body: some View {
         if chartCount == nil {
@@ -339,6 +355,9 @@ private struct FlightAirportRow: View {
                     inside ? NSCursor.pointingHand.push() : NSCursor.pop()
                 }
                 .help("\(field.icao) isn't in your library — open the MSFS flight planner")
+        } else if isMissingChart, let planned = planned {
+            row.help("No plate at \(field.icao) serves RWY \(planned). "
+                     + "You have charts for this airport, but none for the planned runway.")
         } else {
             row.help(name ?? field.icao)
         }
@@ -361,7 +380,8 @@ private struct FlightAirportRow: View {
                 if let detail = detail {
                     Text(detail)
                         .font(.ngSmall)
-                        .foregroundStyle(chartCount == nil ? Color.orange : Color.secondary)
+                        .foregroundStyle(chartCount == nil || isMissingChart
+                                         ? Color.orange : Color.secondary)
                         .lineLimit(1)
                 }
             }
@@ -369,6 +389,11 @@ private struct FlightAirportRow: View {
             Spacer(minLength: 0)
 
             if let count = chartCount {
+                if isMissingChart {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.ngSmall)
+                        .foregroundStyle(Color.orange)
+                }
                 Text("\(count)")
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
@@ -383,7 +408,9 @@ private struct FlightAirportRow: View {
 
     private var detail: String? {
         guard chartCount != nil else { return "not in your library" }
-        if let runway = field.runway, !runway.isEmpty { return "RWY \(runway)" }
+        if let planned = planned {
+            return isMissingChart ? "RWY \(planned) — no chart" : "RWY \(planned)"
+        }
         return name
     }
 
