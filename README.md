@@ -153,9 +153,14 @@ the diagram draws it on the left, always pointing up the page whatever its headi
 approach the only thing that matters is the wind *relative to the runway* — and a compass rose
 makes you do that rotation in your head.
 
-The menu is filled from the charts you hold. A plate named `IAC ILS Z RWY 04R` is proof that 04R
-exists — and that 22L does, being the other end of the same strip — so nothing has to be typed.
-An airport with no charts, looked up by ICAO, offers all 36 instead.
+The menu holds that airport's own runways, from a bundled table of 32,000 airports. Your charts
+add to it: a plate named `IAC ILS Z RWY 04R` is proof that 04R exists — and that 22L does, being
+the other end of the same strip — so a runway the table has missed still appears. Only an airport
+in neither, with no plate naming a runway, falls back to offering all 36.
+
+The table is designators only, which is all the wind maths needs, and it comes from
+[OurAirports](https://ourairports.com/data/) — public domain, and no guarantee of accuracy, so a
+decommissioned runway can linger in it. Rebuild it with `Tools/make_runways.py`.
 
 Beside it the wind is drawn as its two components: one arrow along the runway for the head or
 tail, one across it for the direct crosswind. Both are to one scale, so a long arrow down the

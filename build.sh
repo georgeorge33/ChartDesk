@@ -266,6 +266,13 @@ cp "$BINARY" "${CONTENTS}/MacOS/${APP_NAME}"
 cp Resources/Info.plist "${CONTENTS}/Info.plist"
 printf 'APPL????' > "${CONTENTS}/PkgInfo"
 
+# The runway table, which the wind panel needs to offer an airport's own runways.
+if [ -f Resources/runways.txt ]; then
+	cp Resources/runways.txt "${CONTENTS}/Resources/runways.txt"
+else
+	warn "Resources/runways.txt missing — runway menus will fall back to 01-36"
+fi
+
 if ! plutil -lint "${CONTENTS}/Info.plist" >/dev/null 2>&1; then
 	warn "Info.plist failed plutil -lint"
 fi

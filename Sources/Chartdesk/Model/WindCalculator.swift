@@ -160,14 +160,22 @@ enum WindMath {
 
     /// The runways to offer for an airport.
     ///
-    /// Taken from the charts you hold rather than typed: a plate named `IAC ILS Z RWY 04R` is
-    /// proof that 04R exists, and `reciprocal` turns it into proof of 22L as well. `remembered`
-    /// carries whatever was typed while this was a text field, so an airport set up by hand
-    /// keeps its list, and `picked` is held on even if nothing else vouches for it.
+    /// Three sources, unioned, because each knows something the others do not. `database` is
+    /// what the airport is published as having, which is the only one that covers an airport
+    /// whose plates do not name a runway — an airport chart on its own says nothing, which is
+    /// why those airports used to offer all thirty-six. The charts you hold are proof from the
+    /// set you fly: a plate named `IAC ILS Z RWY 04R` says 04R exists, and `reciprocal` turns
+    /// that into proof of 22L as well, so a runway the table has missed still appears.
+    /// `remembered` carries whatever was typed while this was a text field, and `picked` is
+    /// held on to even if nothing else vouches for it.
     static func candidates(fromCharts charts: some Sequence<String>,
                            remembered: String = "",
+                           database: [String] = [],
                            including picked: String? = nil) -> [String] {
         var found = Set(runways(from: remembered))
+        for runway in database where magneticHeading(of: runway) != nil {
+            found.insert(runway)
+        }
         for runway in charts {
             let designator = runway.trimmingCharacters(in: .whitespaces).uppercased()
             guard magneticHeading(of: designator) != nil else { continue }

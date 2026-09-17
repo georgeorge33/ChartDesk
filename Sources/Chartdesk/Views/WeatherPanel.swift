@@ -43,8 +43,8 @@ struct WeatherPanel: View {
         let selected: RunwayWind?
         let best: String?
 
-        /// What the menu offers: every designator when the library knows nothing about the
-        /// airport, which is the case for one typed into the field.
+        /// What the menu offers: every designator only when nothing knows anything about the
+        /// airport — not in the runway table, no plate naming a runway, nothing remembered.
         ///
         /// Deliberately not derived from `runways` — that includes whatever is picked, so
         /// choosing 18 at an unknown airport would leave 18 as the only thing in the menu.
@@ -57,12 +57,18 @@ struct WeatherPanel: View {
 
         let fromCharts = library.airport(code: code)?.charts.compactMap(\.runway) ?? []
         let remembered = weather.runwayList(for: code)
-        let known = WindMath.candidates(fromCharts: fromCharts, remembered: remembered)
+        let published = RunwayDatabase.runways(at: code)
+        let known = WindMath.candidates(fromCharts: fromCharts,
+                                        remembered: remembered,
+                                        database: published)
         // With nothing picked the two lists are the same, so the expensive derivation runs
         // once rather than twice.
         let runways = picked == nil
             ? known
-            : WindMath.candidates(fromCharts: fromCharts, remembered: remembered, including: picked)
+            : WindMath.candidates(fromCharts: fromCharts,
+                                  remembered: remembered,
+                                  database: published,
+                                  including: picked)
 
         var winds: [RunwayWind] = []
         if let wind = wind {

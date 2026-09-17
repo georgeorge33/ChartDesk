@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.5
+
+**The runway menu holds the airport's own runways**
+
+- The RWY menu and the wind list are filled from a bundled table of 32,000 airports, so KJFK
+  offers its eight runways rather than 01 to 36. The airports that fell back to all thirty-six
+  were the ones whose plates name no runway — an airport chart on its own says nothing about
+  which runways exist, and there was nothing else to ask.
+- Your charts still count for more: a plate named `IAC ILS Z RWY 04R` is proof from the set you
+  fly, and the two are unioned, so a runway the table has missed still appears. All 36 now show
+  only when nothing knows the airport at all.
+- Designators only, which is all the wind maths needs — the number is the magnetic heading. The
+  data is [OurAirports](https://ourairports.com/data/), public domain, 407 KB in the bundle and
+  parsed once in 1.3 ms. It carries no guarantee of accuracy, so a decommissioned runway can
+  linger in it. Rebuild with `Tools/make_runways.py`.
+
 ## 1.0.4
 
 **Charts file themselves**
