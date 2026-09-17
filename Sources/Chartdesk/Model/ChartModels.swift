@@ -87,6 +87,9 @@ struct Chart: Identifiable, Hashable {
     let folderPath: String?
     let category: ChartCategory
     let runway: String?
+    /// When the file was last written, which is the only date the app has for a plate — the
+    /// effective date is printed on the chart itself and would have to be read off the image.
+    let modified: Date?
     /// Everything worth matching a filter against, normalised and lower-cased once.
     ///
     /// Built here rather than read as a computed property: the chart list filters on every
@@ -96,7 +99,8 @@ struct Chart: Identifiable, Hashable {
     let searchKey: String
 
     init(id: String, url: URL, fileName: String, airportCode: String, airportName: String?,
-         title: String, folderPath: String?, category: ChartCategory, runway: String?) {
+         title: String, folderPath: String?, category: ChartCategory, runway: String?,
+         modified: Date? = nil) {
         self.id = id
         self.url = url
         self.fileName = fileName
@@ -106,6 +110,7 @@ struct Chart: Identifiable, Hashable {
         self.folderPath = folderPath
         self.category = category
         self.runway = runway
+        self.modified = modified
         self.searchKey = SearchKey.fold([airportCode, airportName ?? "", title, fileName,
                                          runway ?? "", category.shortName]
                                             .joined(separator: " "))
@@ -167,7 +172,8 @@ struct Chart: Identifiable, Hashable {
               title: title,
               folderPath: folderPath,
               category: newCategory,
-              runway: runway)
+              runway: runway,
+              modified: modified)
     }
 
     static func == (lhs: Chart, rhs: Chart) -> Bool {
@@ -205,6 +211,12 @@ struct Airport: Identifiable, Hashable {
 
     func chartList(in category: ChartCategory) -> [Chart] {
         charts.filter { $0.category == category }
+    }
+
+    /// The newest plate filed here, which is as close as the app gets to "how current is this
+    /// airport" without reading an effective date off the image.
+    var newestChartDate: Date? {
+        charts.compactMap(\.modified).max()
     }
 
     func count(in category: ChartCategory) -> Int {

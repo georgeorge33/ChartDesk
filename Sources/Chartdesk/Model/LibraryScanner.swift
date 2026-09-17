@@ -69,7 +69,8 @@ enum LibraryScanner {
                     title: parsed.title,
                     folderPath: folders.isEmpty ? nil : folders.joined(separator: " / "),
                     category: parsed.category,
-                    runway: parsed.runway
+                    runway: parsed.runway,
+                    modified: values?.contentModificationDate
                 )
             )
         }

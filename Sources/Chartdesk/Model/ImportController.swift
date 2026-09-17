@@ -41,9 +41,11 @@ final class ImportController: ObservableObject {
         look(libraryRoot: root, onFinish: finish)
     }
 
-    /// The same check from the menu, which should answer even when there is nothing to do.
+    /// The same check, asked for from the sidebar or the menu. It answers even when there is
+    /// nothing to do, and when there is, it makes the same ten-second offer as a launch does —
+    /// the banner counts down either way, so the countdown it shows is never a fiction.
     func checkNow(libraryRoot root: URL, onFinish finish: @escaping () -> Void) {
-        look(libraryRoot: root, onFinish: finish, countdown: false) { [weak self] charts, trouble in
+        look(libraryRoot: root, onFinish: finish) { [weak self] charts, trouble in
             guard let self = self, charts.isEmpty, trouble == nil else { return }
             self.report = "No charts are waiting in "
                 + "\(ChartImporter.downloadsFolder.lastPathComponent)."
@@ -57,7 +59,6 @@ final class ImportController: ObservableObject {
     /// the window behind it: splash, spinner and all, until you notice the dialog and click.
     private func look(libraryRoot root: URL,
                       onFinish finish: @escaping () -> Void,
-                      countdown: Bool = true,
                       then report: (([WaitingChart], ChartImporter.Trouble?) -> Void)? = nil) {
         libraryRoot = root
         onFinish = finish
@@ -75,7 +76,6 @@ final class ImportController: ObservableObject {
 
                 guard !charts.isEmpty else { return }
                 self.secondsLeft = Self.grace
-                guard countdown else { return }
                 self.ticker = Timer.publish(every: 1, on: .main, in: .common)
                     .autoconnect()
                     .sink { [weak self] _ in self?.tick() }

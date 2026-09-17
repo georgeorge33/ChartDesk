@@ -77,7 +77,8 @@ struct ChartListColumn: View {
             switch showsTabs ? tab : .charts {
             case .info:
                 if let airport = selectedAirport {
-                    AirportInfoTab(airport: airport)
+                    AirportInfoTab(airport: airport,
+                                   variation: weather.variation(for: airport.code))
                 }
             case .charts:
                 chartsTab
@@ -537,6 +538,9 @@ private struct ColumnTabStrip: View {
 private struct AirportInfoTab: View {
 
     let airport: Airport
+    /// Magnetic variation as set in the Runways tab, shown here because the wind components
+    /// are quietly wrong by exactly this much when it is left at zero.
+    let variation: Double
 
     private var categories: [ChartCategory] {
         ChartCategory.displayOrder.filter { airport.count(in: $0) > 0 }
@@ -566,13 +570,22 @@ private struct AirportInfoTab: View {
                     }
                 }
 
-                if let folder = airport.charts.first?.folderPath {
-                    section("Folder") {
-                        Text(folder)
-                            .font(.ngSmallMono)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                section("Details") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        detail("Variation", variationText,
+                               help: "Set it from the chart in the Runways tab. METAR wind is "
+                                   + "true north, runway numbers are magnetic.")
+
+                        if let date = airport.newestChartDate {
+                            detail("Newest chart", dateText(date),
+                                   tint: isStale(date) ? Color.orange : .secondary,
+                                   help: "When the newest plate here was last written. A LIDO "
+                                       + "cycle is 28 days.")
+                        }
+
+                        if let folder = airport.charts.first?.folderPath {
+                            detail("Folder", folder)
+                        }
                     }
                 }
             }
@@ -580,6 +593,45 @@ private struct AirportInfoTab: View {
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var variationText: String {
+        let rounded = (variation * 10).rounded() / 10
+        guard rounded != 0 else { return "0°" }
+        let magnitude = abs(rounded)
+        let value = magnitude == magnitude.rounded()
+            ? String(Int(magnitude))
+            : String(format: "%.1f", magnitude)
+        return value + "°" + (rounded > 0 ? "W" : "E")
+    }
+
+    /// A LIDO cycle is 28 days, so that is where "old" starts.
+    private func isStale(_ date: Date) -> Bool {
+        (Calendar.current.dateComponents([.day], from: date, to: .now).day ?? 0) >= 28
+    }
+
+    private func dateText(_ date: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: date, to: .now).day ?? 0
+        let stamp = date.formatted(date: .abbreviated, time: .omitted)
+        switch days {
+        case ..<1: return stamp + " · today"
+        case 1: return stamp + " · 1 day old"
+        default: return stamp + " · \(days) days old"
+        }
+    }
+
+    private func detail(_ label: String, _ value: String,
+                        tint: Color = .secondary, help: String = "") -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 8)
+            Text(value)
+                .foregroundStyle(tint)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.ngSmall)
+        .help(help)
     }
 
     @ViewBuilder

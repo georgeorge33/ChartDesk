@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.8
+
+- **The Info tab carries the two facts that were missing**: the magnetic variation in force for
+  the airport, and the date of the newest plate you hold for it — orange past 28 days, which is
+  a LIDO cycle. Charts kept no date of their own before this; the scanner was already reading
+  one per file to find the library's newest, so each chart now keeps it.
+- **A button in the sidebar footer looks in Downloads for charts to file**, beside the rescan.
+  The same check as Chart ▸ File Downloaded Charts…, where you are when you have just saved a
+  plate.
+- **The SimBrief button lines up with the rescan below it.** A section header sits on the
+  list's own inset while the footer is a plain row, which left the two eight points apart.
+- **Fixed: the manual check showed a countdown that never counted.** Asking for the check from
+  the menu put the banner up reading "filing in 10s" with a number that never moved and a file
+  that never happened. It now makes the same ten-second offer a launch does.
+
 ## 1.0.7
 
 **A Runways tab of its own**

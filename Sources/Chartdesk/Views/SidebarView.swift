@@ -6,6 +6,7 @@ struct SidebarView: View {
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var flight: FlightPlanStore
+    @EnvironmentObject private var importer: ImportController
 
     private var trimmedQuery: String {
         browser.airportQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -71,6 +72,10 @@ struct SidebarView: View {
                     .help("Fetch the latest flight from SimBrief")
                 }
             }
+            // Eight points, measured: a section header sits on the list's own inset while the
+            // footer is a plain row, so this button and the rescan below it were not in the
+            // same column.
+            .padding(.trailing, 8)
         }
     }
 
@@ -248,6 +253,18 @@ struct SidebarView: View {
                 .help("The newest file in your chart library is \(days) days old. "
                       + "A LIDO cycle is 28 days, so this set is likely out of date.")
             }
+
+            // Beside the rescan rather than only in the Chart menu: this is where you are
+            // when you have just saved a plate and want it filed.
+            Button {
+                guard let root = library.rootURL else { return }
+                importer.checkNow(libraryRoot: root) { library.rescan() }
+            } label: {
+                Image(systemName: "tray.and.arrow.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!library.hasLibrary)
+            .help("Look in \(ChartImporter.downloadsFolder.lastPathComponent) for charts to file")
 
             if library.isScanning {
                 ProgressView()
