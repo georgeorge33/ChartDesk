@@ -77,13 +77,17 @@ struct ChartListColumn: View {
             switch showsTabs ? tab : .charts {
             case .info:
                 if let airport = selectedAirport {
-                    AirportInfoTab(airport: airport, plannedRunway: plannedRunway)
+                    AirportInfoTab(airport: airport)
                 }
             case .charts:
                 chartsTab
             case .weather:
                 if let airport = selectedAirport {
-                    WeatherPanel(icao: airport.code)
+                    WeatherPanel(icao: airport.code, face: .reports)
+                }
+            case .runways:
+                if let airport = selectedAirport {
+                    WeatherPanel(icao: airport.code, face: .runways)
                 }
             }
         }
@@ -91,22 +95,23 @@ struct ChartListColumn: View {
         .background(Color.ngPanel)
         .onAppear {
             weather.show(icao: selectedAirport?.code)
-            weather.isExpanded = tab == .weather
+            weather.isExpanded = tab.needsWeather
         }
         .onChange(of: browser.sidebarSelection) {
             handleSelectionChange()
             weather.show(icao: selectedAirport?.code)
             if !availableTabs.contains(tab) { tab = .charts }
         }
-        // Another tab on top is the new "collapsed": the store fetches nothing while it is.
-        .onChange(of: tab) { weather.isExpanded = tab == .weather }
+        // A tab that does not need weather is the new "collapsed": the store fetches nothing
+        // while one of those is on top.
+        .onChange(of: tab) { weather.isExpanded = tab.needsWeather }
     }
 
     /// The pinned list is not an airport: it has no runways to describe and no weather.
     private var showsTabs: Bool { !isPinnedList && selectedAirport != nil }
 
     private var availableTabs: [ColumnTab] {
-        weather.isEnabled ? ColumnTab.allCases : [.info, .charts]
+        weather.isEnabled ? ColumnTab.allCases : ColumnTab.allCases.filter { !$0.needsWeather }
     }
 
     /// The category strip, the filter and the list — what the column used to be on its own.
@@ -462,7 +467,7 @@ private struct CategoryStrip: View {
 // MARK: - Tabs
 
 enum ColumnTab: String, CaseIterable, Identifiable {
-    case info, charts, weather
+    case info, charts, weather, runways
 
     var id: String { rawValue }
 
@@ -471,8 +476,12 @@ enum ColumnTab: String, CaseIterable, Identifiable {
         case .info: return "Info"
         case .charts: return "Charts"
         case .weather: return "Weather"
+        case .runways: return "Runways"
         }
     }
+
+    /// Whether being on this tab is a reason to fetch weather.
+    var needsWeather: Bool { self == .weather || self == .runways }
 }
 
 /// Info / Charts / Weather. Built by hand rather than with a Picker for the same reason the
@@ -491,7 +500,10 @@ private struct ColumnTabStrip: View {
                     selection = tab
                 } label: {
                     Text(tab.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        // Four equal cells in a 250-point column: at 12 point "Runways" left
+                        // no air either side of itself.
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .frame(height: 23)
                         .foregroundStyle(chosen ? Color.white : Color.secondary)
@@ -513,7 +525,7 @@ private struct ColumnTabStrip: View {
                         .strokeBorder(Color.ngSeparator, lineWidth: 1)
                 )
         )
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         .padding(.bottom, 9)
     }
 }
@@ -525,12 +537,6 @@ private struct ColumnTabStrip: View {
 private struct AirportInfoTab: View {
 
     let airport: Airport
-    let plannedRunway: String?
-
-    private var runways: [String] {
-        WindMath.candidates(fromCharts: airport.charts.compactMap(\.runway),
-                            database: RunwayDatabase.runways(at: airport.code))
-    }
 
     private var categories: [ChartCategory] {
         ChartCategory.displayOrder.filter { airport.count(in: $0) > 0 }
@@ -539,16 +545,6 @@ private struct AirportInfoTab: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 14) {
-                section("Runways") {
-                    if runways.isEmpty {
-                        Text("Not in the runway table, and no plate here names one.")
-                            .font(.ngSmall)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        RunwayChips(items: runways, planned: plannedRunway)
-                    }
-                }
-
                 section("Charts") {
                     VStack(alignment: .leading, spacing: 3) {
                         if categories.isEmpty {
@@ -594,75 +590,5 @@ private struct AirportInfoTab: View {
                 .foregroundStyle(.secondary)
             content()
         }
-    }
-}
-
-private struct RunwayChips: View {
-
-    let items: [String]
-    let planned: String?
-
-    var body: some View {
-        FlowLayout(spacing: 4) {
-            ForEach(items, id: \.self) { item in
-                let isPlanned = planned.map { Chart.designatorsAgree(item, $0) } ?? false
-                Text(item)
-                    .font(.ngSmallBold)
-                    .monospacedDigit()
-                    .foregroundStyle(isPlanned ? Color.ngAccentText : Color.primary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(isPlanned ? Color.ngAccent.opacity(0.45) : Color.ngSeparator,
-                                in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    .help(isPlanned ? "RWY \(item) — the one this flight plans" : "RWY \(item)")
-            }
-        }
-    }
-}
-
-/// A row of chips that wraps. SwiftUI has no flow layout of its own, and a fixed grid leaves
-/// ragged gaps when the items are three and four characters wide.
-private struct FlowLayout: Layout {
-
-    var spacing: CGFloat = 4
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 260
-        let rows = arrange(subviews, in: width)
-        return CGSize(width: width, height: rows.last.map { $0.y + $0.height } ?? 0)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize,
-                       subviews: Subviews, cache: inout ()) {
-        for row in arrange(subviews, in: bounds.width) {
-            for placed in row.items {
-                subviews[placed.index].place(at: CGPoint(x: bounds.minX + placed.x,
-                                                         y: bounds.minY + row.y),
-                                             proposal: ProposedViewSize(placed.size))
-            }
-        }
-    }
-
-    private struct Placed { let index: Int; let x: CGFloat; let size: CGSize }
-    private struct Row { var y: CGFloat; var height: CGFloat; var items: [Placed] }
-
-    private func arrange(_ subviews: Subviews, in width: CGFloat) -> [Row] {
-        var rows: [Row] = []
-        var current = Row(y: 0, height: 0, items: [])
-        var x: CGFloat = 0
-
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                rows.append(current)
-                current = Row(y: current.y + current.height + spacing, height: 0, items: [])
-                x = 0
-            }
-            current.items.append(Placed(index: index, x: x, size: size))
-            current.height = max(current.height, size.height)
-            x += size.width + spacing
-        }
-        if !current.items.isEmpty { rows.append(current) }
-        return rows
     }
 }

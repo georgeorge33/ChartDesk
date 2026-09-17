@@ -150,14 +150,6 @@ struct Chart: Identifiable, Hashable {
         return mine.side == theirs.side || mine.side.isEmpty || theirs.side.isEmpty
     }
 
-    /// Whether two designators name the same runway, by the same rule `serves` uses: exact
-    /// where both name a side, and a match where either omits one.
-    static func designatorsAgree(_ one: String, _ other: String) -> Bool {
-        guard let mine = runwayParts(one), let theirs = runwayParts(other) else { return false }
-        guard mine.number == theirs.number else { return false }
-        return mine.side == theirs.side || mine.side.isEmpty || theirs.side.isEmpty
-    }
-
     private static func runwayParts(_ value: String?) -> (number: Int, side: String)? {
         guard let value = value?.trimmingCharacters(in: .whitespaces).uppercased(),
               !value.isEmpty else { return nil }

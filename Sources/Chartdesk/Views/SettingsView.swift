@@ -102,7 +102,7 @@ private struct GeneralSettingsView: View {
             }
 
             Section("Weather") {
-                Toggle("Show the Weather tab beside the charts", isOn: $weather.isEnabled)
+                Toggle("Show the Weather and Runways tabs", isOn: $weather.isEnabled)
                 Text("METAR and TAF come from the Aviation Weather Center, real ATIS from FAA "
                      + "D-ATIS (US fields only), and VATSIM ATIS from the VATSIM data feed. "
                      + "Collapsing the panel stops the requests.")

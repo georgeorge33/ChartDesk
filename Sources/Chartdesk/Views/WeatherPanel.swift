@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Weather, ATIS and the wind against your runways — the chart column's Weather tab.
+/// Weather and ATIS, or the wind against your runways — the chart column's Weather and
+/// Runways tabs, which are two faces of the same panel.
 ///
 /// It lives beside the charts rather than in a window of its own: the airport you want weather
 /// for is almost always the one whose charts you are reading, and a second window would mean
@@ -14,8 +15,18 @@ struct WeatherPanel: View {
     @EnvironmentObject private var weather: WeatherStore
     @EnvironmentObject private var library: ChartLibrary
 
+    /// Which half of the panel to show. Both keep the same header — which airport, how old,
+    /// and fetch again — because wind an hour stale is worth knowing about on either.
+    enum Face {
+        /// METAR, TAF and ATIS as issued.
+        case reports
+        /// The wind resolved against each runway.
+        case runways
+    }
+
     /// The airport the chart list is showing. The panel follows it unless you type another.
     let icao: String?
+    var face: Face = .reports
 
     @State private var query = ""
     @State private var picked: String?
@@ -161,9 +172,12 @@ struct WeatherPanel: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                if resolved.report != nil { windSection(resolved) }
-
-                if let report = resolved.report {
+                if face == .runways {
+                    // Not gated on there being a report: with no weather at all the picker is
+                    // still the list of this airport's runways, and the section says why
+                    // nothing resolved.
+                    windSection(resolved)
+                } else if let report = resolved.report {
                     // METAR and TAF above ATIS: a full ATIS runs to ten lines of hold-short
                     // and crane advisories and would push them out of view.
                     if let metar = report.metar { reportBlock("METAR", metar, mono: true) }

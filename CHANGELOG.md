@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.7
+
+**A Runways tab of its own**
+
+- The wind analysis moves out of the Weather tab into **Runways**, next to it: the wind
+  summary, the variation, the RWY picker, the north/south diagram with its head and cross
+  arrows, and the table of every runway with the star on the most headwind. **Weather** is now
+  METAR, TAF and ATIS alone.
+- Both tabs keep the same header — which airport, how old, fetch again — because wind an hour
+  stale is worth knowing about on either, and switching airports should not depend on which one
+  you are reading.
+- The wind section no longer waits for a report before drawing. On its own tab that would have
+  left an empty pane; instead the picker lists the airport's runways and the section says why
+  nothing resolved.
+- Being on either tab counts as looking, so the store fetches for both. Info and Charts still
+  stop the polling, which is what collapsing the old panel used to do.
+- The Info tab's runway chips are gone with it. One column with two things called Runways was
+  one too many, and the picker and the table list the same runways with more to say about them.
+
 ## 1.0.6
 
 **The chart column has tabs**
