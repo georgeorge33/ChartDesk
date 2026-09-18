@@ -47,10 +47,48 @@ jobs:
           plutil -replace CFBundleShortVersionString -string "${{ steps.version.outputs.version }}" Resources/Info.plist
           plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER}" Resources/Info.plist
 
+      # A signature that is the same one next release, so macOS keeps a permission it has
+      # already granted -- reading ~/Downloads, in this app's case. An ad-hoc signature's
+      # designated requirement is the build's own hash, which changes every single release,
+      # and the system then treats each update as a new app and asks all over again.
+      #
+      # The certificate is self-signed and vouches for nobody: Gatekeeper turns this app away
+      # either way. It only has to be the same certificate each time. Without the secret the
+      # build still works and is signed ad-hoc, as it was before this step existed.
+      - name: Signing certificate
+        env:
+          CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATE" ]; then
+            echo "No SIGNING_CERTIFICATE_P12 secret set; this build will be signed ad-hoc."
+            exit 0
+          fi
+          KEYCHAIN="${RUNNER_TEMP}/chartdesk-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "${RUNNER_TEMP}/signing.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "${RUNNER_TEMP}/signing.p12" -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          rm -f "${RUNNER_TEMP}/signing.p12"
+          security find-identity -p codesigning "$KEYCHAIN"
+          echo "CHARTDESK_SIGN_KEYCHAIN=${KEYCHAIN}" >> "$GITHUB_ENV"
+
       - name: Build
         run: |
           chmod +x build.sh
           ./build.sh
+
+      # Which signature the published app actually carries, in the log, so a release that
+      # quietly fell back to ad-hoc is visible rather than discovered months later.
+      - name: Report the signature
+        run: |
+          codesign -dvvv build/Chartdesk.app 2>&1 | grep -E 'Identifier|Authority' || true
+          codesign -d --requirements - build/Chartdesk.app 2>&1 | tail -2 || true
 
       - name: Package
         run: ditto -c -k --keepParent build/Chartdesk.app Chartdesk.app.zip

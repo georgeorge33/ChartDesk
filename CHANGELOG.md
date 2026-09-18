@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.1.0-rc.3
+
+What this candidate adds to rc.2. Full release soon.
+
+**The map draws the detail the zoom can show**
+
+- **Four levels of detail instead of the one drawing.** rc.2 drew a single 1:50m world at every
+  zoom, which carried ten times the points a whole-world view has pixels and too few to show a
+  coastline close in. The map now picks between Natural Earth at 1:110m, 1:50m and 1:10m by
+  zoom, and past about 2.5° across adds **runways** — 14,865 at 11,362 airports, with idents.
+  Zoom in on Boston and Logan's 04L, 04R, 14, 15L and 15R are drawn where they are.
+- The tier in use is named in the readout, so the level of detail is visible rather than
+  guessed at. A finer tier is read on a background queue and the coarser one keeps drawing
+  until it lands — 10ms for the deepest, scanned as bytes.
+- **Rings are clipped to the view rather than culled by it**, which is what makes the deepest
+  tier affordable: Africa-and-Eurasia is one ring of 80,000 points, and over Kansas every point
+  of North America is off the panel — so leaving out what you cannot see would have erased the
+  continent instead of drawing it. Clipped, that ring draws from four points and Kansas stays
+  land.
+
+**A signature that is the same one next time**
+
+- **macOS stops asking for the Downloads folder after every update.** It ties a permission you
+  have granted to the signature's designated requirement, and an ad-hoc signature's requirement
+  is the build's own hash — so every release looked like a different app and asked again.
+  Releases are now signed with a certificate, which makes the requirement the bundle identifier
+  and the certificate: the same next release, and the answer sticks. It will ask once more after
+  this one, and then stop. The certificate is self-signed and vouches for nobody — Gatekeeper
+  treats the app exactly as it did before.
+- **Fixed: builds intermittently came out unsigned.** The strip of Finder attributes walked
+  every file in the bundle while iCloud re-stamped the one directory `codesign` objects to, and
+  lost that race often enough to matter. It now clears that directory immediately before each
+  attempt, and `--install` clears it again on the way into /Applications.
+
 ## 1.1.0-rc.2
 
 What this candidate adds to rc.1. Full release soon.
@@ -46,18 +80,31 @@ What this candidate adds to rc.1. Full release soon.
 
 **Bundled, not fetched**
 
-The geography is Natural Earth at 1:50m and the airports are OurAirports, both public domain,
-both built by `Tools/make_mapdata.py` — 1.2 MB in the bundle. The rest of the app works with
-the network off and a map that needed tiles would have been the first thing to stop.
+The geography is Natural Earth, the airports and the runways are OurAirports, all public
+domain, all built by `Tools/make_mapdata.py` — 9 MB in the bundle, 3 MB of the download. The
+rest of the app works with the network off, and a map that needed tiles would have been the
+first thing to stop.
 
-- Three layers, each drawn its own way: land filled, **lakes filled back in with the sea's
-  colour**, and borders stroked. Borders are only the arcs two countries share, so no line is
-  drawn twice and no coastline is mistaken for a frontier.
-- Ten times the geometry of a first attempt at 1:110m, which is what brings back the Great
-  Lakes. Each shape carries its extent, so 48 of 1,778 draw at route zoom, and rings are
-  sampled to about two points per pixel of their own width — the world view drops from 107,000
-  points to 39,000 with nothing lost close in. The tables are read on a background queue at
-  launch rather than costing three dropped frames on first open.
+- **Four levels of detail, chosen by zoom.** Natural Earth publishes the same world at 1:110m,
+  1:50m and 1:10m, each generalised by cartographers for the scale it is meant to be seen at,
+  and the map draws whichever suits: continents at a whole-world view, and from about 27°
+  across the 1:10m world, which is where Cape Cod, the Finger Lakes, Georgian Bay and the
+  Aegean islands come from. Closer than about 2.5° across, **runways** — 14,865 of them at
+  11,362 airports, with their idents once a strip is long enough to hang one off. Which tier
+  is in use is named in the readout, rather than left to be inferred.
+- Tiers are read on a background queue the first time a zoom asks for one, and whichever is
+  already in hand keeps drawing meanwhile: the coast sharpens a moment later instead of
+  disappearing while a file is read. Scanned as bytes rather than decoded and split into
+  strings, which is what gets the deepest tier — 380,000 points — down to 10ms.
+- Three layers per tier, each drawn its own way: land filled, **lakes filled back in with the
+  sea's colour**, and borders stroked. Borders are only the arcs two countries share, so no
+  line is drawn twice and no coastline is mistaken for a frontier. All three come from the one
+  tier, because a 1:10m coast beside a 1:50m border puts the frontier out at sea.
+- **Rings are clipped to the view rather than culled by it.** Africa-and-Eurasia is a single
+  ring of 80,000 points at 1:10m, so asking whether its extent reaches the view answers
+  nothing — and leaving out the parts you cannot see is worse than useless, because the view
+  is so often *inside* a ring: over Kansas every last point of North America is off the panel.
+  Clipped, that ring draws from four points instead of 55,000 and still says Kansas is land.
 - A ring crossing the antimeridian used to jump from 179° to −179°, which drew a line sweeping
   back across the whole map through Siberia and Antarctica. Longitudes now run past ±180 and
   each shape is drawn at whichever offsets reach the view.

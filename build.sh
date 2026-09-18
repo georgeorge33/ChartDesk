@@ -309,27 +309,61 @@ else
 fi
 
 # --- Signature -------------------------------------------------------------
-step "Signing (ad-hoc)"
-# codesign refuses a bundle carrying Finder info or a resource fork, and iCloud Drive adds
-# exactly that to anything under a synced Desktop or Documents folder.
+# Signed with a certificate when there is one to hand, ad-hoc when there is not.
 #
-# `xattr -cr` is not enough on its own: it leaves com.apple.FinderInfo on the bundle
-# directory itself, which is the one codesign actually trips over. So that attribute is also
-# deleted by name. iCloud can re-stamp it between the strip and the signature, hence the
-# retry rather than a straight failure.
-strip_detritus() {
-	xattr -cr "$APP" 2>/dev/null || true
-	find "$APP" -exec xattr -d com.apple.FinderInfo {} \; 2>/dev/null || true
-	find "$APP" -exec xattr -d com.apple.ResourceFork {} \; 2>/dev/null || true
-	find "$APP" -name '._*' -delete 2>/dev/null || true
-}
+# This matters more than it sounds. When macOS grants a permission -- reading ~/Downloads, in
+# this app's case -- it ties the grant to the signature's *designated requirement*. Signed
+# ad-hoc, that requirement is the build's own hash:
+#
+#     designated => cdhash H"ccb6080e..."
+#
+# so every build is a different app as far as the system is concerned, and a permission you
+# granted is asked for again after each update. Signed with a certificate it is the bundle
+# identifier and the certificate instead:
+#
+#     designated => identifier "local.chartdesk.app" and certificate root = H"bad019d0..."
+#
+# which is the same next build and the same next release, and the answer sticks.
+#
+# The certificate is self-signed and carries no trust -- Gatekeeper turns this app away either
+# way, exactly as it does an ad-hoc one -- so it is not there to vouch for who built this. It
+# is there to say that this is still the same app.
+SIGN_IDENTITY="${CHARTDESK_SIGN_IDENTITY:-Chartdesk Signing}"
+SIGN_KEYCHAIN="${CHARTDESK_SIGN_KEYCHAIN:-}"
 
-strip_detritus
-if ! codesign --force --sign - "$APP" 2>/dev/null; then
-	strip_detritus
-	if ! codesign --force --sign - "$APP" 2>/dev/null; then
-		warn "Ad-hoc signing failed; the app may be refused on Apple silicon."
+SIGN_AS=(--sign -)
+SIGN_LABEL="ad-hoc"
+if security find-identity -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} 2>/dev/null \
+	| grep -qF "$SIGN_IDENTITY"; then
+	SIGN_AS=(--sign "$SIGN_IDENTITY")
+	SIGN_LABEL="$SIGN_IDENTITY"
+	if [ -n "$SIGN_KEYCHAIN" ]; then
+		SIGN_AS+=(--keychain "$SIGN_KEYCHAIN")
 	fi
+fi
+
+step "Signing (${SIGN_LABEL})"
+# codesign refuses a bundle carrying Finder info or a resource fork, and iCloud Drive adds
+# exactly that to anything under a synced Desktop or Documents folder -- including this one.
+#
+# `xattr -cr` is not enough on its own: it leaves com.apple.FinderInfo on the bundle directory
+# itself, which is the attribute codesign actually trips over, and iCloud puts it back within
+# moments of it being cleared. So the tree is cleaned once, and then the one directory that
+# matters is cleared immediately before each attempt with nothing in between to lose the race
+# to -- and there are several attempts, because occasionally iCloud still wins one.
+xattr -cr "$APP" 2>/dev/null || true
+find "$APP" -name '._*' -delete 2>/dev/null || true
+
+SIGNED=no
+for ATTEMPT in 1 2 3 4 5; do
+	xattr -c "$APP" 2>/dev/null || true
+	if codesign --force "${SIGN_AS[@]}" "$APP" 2>/dev/null; then
+		SIGNED=yes
+		break
+	fi
+done
+if [ "$SIGNED" = no ]; then
+	warn "Signing (${SIGN_LABEL}) failed; the app may be refused on Apple silicon."
 fi
 
 step "Built ${APP}"
@@ -339,6 +373,10 @@ case "$ACTION" in
 	step "Installing to /Applications"
 	rm -rf "/Applications/${APP_NAME}.app"
 	cp -R "$APP" /Applications/
+	# `cp` brings the Finder info iCloud stamped on the built bundle along with it, and
+	# codesign --verify objects to it just as signing did. /Applications is not synced, so
+	# cleared once here it stays cleared.
+	xattr -c "/Applications/${APP_NAME}.app" 2>/dev/null || true
 	open "/Applications/${APP_NAME}.app"
 	;;
 --run)
