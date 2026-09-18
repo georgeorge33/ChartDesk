@@ -166,19 +166,47 @@ extension GlobeProjection {
         return length > 1e-12 ? between / length : from
     }
 
+    /// How a closing arc's direction is chosen, where the rule has a choice.
+    enum Closing: CaseIterable {
+        /// Avoid the widest stretch of edge with no crossing on it.
+        case emptiest
+        /// Avoid swallowing another crossing, preferring clockwise when neither would.
+        case fewestCrossings
+        /// The same, preferring anticlockwise.
+        case fewestCrossingsOtherWay
+        /// Every arc clockwise, and every arc anticlockwise.
+        case allClockwise
+        case allAnticlockwise
+    }
+
     /// The visible part of a closed ring, as points on the sheet.
     ///
     /// Sutherland-Hodgman cannot do this. Its clip regions are half-planes, and the region
-    /// here is a hemisphere whose boundary, on the sheet, is a circle — so where a ring leaves
+    /// here is a hemisphere whose boundary on the sheet is a circle — so where a ring leaves
     /// the globe and comes back, the two ends have to be joined by an *arc* of that circle
     /// rather than the straight line a half-plane clip would leave. A straight line there
-    /// draws a chord across the face of the globe, which is a continent with a slice cut off.
+    /// draws a chord across the face of the globe: a continent with a slice cut off.
     ///
-    /// Which way round the arc goes is the whole difficulty, and it cannot be answered by
-    /// taking the shorter one: the land is sometimes the larger part. It is answered by the
-    /// hidden stretch of the ring itself. Those points are on the far side, but they still
-    /// have an azimuth — a bearing round the edge — and the arc that replaces them is the one
-    /// sweeping through those bearings.
+    /// Which way round each arc goes is the whole difficulty, and five rules for deciding it
+    /// up front were each wrong somewhere:
+    ///
+    /// * the shorter way — the land is sometimes the larger part, and an island half over the
+    ///   horizon came out as coastline round the entire globe;
+    /// * the bearings of the hidden stretch — meaningless where a ring merely grazes the edge
+    ///   and every bearing is all but equal;
+    /// * the ring's own winding, clockwise in every table — different gaps of one ring
+    ///   genuinely need different directions;
+    /// * the arc holding no other crossing — wrong for Sulawesi on the limb, whose crossings
+    ///   sit within five degrees of one another;
+    /// * which stretches of the edge are land, by parity — right about a stretch, but a single
+    ///   arc can span several of them.
+    ///
+    /// So the answer is not chosen, it is *checked*. Each rule is tried and the first result
+    /// that could exist is kept: positive area, and no larger than the face of the globe,
+    /// which a ring cut down to the face cannot be. Going the wrong way round adds whole turns
+    /// of the edge, so a wrong answer fails one of those or the other. Where none of them
+    /// works the ring is left out rather than drawn wrong — which costs a sliver of coast at
+    /// the very edge of the globe, against painting the whole world as land.
     func visible(ring: [SIMD3<Double>], steps: Double = 0.05) -> [CGPoint] {
         guard ring.count > 2 else { return [] }
 
@@ -191,101 +219,131 @@ extension GlobeProjection {
             if ahead { anyFacing = true } else { anyHidden = true }
         }
 
-        // Wholly in view: nothing to close.
-        if !anyHidden {
-            return ring.map(point)
+        if !anyHidden { return ring.map(point) }
+        // Wholly out of view, so nothing to draw. A ring large enough for the globe's whole
+        // face to fall inside it would have to be filled instead, but none exists: no
+        // landmass on Earth is wider than a hemisphere, and the widest — Africa and Eurasia
+        // together, a cap of 95° — always has coast in view when its middle does.
+        if !anyFacing { return [] }
+
+        let face = Double.pi * radius * radius
+        var best: [CGPoint] = []
+        var bestArea = Double.infinity
+
+        for closing in Closing.allCases {
+            let candidate = trace(ring: ring, facing: facing, closing: closing, steps: steps)
+            guard candidate.count > 2 else { continue }
+            let area = Self.area(candidate)
+            if area > 0, area <= face * Self.mostOfTheFace { return candidate }
+            if abs(area) < bestArea {
+                bestArea = abs(area)
+                best = candidate
+            }
         }
-        // Wholly out of view — unless it is so large that the globe's whole face is inside it,
-        // in which case what you can see of it is all of it.
-        if !anyFacing {
-            return encloses(ring: ring) ? wholeFace(steps: steps) : []
+        // Nothing possible. Better a missing sliver than a globe painted over.
+        return bestArea <= face * Self.mostOfTheFace ? best : []
+    }
+
+    /// The most of the globe's face a single ring may honestly cover.
+    ///
+    /// Snug deliberately. Going the wrong way round the edge traces the entire edge, and that
+    /// answer has an area of *exactly* the face — so a tolerance above 1 waves it through,
+    /// which is how eighteen views still came back painted over. No landmass can cover a whole
+    /// hemisphere: the widest is Africa and Eurasia together, whose visible part peaks near
+    /// half the face.
+    static let mostOfTheFace = 0.9
+
+    /// The signed area of a closed screen-space ring.
+    static func area(_ points: [CGPoint]) -> Double {
+        guard points.count > 2 else { return 0 }
+        var twice = 0.0
+        for index in points.indices {
+            let here = points[index], next = points[(index + 1) % points.count]
+            twice += Double(here.x * next.y - next.x * here.y)
+        }
+        return twice / 2
+    }
+
+    private func trace(ring: [SIMD3<Double>], facing: [Bool], closing: Closing,
+                       steps: Double) -> [CGPoint] {
+        var bearings: [Double] = []
+        for index in ring.indices {
+            let next = (index + 1) % ring.count
+            guard facing[index] != facing[next] else { continue }
+            bearings.append(azimuth(of: crossing(ring[index], ring[next])))
         }
 
         var out: [CGPoint] = []
-        out.reserveCapacity(ring.count + 32)
+        out.reserveCapacity(ring.count + 64)
 
         for index in ring.indices {
             let next = (index + 1) % ring.count
-            let here = ring[index], there = ring[next]
-
-            if facing[index] { out.append(point(here)) }
-
+            if facing[index] { out.append(point(ring[index])) }
             guard facing[index] != facing[next] else { continue }
 
-            if facing[index] {
-                // Leaving. Walk the edge round to wherever it comes back, sweeping through
-                // the bearings of the stretch that is hidden.
-                let leaves = crossing(here, there)
-                out.append(point(leaves))
+            let crossed = crossing(ring[index], ring[next])
+            out.append(point(crossed))
+            guard facing[index] else { continue }
 
-                var step = next
-                var through: [Double] = []
-                while !facing[step] {
-                    through.append(azimuth(of: ring[step]))
-                    step = (step + 1) % ring.count
-                }
-                let returns = crossing(ring[(step + ring.count - 1) % ring.count], ring[step])
-                out.append(contentsOf: arc(from: azimuth(of: leaves),
-                                           to: azimuth(of: returns),
-                                           through: through,
-                                           steps: steps))
-            } else {
-                // Coming back. The crossing itself; the arc that got here was already drawn.
-                out.append(point(crossing(here, there)))
+            var step = next
+            var hidden: [Double] = []
+            while !facing[step] {
+                hidden.append(azimuth(of: ring[step]))
+                step = (step + 1) % ring.count
             }
+            let back = azimuth(of: crossing(ring[(step + ring.count - 1) % ring.count],
+                                            ring[step]))
+            out.append(contentsOf: arc(from: azimuth(of: crossed), to: back,
+                                       hidden: hidden, bearings: bearings,
+                                       closing: closing, steps: steps))
         }
         return out
     }
 
-    /// Points along the globe's edge from one bearing to another, going the way that passes
-    /// through the bearings of the hidden stretch.
-    private func arc(from: Double, to: Double, through: [Double], steps: Double) -> [CGPoint] {
-        // Both distances measured the same way round — anticlockwise, in 0..<2π. Mixing a
-        // signed shortest sweep with an unsigned anticlockwise one is what once sent a ring
-        // the long way round and traced the whole edge of the globe as coastline.
-        func anticlockwise(_ angle: Double) -> Double {
+    /// Points along the globe's edge from one bearing to another.
+    private func arc(from: Double, to: Double, hidden: [Double], bearings: [Double],
+                     closing: Closing, steps: Double) -> [CGPoint] {
+        func ahead(_ angle: Double) -> Double {
             var value = angle
             while value < 0 { value += 2 * .pi }
             while value >= 2 * .pi { value -= 2 * .pi }
             return value
         }
+        let anticlockwiseSweep = ahead(to - from)
 
-        let round = anticlockwise(to - from)
-        var sweep = round
-
-        if through.isEmpty {
-            // A crossing with nothing hidden between it and the next, which happens where a
-            // ring grazes the edge. Nothing to go on, so take the shorter way.
-            if round > .pi { sweep = round - 2 * .pi }
-        } else {
-            // Which way round is settled by where round the edge there is *nothing*.
-            //
-            // Asking instead where the middle of the hidden stretch lies cannot answer it for
-            // a shape that merely grazes the edge: a small island half over the horizon has
-            // every bearing all but equal, and the comparison comes down to which way the
-            // rounding fell. Three of them came out drawn as coastline all the way round the
-            // globe. The widest empty stretch is a robust thing to find, whatever the scale of
-            // the shape, and the land is on the other side of it.
-            var marks = through.map { anticlockwise($0 - from) }
-            marks.append(0)          // where this arc starts
-            marks.append(round)      // and where it has to end
+        var anticlockwise: Bool
+        switch closing {
+        case .allAnticlockwise:
+            anticlockwise = true
+        case .allClockwise:
+            anticlockwise = false
+        case .emptiest:
+            // Do not run through the widest stretch of edge that nothing crosses.
+            var marks = hidden.map { ahead($0 - from) }
+            marks.append(0)
+            marks.append(anticlockwiseSweep)
             marks.sort()
-
             var widest = 2 * .pi - marks[marks.count - 1] + marks[0]
             var emptyFrom = marks[marks.count - 1]
-            for index in 1..<marks.count {
-                let gap = marks[index] - marks[index - 1]
-                if gap > widest {
-                    widest = gap
-                    emptyFrom = marks[index - 1]
-                }
+            for index in 1..<marks.count where marks[index] - marks[index - 1] > widest {
+                widest = marks[index] - marks[index - 1]
+                emptyFrom = marks[index - 1]
             }
-
-            // Going anticlockwise would run through the empty stretch, so the land went the
-            // other way about.
-            if emptyFrom < round { sweep = round - 2 * .pi }
+            anticlockwise = !(emptyFrom < anticlockwiseSweep)
+        case .fewestCrossings, .fewestCrossingsOtherWay:
+            var inside = 0, outside = 0
+            for bearing in bearings {
+                let along = ahead(bearing - from)
+                guard along > 1e-9, along < 2 * .pi - 1e-9,
+                      abs(along - anticlockwiseSweep) > 1e-9 else { continue }
+                if along < anticlockwiseSweep { inside += 1 } else { outside += 1 }
+            }
+            anticlockwise = inside == outside
+                ? (closing == .fewestCrossingsOtherWay)
+                : inside < outside
         }
 
+        let sweep = anticlockwise ? anticlockwiseSweep : anticlockwiseSweep - 2 * .pi
         let count = max(2, Int(abs(sweep) / steps))
         var points: [CGPoint] = []
         points.reserveCapacity(count)
@@ -294,42 +352,6 @@ extension GlobeProjection {
         }
         return points
     }
-
-    /// The globe's whole face, for a shape that swallows it.
-    private func wholeFace(steps: Double) -> [CGPoint] {
-        let count = max(24, Int(2 * .pi / steps))
-        return (0..<count).map { edge(at: 2 * .pi * Double($0) / Double(count)) }
-    }
-
-    /// Whether a ring holds the point the globe is centred on.
-    ///
-    /// By winding: the bearings of the ring's points, walked round, come back having gone once
-    /// round the circle when the centre is inside it.
-    ///
-    /// The *sign* of that is the whole answer, and taking the size of it instead says that
-    /// Antarctica contains Europe. A closed curve on a sphere has two sides and no inherent
-    /// inside, so a coast that separates the poles winds once about either of them: +2π about
-    /// the one it encloses and −2π about the one it does not. Which way round a ring is drawn
-    /// is what settles it, and Natural Earth gives outlines anticlockwise, as GeoJSON requires.
-    ///
-    /// Only asked of a ring with no point in view at all, which is a landmass wider than the
-    /// hemisphere you are looking at and otherwise indistinguishable from one somewhere else.
-    private func encloses(ring: [SIMD3<Double>]) -> Bool {
-        var total = 0.0
-        var previous = azimuth(of: ring[ring.count - 1])
-        for direction in ring {
-            let here = azimuth(of: direction)
-            var step = here - previous
-            while step <= -.pi { step += 2 * .pi }
-            while step > .pi { step -= 2 * .pi }
-            total += step
-            previous = here
-        }
-        return total > .pi
-    }
-}
-
-extension GlobeProjection {
 
     /// Whether any of a cap could be on the side of the globe facing us.
     ///
@@ -358,4 +380,25 @@ extension GlobeProjection {
         return CGRect(x: at.x - across, y: at.y - across,
                       width: across * 2, height: across * 2)
     }
+}
+
+/// Whether a ring is wound clockwise, which everything above depends on.
+///
+/// Measured in degrees rather than on the sphere, and so only meaningful for a ring that does
+/// not straddle the antimeridian — which is all this is for: a check that the tables still
+/// have the winding the drawing assumes. Every one of the 75,218 rings shipped had it when
+/// this was written, and a rebuild that quietly reversed them would otherwise paint the ocean
+/// as land and the land as ocean.
+func ringRunsClockwise(_ ring: [Coordinate]) -> Bool? {
+    guard ring.count > 3 else { return nil }
+    let longitudes = ring.map(\.longitude)
+    guard let west = longitudes.min(), let east = longitudes.max(), east - west <= 180 else {
+        return nil
+    }
+    var twice = 0.0
+    for index in ring.indices {
+        let here = ring[index], next = ring[(index + 1) % ring.count]
+        twice += here.longitude * next.latitude - next.longitude * here.latitude
+    }
+    return twice < 0
 }
