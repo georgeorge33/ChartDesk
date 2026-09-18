@@ -290,7 +290,13 @@ struct RouteMapView: View {
 
         // The table arrives sorted quietest first, so one pass in order paints the busy
         // airspace over the quiet without filtering by kind eight times over.
-        for space in rings where sheet.mayShow(space.cap) {
+        //
+        // A ring too small to read is left out rather than drawn as a speck: openAIP has
+        // four times the FAA's rings and most of them are aerodrome-sized, so at a wide view
+        // they are a wash of colour with no legible figure anywhere in it.
+        let least = MapLayerRoom.leastRadius
+        for space in rings where sheet.mayShow(space.cap)
+            && space.cap.radius * sheet.projection.radius >= least {
             let colour = Self.colour(of: space.klass)
             let path = sheet.path(ring: MapShape(directions: space.directions,
                                                  cap: space.cap))

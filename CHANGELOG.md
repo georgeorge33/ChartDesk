@@ -187,15 +187,26 @@ needed tiles would have been the first thing to stop.
   Class B comes out as its four shelves — 70/SFC, 70/20, 70/30, 70/40 — with each figure out
   in the ring it belongs to rather than four of them stacked over the runway. From the FAA,
   which is public domain and thorough over the United States.
-- **Or from openAIP**, for the rest of the world: classes A to E as well, plus the prohibited,
-  restricted and danger areas, which is most of what a chart outside America is made of. Not
+- **Or from openAIP**, for the rest of the world: 18,488 rings against the FAA's 4,223, with
+  classes A and E as well as B, C and D, plus the prohibited, restricted and danger areas
+  that a chart outside America is mostly made of. Munich's CTR comes back Class D to 3,500ft
+  with its TMA in Class C shelves up to FL100, which is what the German AIP says. Not
   bundled — openAIP's data is CC BY-NC and needs a key — so `Tools/make_openaip.py` builds it
   on your own Mac with your own free key, into Application Support. Until it is there the
   choice is greyed out and says so, and the FAA's table keeps drawing.
+- **A ring too small to read is left out**, rather than drawn as a speck with two illegible
+  figures on it. A zoom threshold was enough for 4,223 rings and is not enough for 18,488: at
+  16° across — as wide as this layer ever draws — 1,872 rings are in view over Chicago and
+  3,835 over the Alps, which is a wash of colour. Only the ones more than 44 points across
+  are drawn, which is 152 and 860.
 - Heights are written the way each one is measured: `SFC` at the ground, `70` for hundreds of
   feet above the sea, `FL195` for a flight level, `25 AGL` where the figure is above the
   ground. A European danger area's floor is often the last of those, and calling it 2,500ft
   above the sea would put it 2,000ft wrong over high ground.
+- The airspace table is read by scanning bytes rather than by decoding it into a string and
+  splitting: 0.10s instead of 6.28s for openAIP's world, and it no longer loses the 25 rings
+  whose names hold a stray U+0085 — a character Unicode counts as a line break, which cut
+  those lines in half and dropped them without a word.
 - **State borders** and **town and city names**, both Natural Earth. Names are asked for in
   rank order, so what there is room for goes to the places that matter.
 

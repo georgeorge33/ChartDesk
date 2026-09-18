@@ -206,8 +206,10 @@ enum WorldData {
     /// The digits are gathered as an integer and divided once, rather than accumulated a tenth
     /// at a time, so the answer is the same one `Double("…")` would have given.
     @inline(__always)
-    nonisolated private static func number(_ bytes: UnsafeBufferPointer<UInt8>,
-                                           _ index: inout Int, _ end: Int) -> Double? {
+    /// One number out of the bytes. Shared with the airspace parser, which reads the same
+    /// `lon lat lon lat …` tail after its own four fields.
+    nonisolated static func number(_ bytes: UnsafeBufferPointer<UInt8>,
+                                   _ index: inout Int, _ end: Int) -> Double? {
         while index < end, bytes[index] == 0x20 { index += 1 }   // spaces
         guard index < end else { return nil }
 

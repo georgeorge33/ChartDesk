@@ -183,40 +183,68 @@ extension WorldData {
 
     /// Kept apart from the reading so it can be checked against the table on disk, without a
     /// bundle to find it in.
+    ///
+    /// Scanned as bytes, like the geography tables and for the same reason: openAIP's world
+    /// is 1.2 million points, and decoding the file into a string to split it took six
+    /// seconds and most of a gigabyte before this was written that way.
+    ///
+    /// It also fixes a fault the string version had. `split(whereSeparator: \.isNewline)`
+    /// breaks on every character Unicode calls a line break, and 25 of openAIP's names hold
+    /// a stray U+0085 — so those rings were cut in half and dropped, silently. A table is
+    /// lines separated by 0x0A and nothing else.
     nonisolated static func parseAirspace(_ data: Data) -> [MapAirspace] {
         var out: [MapAirspace] = []
-        out.reserveCapacity(4_500)
+        out.reserveCapacity(20_000)
 
-        for line in String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
-        where !line.hasPrefix("#") {
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
-            guard fields.count >= 5,
-                  let klass = AirspaceClass(rawValue: fields[0].uppercased()),
-                  let ceiling = AirspaceLimit(fields[2]),
-                  let floor = AirspaceLimit(fields[3])
-            else { continue }
+        data.withUnsafeBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var start = 0
+            while start < bytes.count {
+                var end = start
+                while end < bytes.count, bytes[end] != 0x0A { end += 1 }
+                defer { start = end + 1 }
+                guard end > start, bytes[start] != 0x23 else { continue }
 
-            var directions: [SIMD3<Double>] = []
-            let numbers = fields[4].split(separator: " ")
-            var index = 0
-            while index + 1 < numbers.count {
-                if let longitude = Double(numbers[index]),
-                   let latitude = Double(numbers[index + 1]) {
+                // kind, name, ceiling, floor, then the ring.
+                var at = start
+                guard let kind = field(bytes, &at, end),
+                      let name = field(bytes, &at, end),
+                      let ceilingText = field(bytes, &at, end),
+                      let floorText = field(bytes, &at, end),
+                      let klass = AirspaceClass(rawValue: kind.uppercased()),
+                      let ceiling = AirspaceLimit(ceilingText),
+                      let floor = AirspaceLimit(floorText)
+                else { continue }
+
+                var directions: [SIMD3<Double>] = []
+                while let longitude = WorldData.number(bytes, &at, end),
+                      let latitude = WorldData.number(bytes, &at, end) {
                     directions.append(Coordinate(latitude: latitude,
                                                  longitude: longitude).direction)
                 }
-                index += 2
-            }
-            guard directions.count >= 4 else { continue }
+                guard directions.count >= 4 else { continue }
 
-            out.append(MapAirspace(klass: klass,
-                                   name: String(fields[1]),
-                                   ceiling: ceiling,
-                                   floor: floor,
-                                   directions: directions,
-                                   cap: SphericalCap(directions)))
+                out.append(MapAirspace(klass: klass,
+                                       name: name,
+                                       ceiling: ceiling,
+                                       floor: floor,
+                                       directions: directions,
+                                       cap: SphericalCap(directions)))
+            }
         }
         return out
+    }
+
+    /// One tab-separated field, up to the tab or the end of the line.
+    nonisolated private static func field(_ bytes: UnsafeBufferPointer<UInt8>,
+                                          _ index: inout Int, _ end: Int) -> String? {
+        guard index < end else { return nil }
+        let from = index
+        while index < end, bytes[index] != 0x09 { index += 1 }
+        let text = String(decoding: UnsafeBufferPointer(rebasing: bytes[from..<index]),
+                          as: UTF8.self)
+        if index < end { index += 1 }               // step over the tab
+        return text
     }
 
     /// Internal borders — states, provinces, counties — for every country.
@@ -257,6 +285,18 @@ enum MapLayerRoom {
     /// Airspace is only worth drawing once a ring is more than a smudge. Below this it is a
     /// heap of overlapping circles with no labels legible on any of them.
     static let airspaceFrom: CGFloat = 20_000
+
+    /// And the same thing said about one ring rather than about the view: how many points
+    /// across a ring must measure on the sheet before it is drawn at all.
+    ///
+    /// A zoom threshold alone was enough for the FAA's 4,223 rings and is not enough for
+    /// openAIP's 18,489. Measured at 16° across, which is as wide as this layer ever draws:
+    /// over Chicago 1,872 rings are in view and 152 are bigger than this; over the Alps
+    /// 3,835 and 860. The rest are specks carrying two figures too small to read, and enough
+    /// of them to wash the sheet in colour.
+    ///
+    /// Twenty-two points is a ring 44 across, which is the room a ceiling over a floor needs.
+    static let leastRadius: CGFloat = 22
     /// Internal borders clutter a view of a continent and place a view of a state.
     static let statesFrom: CGFloat = 6_000
 

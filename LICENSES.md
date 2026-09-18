@@ -48,8 +48,8 @@ the further you go, so treat anything else as a courtesy rather than a guarantee
 ## openAIP — CC BY-NC 4.0
 
 **What:** worldwide airspace — classes A to E, plus prohibited, restricted and danger areas —
-fetched from [openAIP](https://www.openaip.net/)'s API by `Tools/make_openaip.py`. The
-alternative to the FAA's table, chosen in Layers.
+fetched from [openAIP](https://www.openaip.net/)'s API by `Tools/make_openaip.py`: 31,871
+airspaces read, 18,488 drawn, 19 MB. The alternative to the FAA's table, chosen in Layers.
 
 **Licence:** [Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/),
 as stated on openAIP's own front page. Attribution, and no commercial use. No share-alike

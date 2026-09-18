@@ -26,6 +26,7 @@ The same arrangement as the full OpenStreetMap coastline.
 """
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -36,6 +37,7 @@ import urllib.request
 API = "https://api.core.openaip.net/api/airspaces"
 PAGE = 1000            # the endpoint's own default, and its documented maximum
 PRECISION = 4          # about eleven metres, finer than an airspace boundary is surveyed
+TOLERANCE = 10 ** -PRECISION   # and so the most a dropped point can be off the line
 ATTEMPTS = 6
 PAUSE = 0.4            # between pages, to stay a polite distance from the rate limit
 
@@ -153,7 +155,9 @@ def fetch(key, page, country=None):
 
 
 def limit(vertical):
-    """One vertical limit, as the token the table uses: SFC, 7000, FL195, 2500AGL, UNL.
+    """One vertical limit as `(token, feet, measured from the sea)`.
+
+    The token is what the table writes: SFC, 7000, FL195, 2500AGL, UNL.
 
     Self-describing rather than a number and a datum in separate columns, because "2500"
     means two different heights depending on what it is measured from, and the app has to
@@ -169,13 +173,13 @@ def limit(vertical):
     datum = vertical.get("referenceDatum", DATUM_MEAN_SEA)
 
     if unit == UNIT_FLIGHT_LEVEL:
-        return f"FL{int(value)}"
+        return f"FL{int(value)}", int(value) * 100, True
     feet = int(round(value * 3.28084)) if unit == UNIT_METRE else int(value)
     if datum == DATUM_GROUND:
-        return "SFC" if feet <= 0 else f"{feet}AGL"
+        return ("SFC", 0, True) if feet <= 0 else (f"{feet}AGL", feet, False)
     if datum == DATUM_STANDARD:
-        return f"FL{max(feet // 100, 0)}"
-    return str(feet)
+        return f"FL{max(feet // 100, 0)}", max(feet, 0), True
+    return str(feet), feet, True
 
 
 def kind(airspace):
@@ -199,6 +203,65 @@ def kind(airspace):
     return klass if klass in ("A", "B", "C", "D", "E") else None
 
 
+def clean(name):
+    """A name fit to be one field of one line.
+
+    Two things, both from the data rather than invented. openAIP is community-typed and some
+    names arrive double-encoded — "Ã\x84NGELHOLM CTR" for "ÄNGELHOLM CTR", 144 of them —
+    which is repaired where the repair round-trips and left alone where it does not. And 25
+    of those names hold the byte that mojibake leaves behind, U+0085, which Unicode counts as
+    a line break: it split those rings' lines in half and the app dropped them without a word.
+    """
+    if "Ã" in name or "Â" in name:
+        try:
+            name = name.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass                                   # not mojibake after all; leave it be
+    # Every character Unicode calls a line break, plus the tab that separates the fields.
+    for character in "\t\n\r\v\f\x85\u2028\u2029":
+        name = name.replace(character, " ")
+    return " ".join(name.split())
+
+
+def simplify(ring, tolerance):
+    """Douglas-Peucker, with longitude scaled so the tolerance means the same at any latitude.
+
+    openAIP samples its arcs far finer than this table can write them: the world comes to 12.1
+    million points, and dropping the ones that sit less than 11 metres off the line between
+    their neighbours leaves 1.2 million — 9.7% of them, and 11 metres is the rounding this
+    file does anyway at four decimal places. Nothing is lost that the table could have said.
+
+    Iterative rather than recursive: the largest ring here is 33,015 points, which recursion
+    would have overflowed.
+    """
+    if len(ring) < 3:
+        return ring
+    scale = max(math.cos(math.radians(ring[0][1])), 0.2)
+    flat = [(lon * scale, lat) for lon, lat in ring]
+
+    keep = [False] * len(ring)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(ring) - 1)]
+    while stack:
+        first, last = stack.pop()
+        if last <= first + 1:
+            continue
+        (x1, y1), (x2, y2) = flat[first], flat[last]
+        dx, dy = x2 - x1, y2 - y1
+        span = math.hypot(dx, dy)
+        worst, at = 0.0, -1
+        for index in range(first + 1, last):
+            x, y = flat[index]
+            away = (abs(dy * x - dx * y + x2 * y1 - y2 * x1) / span if span
+                    else math.hypot(x - x1, y - y1))
+            if away > worst:
+                worst, at = away, index
+        if worst > tolerance:
+            keep[at] = True
+            stack += [(first, at), (at, last)]
+    return [point for point, wanted in zip(ring, keep) if wanted]
+
+
 def figure(value):
     text = f"{value:.{PRECISION}f}"
     if "." in text:
@@ -216,7 +279,8 @@ def ring_of(geometry):
 
 def convert(items):
     """Airspaces to table lines, with a tally of what went in and what did not."""
-    lines, kept, dropped = [], {}, {"type": 0, "class": 0, "limits": 0, "ring": 0}
+    lines, kept = [], {}
+    dropped = {"type": 0, "class": 0, "limits": 0, "ring": 0, "upside down": 0}
     for airspace in items:
         drawn = kind(airspace)
         if drawn is None:
@@ -227,6 +291,14 @@ def convert(items):
         if ceiling is None or floor is None:
             dropped["limits"] += 1
             continue
+        # A ceiling below its own floor is not a shelf. Two of the world's 18,489 arrive that
+        # way — a Brazilian restricted area with its limits the wrong way round — and a ring
+        # labelled 40 over 100 is worse than no ring. Only where both figures are measured
+        # from the same thing: a floor above the ground and a ceiling above the sea can cross
+        # without either being wrong.
+        if ceiling[2] and floor[2] and ceiling[1] < floor[1]:
+            dropped["upside down"] += 1
+            continue
 
         thinned = []
         for point in ring_of(airspace.get("geometry")):
@@ -235,15 +307,14 @@ def convert(items):
             pair = (round(point[0], PRECISION), round(point[1], PRECISION))
             if not thinned or pair != thinned[-1]:
                 thinned.append(pair)
+        thinned = simplify(thinned, TOLERANCE)
         if len(thinned) < 4:
             dropped["ring"] += 1
             continue
 
-        # Tabs separate the fields, so a name with a space in it needs no quoting — but one
-        # with a tab in it would split the line, and openAIP is community-typed.
-        name = (airspace.get("name") or "?").replace("\t", " ").strip() or "?"
+        name = clean(airspace.get("name") or "") or "?"
         coordinates = " ".join(f"{figure(lon)} {figure(lat)}" for lon, lat in thinned)
-        lines.append(f"{drawn}\t{name}\t{ceiling}\t{floor}\t{coordinates}")
+        lines.append(f"{drawn}\t{name}\t{ceiling[0]}\t{floor[0]}\t{coordinates}")
         kept[drawn] = kept.get(drawn, 0) + 1
     return lines, kept, dropped
 
@@ -269,7 +340,8 @@ def main():
             "My openAIP, then either export OPENAIP_API_KEY or put it in "
             "~/.chartdesk/openaip-key.txt")
 
-    lines, kept, dropped = [], {}, {"type": 0, "class": 0, "limits": 0, "ring": 0}
+    lines, kept = [], {}
+    dropped = {"type": 0, "class": 0, "limits": 0, "ring": 0, "upside down": 0}
     page, total_pages, seen = 1, None, 0
     while True:
         answer = fetch(key, page, arguments.country)
@@ -311,7 +383,8 @@ def main():
     tally = "  ".join(f"{klass} {count}" for klass, count in sorted(kept.items()))
     print(f"{arguments.out}\n  {seen} airspaces read, {len(lines)} drawn  {tally}\n"
           f"  left out: {dropped['type']} by type, {dropped['class']} by class, "
-          f"{dropped['limits']} with no height, {dropped['ring']} with no ring\n"
+          f"{dropped['limits']} with no height, {dropped['ring']} with no ring, "
+          f"{dropped['upside down']} upside down\n"
           f"  {size / 1024 / 1024:.1f} MB", file=sys.stderr)
 
 
