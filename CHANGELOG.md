@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.1.0-rc.5
+
+What this candidate adds to rc.4. Full release soon.
+
+**The map is a globe**
+
+- **The world is drawn as a sphere rather than a Mercator sheet.** Orthographic: the viewer is
+  infinitely far off looking at one point, so the middle of the view is face-on and the edge
+  falls away the way a ball's does. Greenland is the size of Greenland. Dragging turns the
+  globe rather than sliding a sheet, so it needs where the drag began and not only how far it
+  has gone. The far hemisphere is not there to be drawn, which is the one real cost: a flight
+  spanning more than 180° of longitude can no longer be seen whole.
+- **There is no antimeridian any more.** A ring crossing 180° used to need drawing twice, once
+  shifted a whole world sideways, or it swept a line back across Siberia. A sphere has no seam,
+  so all of that is gone.
+- A shape that runs off the edge of the globe is closed *along* the edge. Which way round that
+  arc goes is the whole difficulty — the land is sometimes the larger part — and it is settled
+  by finding where round the edge there is nothing at all and going the other way. Three wrong
+  answers to that were caught by checks rather than by looking: an island half over the horizon
+  drawn as coastline round the entire globe, Antarctica reported as containing Europe, and
+  continents culled for being too big.
+- Shapes are held as directions worked out when the tables are read, so putting a point on the
+  sheet is two dot products and no trigonometry. The deepest level of detail still arrives in
+  under 14ms with all of that folded in.
+
+**Fixed**
+
+- **The Caspian Sea was drawn as land.** Natural Earth keeps it as a hole in Eurasia rather
+  than as a lake — the only hole in that layer — and the build was discarding holes, so
+  371,000 square kilometres of water was painted as land at every level of detail. Wrong in
+  rc.3 and rc.4 as well.
+
+**Also**
+
+- A ditto mark stands on the right with the figures it repeats, rather than centred under them.
+- The Labels checkbox is gone from the map. It was on every time anyone looked at it, and names
+  are still held back until there is room for them.
+
 ## 1.1.0-rc.4
 
 What this candidate fixes in rc.3. Full release soon.
@@ -95,8 +133,9 @@ What this candidate adds to rc.1. Full release soon.
 - **Your SimBrief flight is drawn on it**, and needs no navigation database to be: the navlog
   gives every fix a latitude and longitude, which the app had been discarding in favour of the
   route string. The SID and STAR legs are picked out in orange, from SimBrief's own flag.
-- Legs are drawn as **great circles**, so an ocean crossing bends the way the aircraft flies
-  rather than running straight across a Mercator sheet.
+- Legs are drawn as **great circles**, which on a globe is simply the way the aeroplane goes:
+  Boston to Heathrow passes 52.6°N halfway across, where a straight line between the two would
+  have crossed at 46.9°N.
 - The airports you hold charts for are on the map whether or not a flight is loaded.
 
 **Bundled, not fetched**
@@ -126,9 +165,17 @@ first thing to stop.
   nothing — and leaving out the parts you cannot see is worse than useless, because the view
   is so often *inside* a ring: over Kansas every last point of North America is off the panel.
   Clipped, that ring draws from four points instead of 55,000 and still says Kansas is land.
-- A ring crossing the antimeridian used to jump from 179° to −179°, which drew a line sweeping
-  back across the whole map through Siberia and Antarctica. Longitudes now run past ±180 and
-  each shape is drawn at whichever offsets reach the view.
+- **The world is drawn as a sphere**, seen from outside and infinitely far off, so the middle
+  of the view is face-on and the edges fall away as a ball's do. Scale is honest everywhere,
+  where Mercator made Greenland the size of Africa. And there is no antimeridian to get wrong:
+  a ring crossing 180° used to jump to −179° and draw a line sweeping back across the whole
+  map through Siberia, and a sphere simply has no seam. Dragging turns the globe. The cost is
+  the far side, which is not there to be drawn — a flight spanning more than 180° of longitude
+  can no longer be seen whole.
+- A shape running off the edge of the globe is closed **along** that edge, which is most of what
+  drawing a sphere from vector data consists of. Which way round the closing arc goes is
+  settled by finding where round the edge there is nothing at all and going the other way —
+  taking the shorter way instead draws an island as coastline all the way round the world.
 
 **Asked once, not after every update**
 
