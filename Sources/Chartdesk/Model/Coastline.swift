@@ -146,6 +146,14 @@ final class CoastlineStore: ObservableObject {
         }
     }
 
+    /// True when this cell is accounted for: read, or known from the index to hold no coast.
+    ///
+    /// An ocean cell counts. The full coastline saying "nothing here" is an answer, and the
+    /// bundled coast should not be drawn underneath it on the strength of a missing entry.
+    func holds(_ cell: CoastlineCell) -> Bool {
+        isReady && (cells[cell] != nil || spans[cell] == nil)
+    }
+
     /// The rings of whichever of these cells have been read.
     func shapes(in wanted: [CoastlineCell]) -> [MapShape] {
         var found: [MapShape] = []

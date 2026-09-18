@@ -158,17 +158,25 @@ struct RouteMapView: View {
         // Land, then the lakes cut back out of it, then borders — all from the one level of
         // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
         if let world = geography.best(for: camera.detail, coastline: browser.coastline) {
+            // Where the full coastline has arrived, the bundled one is held back — clipped
+            // out, cell by cell. Drawing both was wrong: they disagree, and the bundled fill
+            // stayed visible wherever it claimed land the finer one does not, which is a
+            // permanently wrong shape rather than the momentary hole it was meant to avoid.
+            let full = showsFullCoastline ? sheet.coastlineCells() : []
+            let covered = full.isEmpty ? Path() : arrived(full, sheet: sheet)
+            var beneath = context
+            // Only when there is something to hold back. Clipping to the inverse of an empty
+            // path ought to mean "everywhere", but that is not a thing to take on trust when
+            // being wrong about it means a map with no land on it.
+            if !covered.isEmpty {
+                beneath.clip(to: covered, options: .inverse)
+            }
             fill(world.land, colour: Color(nsColor: Theme.land),
                  stroke: Color(nsColor: Theme.coast), width: 0.7,
-                 in: &context, sheet: sheet)
+                 in: &beneath, sheet: sheet)
 
-            // The full coastline goes on top of the bundled one rather than instead of it.
-            // Both fill the same colour, so where a cell has arrived it simply replaces what
-            // was there with something finer, and where one has not yet arrived the coast
-            // underneath is still a coast. Drawing only the cells would leave holes while a
-            // pan caught up.
-            if showsFullCoastline {
-                fill(coastline.shapes(in: sheet.coastlineCells()),
+            if !full.isEmpty {
+                fill(coastline.shapes(in: full),
                      colour: Color(nsColor: Theme.land),
                      stroke: Color(nsColor: Theme.coast), width: 0.7,
                      in: &context, sheet: sheet)
@@ -387,6 +395,29 @@ struct RouteMapView: View {
             && coastline.isReady
     }
 
+    /// The parts of the view the full coastline has arrived for.
+    ///
+    /// A degree is a small thing at the zoom this runs at, so four corners describe a cell
+    /// closely enough. Neighbouring cells share their edges exactly, so the union of them has
+    /// no seam for the coast underneath to show through.
+    private func arrived(_ wanted: [CoastlineCell], sheet: MapSheet) -> Path {
+        var path = Path()
+        for cell in wanted where coastline.holds(cell) {
+            let west = Double(cell.longitude), east = west + 1
+            let south = Double(cell.latitude), north = south + 1
+            let corners = [Coordinate(latitude: south, longitude: west),
+                           Coordinate(latitude: north, longitude: west),
+                           Coordinate(latitude: north, longitude: east),
+                           Coordinate(latitude: south, longitude: east)]
+                .map { sheet.point($0) }
+
+            path.move(to: corners[0])
+            for corner in corners.dropFirst() { path.addLine(to: corner) }
+            path.closeSubpath()
+        }
+        return path
+    }
+
     /// Asks for the cells of the full coastline the view covers.
     private func requestCells() {
         guard browser.coastline == .openStreetMapFull,
@@ -523,6 +554,9 @@ struct RouteMapView: View {
         var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
         if geography.isCatchingUp(to: camera.detail, coastline: browser.coastline) {
             tier += " …"
+        } else if showsFullCoastline, size.width > 0 {
+            let wanted = MapSheet(camera: camera, size: size).coastlineCells()
+            if !wanted.allSatisfy(coastline.holds) { tier += " …" }
         }
         return String(format: "%.0f° across · %@ · %@", degreesAcross, position, tier)
     }
