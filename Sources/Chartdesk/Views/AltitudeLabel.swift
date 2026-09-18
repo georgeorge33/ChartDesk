@@ -16,7 +16,7 @@ struct AltitudeLabel: View {
     /// True when the row above says the same thing, in which case a ditto stands in for it.
     var repeatsAbove = false
 
-    /// Fixed, so the figures line up and a ditto sits under the middle of the one it repeats.
+    /// Fixed, so every figure in the column lines up on its right edge — and so does a ditto.
     private static let width: CGFloat = 70
 
     /// Flight levels above the transition, bare feet below it — the way the page reads them.
@@ -44,7 +44,10 @@ struct AltitudeLabel: View {
                 // A quote mark hangs from the cap line, which beside a run of figures reads as
                 // a mistake rather than a repeat. This drops it onto the middle of the row.
                 .baselineOffset(-3)
-                .frame(width: Self.width, alignment: .center)
+                // Right, with the figures, rather than centred under the one it stands for:
+                // the column reads down its right edge, and a ditto that sits in from that
+                // edge reads as a mark of its own rather than as part of the column.
+                .frame(width: Self.width, alignment: .trailing)
         } else {
             figure
                 .frame(width: Self.width, alignment: .trailing)
