@@ -12,6 +12,7 @@ enum DefaultsKey {
     static let lastChart = "lastChart"
     static let lastCategory = "lastCategory"
     static let canvasBackground = "canvasBackground"
+    static let coastlineSource = "coastlineSource"
     static let zoomToFitOnOpen = "zoomToFitOnOpen"
     static let restoreLastChart = "restoreLastChart"
     static let checkForUpdates = "checkForUpdates"

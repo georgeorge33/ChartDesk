@@ -19,6 +19,8 @@ struct RouteMapView: View {
     /// Whichever levels of detail have been read. Shared, not owned: shutting the panel and
     /// opening it again should not mean reading the world in again.
     @ObservedObject private var geography = MapGeography.shared
+    /// The full coastline, when it is on this Mac and the zoom calls for it.
+    @ObservedObject private var coastline = CoastlineStore.shared
 
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
@@ -30,6 +32,7 @@ struct RouteMapView: View {
     @State private var didFit = false
     /// Set once you drag or zoom, after which the map stops framing things for you.
     @State private var userMoved = false
+    @State private var showsLayers = false
 
     private var plan: FlightPlan? { flight.plan }
     private var waypoints: [FlightPlan.Waypoint] { plan?.waypoints ?? [] }
@@ -94,12 +97,28 @@ struct RouteMapView: View {
             // The coarsest tier as well as the wanted one, so there is always something to
             // fall back on while a finer one is read.
             geography.request(.coarse)
-            geography.request(camera.detail)
+            geography.request(camera.detail, coastline: browser.coastline)
             if camera.showsRunways { geography.requestRunways() }
+            requestCells()
         }
         // Zooming past a threshold is the only thing that calls for another tier, and the
         // request is idempotent: the store ignores one it already holds or is already reading.
-        .onChange(of: camera.detail) { _, detail in geography.request(detail) }
+        .onChange(of: camera.detail) { _, detail in
+            geography.request(detail, coastline: browser.coastline)
+        }
+        .onChange(of: browser.coastline) { _, source in
+            geography.request(camera.detail, coastline: source)
+            requestCells()
+        }
+        // Panning and zooming both change which cells of the full coastline are in view. The
+        // request is idempotent and skips whatever is already read, so asking on every step
+        // of a drag costs a set lookup.
+        .onChange(of: camera) { _, _ in requestCells() }
+        // The first ask for a cell only starts the index reading — fifteen megabytes of it,
+        // off the main thread — and returns. Without this the cells were not asked for again
+        // until something else moved the camera, so choosing full detail and sitting still
+        // drew the simplified coast and said "OSM full" while doing it.
+        .onChange(of: coastline.isReady) { _, _ in requestCells() }
         .onChange(of: camera.showsRunways) { _, shows in
             if shows { geography.requestRunways() }
         }
@@ -138,10 +157,22 @@ struct RouteMapView: View {
 
         // Land, then the lakes cut back out of it, then borders — all from the one level of
         // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
-        if let world = geography.best(for: camera.detail) {
+        if let world = geography.best(for: camera.detail, coastline: browser.coastline) {
             fill(world.land, colour: Color(nsColor: Theme.land),
                  stroke: Color(nsColor: Theme.coast), width: 0.7,
                  in: &context, sheet: sheet)
+
+            // The full coastline goes on top of the bundled one rather than instead of it.
+            // Both fill the same colour, so where a cell has arrived it simply replaces what
+            // was there with something finer, and where one has not yet arrived the coast
+            // underneath is still a coast. Drawing only the cells would leave holes while a
+            // pan caught up.
+            if showsFullCoastline {
+                fill(coastline.shapes(in: sheet.coastlineCells()),
+                     colour: Color(nsColor: Theme.land),
+                     stroke: Color(nsColor: Theme.coast), width: 0.7,
+                     in: &context, sheet: sheet)
+            }
 
             fill(world.lakes, colour: Color(nsColor: Theme.canvas),
                  stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
@@ -349,6 +380,22 @@ struct RouteMapView: View {
                             anchor: .top))
     }
 
+    /// True when the full coastline is chosen, close enough to be worth reading, and there.
+    private var showsFullCoastline: Bool {
+        browser.coastline == .openStreetMapFull
+            && camera.worldWidth >= MapDetail.fullFrom
+            && coastline.isReady
+    }
+
+    /// Asks for the cells of the full coastline the view covers.
+    private func requestCells() {
+        guard browser.coastline == .openStreetMapFull,
+              camera.worldWidth >= MapDetail.fullFrom,
+              size.width > 0
+        else { return }
+        coastline.request(MapSheet(camera: camera, size: size).coastlineCells())
+    }
+
     // MARK: - Camera
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }
@@ -436,12 +483,29 @@ struct RouteMapView: View {
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
                 }
+                Button {
+                    showsLayers.toggle()
+                } label: {
+                    Image(systemName: "square.3.layers.3d")
+                }
+                .help("Layers")
+                .popover(isPresented: $showsLayers, arrowEdge: .bottom) {
+                    MapLayerPanel()
+                }
             }
             .controlSize(.small)
 
             Text(readout)
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
+
+            // ODbL asks for the credit wherever the data is drawn, so it goes on the map and
+            // not only in the panel where the choice was made.
+            if let credit = browser.coastline.attribution {
+                Text(credit)
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -456,8 +520,10 @@ struct RouteMapView: View {
     /// so that the tier is something you can see rather than infer. An ellipsis while a finer
     /// one is still being read.
     private var readout: String {
-        let tier = "\(camera.detail)"
-            + (geography.isCatchingUp(to: camera.detail) ? " …" : "")
+        var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
+        if geography.isCatchingUp(to: camera.detail, coastline: browser.coastline) {
+            tier += " …"
+        }
         return String(format: "%.0f° across · %@ · %@", degreesAcross, position, tier)
     }
 

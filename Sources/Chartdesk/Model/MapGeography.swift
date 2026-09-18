@@ -14,12 +14,27 @@ final class MapGeography: ObservableObject {
 
     static let shared = MapGeography()
 
+    /// A level of detail together with where its land comes from.
+    ///
+    /// Only the deepest level differs by coastline, so the two shallower ones are held once
+    /// however the Layers panel is set — switching coastline should not mean reading the
+    /// whole world again to draw the same continents.
+    struct Wanted: Hashable {
+        let detail: MapDetail
+        let coastline: CoastlineSource
+
+        init(_ detail: MapDetail, _ coastline: CoastlineSource) {
+            self.detail = detail
+            self.coastline = detail == .fine ? coastline : .naturalEarth
+        }
+    }
+
     /// Tiers already read. Published, so a tier landing redraws the map.
-    @Published private(set) var tiers: [MapDetail: Geography] = [:]
+    @Published private(set) var tiers: [Wanted: Geography] = [:]
     /// Runway ends, read on demand like a tier.
     @Published private(set) var runways: [MapRunway] = []
 
-    private var loading: Set<MapDetail> = []
+    private var loading: Set<Wanted> = []
     private var loadingRunways = false
 
     private let queue = DispatchQueue(label: "chartdesk.mapdata", qos: .userInitiated)
@@ -29,33 +44,34 @@ final class MapGeography: ObservableObject {
     /// Called from inside a draw, so it only reports what is in hand and never starts work:
     /// asking for a tier is `request`'s job, and a draw that kicked off a file read would do it
     /// again on the next frame.
-    func best(for detail: MapDetail) -> Geography? {
-        if let exact = tiers[detail] { return exact }
+    func best(for detail: MapDetail, coastline: CoastlineSource) -> Geography? {
+        if let exact = tiers[Wanted(detail, coastline)] { return exact }
         // Coarser first: a generalised coastline in the right place beats a detailed one
         // drawn for a different zoom, and beats an empty sheet either way.
         for fallback in MapDetail.allCases.reversed() where fallback < detail {
-            if let ready = tiers[fallback] { return ready }
+            if let ready = tiers[Wanted(fallback, coastline)] { return ready }
         }
         for fallback in MapDetail.allCases.reversed() where fallback > detail {
-            if let ready = tiers[fallback] { return ready }
+            if let ready = tiers[Wanted(fallback, coastline)] { return ready }
         }
         return nil
     }
 
     /// True while the map is showing something other than what the zoom calls for.
-    func isCatchingUp(to detail: MapDetail) -> Bool {
-        tiers[detail] == nil
+    func isCatchingUp(to detail: MapDetail, coastline: CoastlineSource) -> Bool {
+        tiers[Wanted(detail, coastline)] == nil
     }
 
     /// Reads a tier, unless it is already in hand or on its way.
-    func request(_ detail: MapDetail) {
-        guard tiers[detail] == nil, !loading.contains(detail) else { return }
-        loading.insert(detail)
+    func request(_ detail: MapDetail, coastline: CoastlineSource = .naturalEarth) {
+        let wanted = Wanted(detail, coastline)
+        guard tiers[wanted] == nil, !loading.contains(wanted) else { return }
+        loading.insert(wanted)
         queue.async {
-            let geography = WorldData.geography(detail)
+            let geography = WorldData.geography(wanted.detail, coastline: wanted.coastline)
             Task { @MainActor in
-                self.tiers[detail] = geography
-                self.loading.remove(detail)
+                self.tiers[wanted] = geography
+                self.loading.remove(wanted)
             }
         }
     }

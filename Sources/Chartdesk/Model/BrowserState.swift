@@ -70,6 +70,11 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(restoreLastChart, forKey: DefaultsKey.restoreLastChart) }
     }
 
+    /// Where the map draws its coastline from — the first thing the Layers button offers.
+    @Published var coastline: CoastlineSource {
+        didSet { UserDefaults.standard.set(coastline.rawValue, forKey: DefaultsKey.coastlineSource) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
@@ -81,6 +86,8 @@ final class BrowserState: ObservableObject {
         canvasBackground = CanvasBackground(rawValue: defaults.string(forKey: DefaultsKey.canvasBackground) ?? "") ?? .system
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
+        coastline = CoastlineSource(rawValue: defaults.string(forKey: DefaultsKey.coastlineSource) ?? "")
+            ?? .naturalEarth
     }
 
     // MARK: - Derived

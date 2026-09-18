@@ -83,6 +83,10 @@ enum MapDetail: Int, CaseIterable, Comparable, CustomStringConvertible {
     static let fineFrom: CGFloat = 12_000
     /// Runways start to be longer than a few points at about 2.5° across.
     static let runwaysFrom: CGFloat = 120_000
+    /// And below about 5° across, the full OpenStreetMap coastline takes over from the
+    /// simplified one — where it is on hand. Not sooner: at a wider view it would mean reading
+    /// hundreds of one-degree cells to draw a coast the simplified table already draws well.
+    static let fullFrom: CGFloat = 65_000
 
     static func matching(worldWidth: CGFloat) -> MapDetail {
         if worldWidth >= fineFrom { return .fine }
@@ -125,11 +129,18 @@ enum WorldData {
 
     /// Reads one tier off disk. Costs tens of milliseconds for the deepest one, so this is
     /// called from `MapGeography` on a background queue rather than during a draw.
-    nonisolated static func geography(_ detail: MapDetail) -> Geography {
-        Geography(detail: detail,
-                  land: shapes("land-\(detail.scale)"),
-                  lakes: shapes("lakes-\(detail.scale)"),
-                  borders: shapes("borders-\(detail.scale)"))
+    ///
+    /// Only the deepest level's *land* follows the chosen coastline. Lakes and borders stay
+    /// Natural Earth whatever is picked: OpenStreetMap's coastline is the coast and nothing
+    /// else — its download holds no lakes and no frontiers — so the alternative to a slightly
+    /// coarser lake beside a finer coast is no lake at all.
+    nonisolated static func geography(_ detail: MapDetail,
+                                      coastline: CoastlineSource) -> Geography {
+        let land = detail == .fine ? coastline.deepestLandTable : "land-\(detail.scale)"
+        return Geography(detail: detail,
+                         land: shapes(land),
+                         lakes: shapes("lakes-\(detail.scale)"),
+                         borders: shapes("borders-\(detail.scale)"))
     }
 
     // MARK: - Loading
