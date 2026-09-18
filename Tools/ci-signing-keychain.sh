@@ -2,6 +2,11 @@
 #
 # Puts Chartdesk's signing certificate into a throwaway keychain, for a build on CI.
 #
+# For CI, and not for your own machine: it puts that keychain at the front of the login
+# session's keychain search list and leaves it there. On a runner that is thrown away with the
+# runner. To sign local builds, import the certificate into your own keychain instead -- see
+# ~/.chartdesk/signing/README.md.
+#
 # Reads the certificate from the environment -- CERTIFICATE, the .p12 in base64, and
 # CERTIFICATE_PASSWORD -- and names the keychain it made in GITHUB_ENV as
 # CHARTDESK_SIGN_KEYCHAIN, which is where build.sh looks. With no certificate in the
@@ -21,7 +26,10 @@ fi
 
 KEYCHAIN="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/chartdesk-signing.keychain-db"
 KEYCHAIN_PASSWORD="$(uuidgen)"
-CERTIFICATE_FILE="$(mktemp -t chartdesk-signing)"
+# With a .p12 suffix, and the format named outright below: `security import` works the
+# format out from the file name, and a temporary file without a suffix fails with the
+# gloriously unhelpful "Unknown format in import."
+CERTIFICATE_FILE="$(mktemp -t chartdesk-signing).p12"
 trap 'rm -f "$CERTIFICATE_FILE"' EXIT
 
 printf '%s' "$CERTIFICATE" | base64 --decode > "$CERTIFICATE_FILE"
@@ -33,7 +41,7 @@ security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 security set-keychain-settings -lut 21600 "$KEYCHAIN"
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 
-security import "$CERTIFICATE_FILE" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" \
+security import "$CERTIFICATE_FILE" -k "$KEYCHAIN" -f pkcs12 -P "$CERTIFICATE_PASSWORD" \
 	-T /usr/bin/codesign -A
 
 # In the search list as well as named outright. `codesign --keychain` finds the certificate
