@@ -24,7 +24,6 @@ struct RouteMapView: View {
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
     @State private var cameraAtDragStart: MapCamera?
     @State private var size: CGSize = .zero
-    @State private var showsLabels = true
     @State private var scrollMonitor: Any?
     /// Where the map sits in the window, so a scroll elsewhere is left alone.
     @State private var frame: CGRect = .zero
@@ -307,7 +306,7 @@ struct RouteMapView: View {
         }
 
         // Fixes, with their names once there is room for them.
-        let labelled = showsLabels && degreesAcross < 40
+        let labelled = degreesAcross < 40
         for waypoint in waypoints where !waypoint.isAirport {
             let point = screen(Coordinate(latitude: waypoint.latitude,
                                           longitude: waypoint.longitude), in: size)
@@ -337,13 +336,11 @@ struct RouteMapView: View {
         context.stroke(Path(ellipseIn: box.insetBy(dx: -2, dy: -2)),
                        with: .color(colour.opacity(0.5)), lineWidth: 1)
 
-        if showsLabels {
-            labels.append(Label(text: Text(airport.icao)
-                                    .font(.ngSmallBold)
-                                    .foregroundStyle(onRoute ? Color.ngAccentText : Color.secondary),
-                                at: CGPoint(x: point.x, y: point.y + 8),
-                                anchor: .top))
-        }
+        labels.append(Label(text: Text(airport.icao)
+                                .font(.ngSmallBold)
+                                .foregroundStyle(onRoute ? Color.ngAccentText : Color.secondary),
+                            at: CGPoint(x: point.x, y: point.y + 8),
+                            anchor: .top))
     }
 
     // MARK: - Camera
@@ -437,9 +434,6 @@ struct RouteMapView: View {
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
                 }
-                Toggle("Labels", isOn: $showsLabels)
-                    .toggleStyle(.checkbox)
-                    .font(.ngSmall)
             }
             .controlSize(.small)
 
