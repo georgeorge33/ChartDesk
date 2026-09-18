@@ -50,6 +50,14 @@ enum Theme {
     static let airspaceB        = rgb(0x4A9BE8)
     static let airspaceC        = rgb(0xC85AA8)
     static let airspaceD        = rgb(0x6FA8DC)
+    /// The two openAIP brings that the FAA's table has no equivalent of. Class A is the
+    /// airspace above a European TMA and is drawn as the blues are; Class E is the faded
+    /// magenta a sectional uses for it.
+    static let airspaceA        = rgb(0x3D7FC0)
+    static let airspaceE        = rgb(0xA06A92)
+    /// Prohibited, restricted and danger areas: red, because they are the one thing on this
+    /// layer that is about staying out rather than talking to someone.
+    static let airspaceDanger   = rgb(0xD9534F)
     /// Internal borders — states, provinces — fainter than a frontier between countries.
     static let stateBorder      = rgb(0x35506B)
     /// The names of towns.

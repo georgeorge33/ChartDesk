@@ -140,10 +140,10 @@ What this candidate adds to rc.1. Full release soon.
 
 **Bundled, not fetched**
 
-The geography is Natural Earth, the airports and the runways are OurAirports, all public
-domain, all built by `Tools/make_mapdata.py` — 9 MB in the bundle, 3 MB of the download. The
-rest of the app works with the network off, and a map that needed tiles would have been the
-first thing to stop.
+The geography is Natural Earth and OpenStreetMap, the airports and the runways are
+OurAirports, the airspace is the FAA's, and all of it is built by the scripts in `Tools/` into
+the bundle — 55 MB of tables. The rest of the app works with the network off, and a map that
+needed tiles would have been the first thing to stop.
 
 - **Four levels of detail, chosen by zoom.** Natural Earth publishes the same world at 1:110m,
   1:50m and 1:10m, each generalised by cartographers for the scale it is meant to be seen at,
@@ -176,6 +176,39 @@ first thing to stop.
   drawing a sphere from vector data consists of. Which way round the closing arc goes is
   settled by finding where round the edge there is nothing at all and going the other way —
   taking the shorter way instead draws an island as coastline all the way round the world.
+
+**Layers**
+
+- **A Layers button** in the top right corner of the map, away from the map controls, because
+  what it holds are not map controls. Three things so far, each read the first time it is
+  switched on and not at launch.
+- **Airspace**, drawn the way a chart draws it: Class B solid blue, C magenta, D blue and
+  dashed, each ring labelled with its ceiling over its floor in hundreds of feet. Boston's
+  Class B comes out as its four shelves — 70/SFC, 70/20, 70/30, 70/40 — with each figure out
+  in the ring it belongs to rather than four of them stacked over the runway. From the FAA,
+  which is public domain and thorough over the United States.
+- **Or from openAIP**, for the rest of the world: classes A to E as well, plus the prohibited,
+  restricted and danger areas, which is most of what a chart outside America is made of. Not
+  bundled — openAIP's data is CC BY-NC and needs a key — so `Tools/make_openaip.py` builds it
+  on your own Mac with your own free key, into Application Support. Until it is there the
+  choice is greyed out and says so, and the FAA's table keeps drawing.
+- Heights are written the way each one is measured: `SFC` at the ground, `70` for hundreds of
+  feet above the sea, `FL195` for a flight level, `25 AGL` where the figure is above the
+  ground. A European danger area's floor is often the last of those, and calling it 2,500ft
+  above the sea would put it 2,000ft wrong over high ground.
+- **State borders** and **town and city names**, both Natural Earth. Names are asked for in
+  rank order, so what there is room for goes to the places that matter.
+
+**The coastline is OpenStreetMap's**
+
+- The deepest level of detail draws land from OpenStreetMap rather than Natural Earth: 450
+  points around Boston against 77, which is the difference between a harbour and a notch.
+- Closer still, **the full OpenStreetMap coastline** — 79 million points — takes over a
+  one-degree cell at a time, where it is on the Mac. It is not shippable at 4 GB, so
+  `Tools/make_coastline.py` builds it into Application Support and the map reads only the
+  cells you are looking at. 41,147 points around Boston.
+- Lakes and borders stay Natural Earth: OpenStreetMap's coastline download is the coast and
+  nothing else.
 
 **Asked once, not after every update**
 

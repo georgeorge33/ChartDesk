@@ -21,6 +21,8 @@ struct RouteMapView: View {
     @ObservedObject private var geography = MapGeography.shared
     /// The full coastline, when it is on this Mac and the zoom calls for it.
     @ObservedObject private var coastline = CoastlineStore.shared
+    /// Whether openAIP's table is on this Mac, which decides whether it can be drawn.
+    @ObservedObject private var openAIP = OpenAIPStore.shared
 
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
@@ -100,22 +102,20 @@ struct RouteMapView: View {
             // The coarsest tier as well as the wanted one, so there is always something to
             // fall back on while a finer one is read.
             geography.request(.coarse)
-            geography.request(camera.detail, coastline: browser.coastline)
+            geography.request(camera.detail)
             if camera.showsRunways { geography.requestRunways() }
             requestCells()
+            openAIP.refresh()
             requestLayers()
         }
         .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
+        .onChange(of: browser.airspaceSource) { _, _ in requestLayers() }
         .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
         .onChange(of: browser.showsCityNames) { _, _ in requestLayers() }
         // Zooming past a threshold is the only thing that calls for another tier, and the
         // request is idempotent: the store ignores one it already holds or is already reading.
         .onChange(of: camera.detail) { _, detail in
-            geography.request(detail, coastline: browser.coastline)
-        }
-        .onChange(of: browser.coastline) { _, source in
-            geography.request(camera.detail, coastline: source)
-            requestCells()
+            geography.request(detail)
         }
         // Panning and zooming both change which cells of the full coastline are in view. The
         // request is idempotent and skips whatever is already read, so asking on every step
@@ -180,7 +180,7 @@ struct RouteMapView: View {
 
         // Land, then the lakes cut back out of it, then borders — all from the one level of
         // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
-        if let world = geography.best(for: camera.detail, coastline: browser.coastline) {
+        if let world = geography.best(for: camera.detail) {
             // Where the full coastline has arrived, the bundled one is held back — clipped
             // out, cell by cell. Drawing both was wrong: they disagree, and the bundled fill
             // stayed visible wherever it claimed land the finer one does not, which is a
@@ -273,59 +273,71 @@ struct RouteMapView: View {
         }
     }
 
-    /// Controlled airspace, in the colours a chart uses: Class B solid blue, Class C magenta,
-    /// Class D blue and dashed, each ring labelled with its ceiling over its floor in hundreds
-    /// of feet.
+    /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
+    /// blue and dashed, and prohibited, restricted and danger areas red — each ring labelled
+    /// with its ceiling over its floor.
     ///
-    /// Drawn D first so the busier airspace reads over the quieter, and filled faintly as well
-    /// as outlined: a Class B is four or five shelves stacked over one another and the fill is
-    /// what shows which one you are under.
+    /// Drawn quietest first so the busier airspace reads over it, with the areas to keep out
+    /// of on top of everything, and filled faintly as well as outlined: a Class B is four or
+    /// five shelves stacked over one another and the fill is what shows which one you are
+    /// under.
     private func airspace(in context: inout GraphicsContext, sheet: MapSheet,
                           labels: inout [Label]) {
-        guard browser.showsAirspace,
-              camera.worldWidth >= MapLayerRoom.airspaceFrom,
-              !geography.airspace.isEmpty
+        guard browser.showsAirspace, camera.worldWidth >= MapLayerRoom.airspaceFrom
         else { return }
+        let rings = geography.airspace(from: airspaceSource)
+        guard !rings.isEmpty else { return }
 
-        for klass in [AirspaceClass.d, .c, .b] {
-            let colour: Color
-            let style: StrokeStyle
-            switch klass {
-            case .b:
-                colour = Color(nsColor: Theme.airspaceB)
-                style = StrokeStyle(lineWidth: 1.6)
-            case .c:
-                colour = Color(nsColor: Theme.airspaceC)
-                style = StrokeStyle(lineWidth: 1.4)
-            case .d:
-                colour = Color(nsColor: Theme.airspaceD)
-                style = StrokeStyle(lineWidth: 1.2, dash: [5, 3])
-            }
+        // The table arrives sorted quietest first, so one pass in order paints the busy
+        // airspace over the quiet without filtering by kind eight times over.
+        for space in rings where sheet.mayShow(space.cap) {
+            let colour = Self.colour(of: space.klass)
+            let path = sheet.path(ring: MapShape(directions: space.directions,
+                                                 cap: space.cap))
+            guard !path.isEmpty else { continue }
+            context.fill(path, with: .color(colour.opacity(0.07)))
+            context.stroke(path, with: .color(colour), style: Self.stroke(of: space.klass))
 
-            for space in geography.airspace
-            where space.klass == klass && sheet.mayShow(space.cap) {
-                let path = sheet.path(ring: MapShape(directions: space.directions,
-                                                     cap: space.cap))
-                guard !path.isEmpty else { continue }
-                context.fill(path, with: .color(colour.opacity(0.07)))
-                context.stroke(path, with: .color(colour), style: style)
+            // The ceiling and floor, out towards the ring's own edge.
+            let where_ = space.labelAt
+            guard sheet.projection.faces(where_.direction) else { continue }
+            let at = sheet.point(where_)
+            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
+            else { continue }
+            labels.append(Label(text: Text(space.ceilingLabel)
+                                    .font(.ngSmallMono)
+                                    .foregroundStyle(colour),
+                                under: Text(space.floorLabel)
+                                    .font(.ngSmallMono)
+                                    .foregroundStyle(colour),
+                                ruleColour: colour,
+                                at: at, anchor: .center))
+        }
+    }
 
-                // The ceiling and floor, at the middle of the ring — which is what the cap's
-                // own centre already is.
-                let where_ = space.labelAt
-                guard sheet.projection.faces(where_.direction) else { continue }
-                let at = sheet.point(where_)
-                guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
-                else { continue }
-                labels.append(Label(text: Text(space.ceilingLabel)
-                                        .font(.ngSmallMono)
-                                        .foregroundStyle(colour),
-                                    under: Text(space.floorLabel)
-                                        .font(.ngSmallMono)
-                                        .foregroundStyle(colour),
-                                    ruleColour: colour,
-                                    at: at, anchor: .center))
-            }
+    private static func colour(of klass: AirspaceClass) -> Color {
+        switch klass {
+        case .a: return Color(nsColor: Theme.airspaceA)
+        case .b: return Color(nsColor: Theme.airspaceB)
+        case .c: return Color(nsColor: Theme.airspaceC)
+        case .d: return Color(nsColor: Theme.airspaceD)
+        case .e: return Color(nsColor: Theme.airspaceE)
+        case .prohibited, .restricted, .danger: return Color(nsColor: Theme.airspaceDanger)
+        }
+    }
+
+    /// Weight and dash per kind, following the chart: solid where entry is by clearance,
+    /// dashed where the boundary is advisory or the area is only sometimes active.
+    private static func stroke(of klass: AirspaceClass) -> StrokeStyle {
+        switch klass {
+        case .a: return StrokeStyle(lineWidth: 1.4)
+        case .b: return StrokeStyle(lineWidth: 1.6)
+        case .c: return StrokeStyle(lineWidth: 1.4)
+        case .d: return StrokeStyle(lineWidth: 1.2, dash: [5, 3])
+        case .e: return StrokeStyle(lineWidth: 1, dash: [2, 3])
+        case .prohibited: return StrokeStyle(lineWidth: 1.8)
+        case .restricted: return StrokeStyle(lineWidth: 1.5)
+        case .danger: return StrokeStyle(lineWidth: 1.4, dash: [6, 3])
         }
     }
 
@@ -553,11 +565,10 @@ struct RouteMapView: View {
                             anchor: .top))
     }
 
-    /// True when the full coastline is chosen, close enough to be worth reading, and there.
+    /// True when the zoom is close enough for the full coastline to be worth reading, and it
+    /// is on this Mac.
     private var showsFullCoastline: Bool {
-        browser.coastline == .openStreetMapFull
-            && camera.worldWidth >= MapDetail.fullFrom
-            && coastline.isReady
+        camera.worldWidth >= MapDetail.fullFrom && coastline.isReady
     }
 
     /// The parts of the view the full coastline has arrived for.
@@ -585,17 +596,14 @@ struct RouteMapView: View {
 
     /// Asks for whichever layer tables are switched on.
     private func requestLayers() {
-        if browser.showsAirspace { geography.requestAirspace() }
+        if browser.showsAirspace { geography.requestAirspace(airspaceSource) }
         if browser.showsStateBorders { geography.requestStates() }
         if browser.showsCityNames { geography.requestCities() }
     }
 
     /// Asks for the cells of the full coastline the view covers.
     private func requestCells() {
-        guard browser.coastline == .openStreetMapFull,
-              camera.worldWidth >= MapDetail.fullFrom,
-              size.width > 0
-        else { return }
+        guard camera.worldWidth >= MapDetail.fullFrom, size.width > 0 else { return }
         coastline.request(MapSheet(camera: camera, size: size).coastlineCells())
     }
 
@@ -716,9 +724,9 @@ struct RouteMapView: View {
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
 
-            // ODbL asks for the credit wherever the data is drawn, so it goes on the map and
-            // not only in the panel where the choice was made.
-            if let credit = browser.coastline.attribution {
+            // Both licences ask for the credit wherever the data is drawn, so it goes on
+            // the map and not only in the panel where the choice was made.
+            ForEach(credits, id: \.self) { credit in
                 Text(credit)
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
@@ -733,12 +741,37 @@ struct RouteMapView: View {
         .padding(12)
     }
 
+    /// The airspace source actually being drawn.
+    ///
+    /// openAIP's table is one you build yourself, so it can be chosen and then deleted, or
+    /// carried over in a preference to a Mac that never had it. Falling back to the FAA's
+    /// draws the airspace there is rather than an empty layer, and the panel says so.
+    private var airspaceSource: AirspaceSource {
+        let wanted = browser.airspaceSource
+        return wanted.needsTableOnDisk && !openAIP.isInstalled ? .faa : wanted
+    }
+
+    /// Who to credit for what is actually on the sheet.
+    ///
+    /// Only for what is drawn: a credit for a layer that is switched off is noise, and a
+    /// credit for one that is switched on but whose table is missing is a lie.
+    private var credits: [String] {
+        var found: [String] = []
+        found.append(Coastline.attribution)
+        let source = airspaceSource
+        if browser.showsAirspace, let credit = source.attribution,
+           !geography.airspace(from: source).isEmpty {
+            found.append(source.licence.map { "\(credit) · \($0)" } ?? credit)
+        }
+        return found
+    }
+
     /// Where the map is looking, how wide, and which of the three worlds it is drawing —
     /// so that the tier is something you can see rather than infer. An ellipsis while a finer
     /// one is still being read.
     private var readout: String {
         var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
-        if geography.isCatchingUp(to: camera.detail, coastline: browser.coastline) {
+        if geography.isCatchingUp(to: camera.detail) {
             tier += " …"
         } else if showsFullCoastline, size.width > 0 {
             let wanted = MapSheet(camera: camera, size: size).coastlineCells()

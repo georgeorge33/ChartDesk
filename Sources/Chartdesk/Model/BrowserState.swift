@@ -70,15 +70,15 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(restoreLastChart, forKey: DefaultsKey.restoreLastChart) }
     }
 
-    /// Where the map draws its coastline from — the first thing the Layers button offers.
-    @Published var coastline: CoastlineSource {
-        didSet { UserDefaults.standard.set(coastline.rawValue, forKey: DefaultsKey.coastlineSource) }
-    }
-
     /// Controlled airspace, drawn the way a chart draws it. Off by default: it is only wanted
     /// when you are looking at where you are flying, and it is a lot of ink.
     @Published var showsAirspace: Bool {
         didSet { UserDefaults.standard.set(showsAirspace, forKey: DefaultsKey.showsAirspace) }
+    }
+
+    /// Where that airspace comes from: the FAA's own table, or openAIP's worldwide one.
+    @Published var airspaceSource: AirspaceSource {
+        didSet { UserDefaults.standard.set(airspaceSource.rawValue, forKey: DefaultsKey.airspaceSource) }
     }
 
     /// State and province borders.
@@ -102,9 +102,9 @@ final class BrowserState: ObservableObject {
         canvasBackground = CanvasBackground(rawValue: defaults.string(forKey: DefaultsKey.canvasBackground) ?? "") ?? .system
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
-        coastline = CoastlineSource(rawValue: defaults.string(forKey: DefaultsKey.coastlineSource) ?? "")
-            ?? .naturalEarth
         showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
+        airspaceSource = AirspaceSource(rawValue: defaults.string(forKey: DefaultsKey.airspaceSource) ?? "")
+            ?? .faa
         showsStateBorders = defaults.bool(forKey: DefaultsKey.showsStateBorders)
         showsCityNames = defaults.bool(forKey: DefaultsKey.showsCityNames)
     }

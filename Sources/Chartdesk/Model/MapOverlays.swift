@@ -5,41 +5,129 @@ import simd
 // The layers that go over the geography: airspace, internal borders, and the names of towns.
 // Each is read only when it is switched on, and each is a table built by Tools/.
 
-/// A class of controlled airspace, as a chart draws it.
+/// A kind of airspace, as a chart draws it.
+///
+/// The five ICAO classes a map is worth drawing, and the three kinds of area you keep out of.
+/// Class F and G are left out on purpose: G is everything that is not something else, and a
+/// layer that covers the whole world tells you nothing.
 enum AirspaceClass: String, CaseIterable {
+    case a = "A"
     case b = "B"
     case c = "C"
     case d = "D"
+    case e = "E"
+    case prohibited = "PROHIBITED"
+    case restricted = "RESTRICTED"
+    case danger = "DANGER"
 
     var name: String {
         switch self {
-        case .b: return "Class B"
-        case .c: return "Class C"
-        case .d: return "Class D"
+        case .a, .b, .c, .d, .e: return "Class \(rawValue)"
+        case .prohibited: return "Prohibited"
+        case .restricted: return "Restricted"
+        case .danger: return "Danger"
         }
+    }
+
+    /// The areas you are kept out of rather than cleared into, which a chart draws in red.
+    var isSpecialUse: Bool {
+        switch self {
+        case .prohibited, .restricted, .danger: return true
+        default: return false
+        }
+    }
+
+    /// Quietest first, so the busier airspace reads over it, and the areas to avoid on top.
+    static let drawingOrder: [AirspaceClass] =
+        [.e, .a, .d, .c, .b, .danger, .restricted, .prohibited]
+}
+
+/// How high a shelf reaches, and what the figure is measured from.
+///
+/// The FAA's table is feet above the sea and nothing else, so this was an `Int` until openAIP
+/// arrived with the rest of the world in it: a European TMA tops out at a flight level, a
+/// danger area is often so many feet above the ground, and "2500" means two different heights
+/// depending on which. Writing them all as one number would have put the floor of a German
+/// danger area 2,000ft out over high ground, which is the wrong way round to be wrong.
+struct AirspaceLimit: Equatable {
+
+    enum Datum: Equatable {
+        /// The ground itself.
+        case surface
+        /// Feet above mean sea level.
+        case mean
+        /// Feet above the ground.
+        case aboveGround
+        /// A flight level: pressure altitude, in hundreds.
+        case standard
+        /// No ceiling at all.
+        case unlimited
+    }
+
+    let feet: Int
+    let datum: Datum
+
+    /// The way a chart writes it: hundreds of feet, SFC at the ground, FL where it is one.
+    var label: String {
+        switch datum {
+        case .surface: return "SFC"
+        case .unlimited: return "UNL"
+        case .standard: return "FL\(feet / 100)"
+        case .aboveGround: return "\(feet / 100) AGL"
+        case .mean: return "\(feet / 100)"
+        }
+    }
+
+    /// Reads one field of the table.
+    ///
+    /// Self-describing, rather than a number in one column and its datum in another: `SFC`,
+    /// `7000`, `FL195`, `2500AGL`, `UNL`. The FAA's table has only the first two forms, so it
+    /// reads unchanged — which is the point of doing it this way.
+    init?(_ token: some StringProtocol) {
+        let text = token.trimmingCharacters(in: .whitespaces).uppercased()
+        switch text {
+        case "SFC", "GND", "0":
+            self = AirspaceLimit(feet: 0, datum: .surface)
+        case "UNL", "UNLTD", "UNLIMITED":
+            self = AirspaceLimit(feet: 99_999, datum: .unlimited)
+        default:
+            if text.hasPrefix("FL"), let level = Int(text.dropFirst(2)) {
+                self = AirspaceLimit(feet: level * 100, datum: .standard)
+            } else if text.hasSuffix("AGL"), let feet = Int(text.dropLast(3)) {
+                // Zero above the ground is the ground, whatever the datum says.
+                self = AirspaceLimit(feet: feet, datum: feet == 0 ? .surface : .aboveGround)
+            } else if let feet = Int(text) {
+                self = AirspaceLimit(feet: feet, datum: .mean)
+            } else {
+                return nil
+            }
+        }
+    }
+
+    init(feet: Int, datum: Datum) {
+        self.feet = feet
+        self.datum = datum
     }
 }
 
-/// One shelf of controlled airspace: a ring, and what it reaches from and to.
+/// One shelf of airspace: a ring, and what it reaches from and to.
 ///
 /// A Class B is several of these — Boston's is four, stacked from the surface to 7,000ft —
 /// which is why each carries its own ceiling and floor rather than the airport carrying one
 /// pair. It is what lets the map label a ring the way a chart does.
 struct MapAirspace {
     let klass: AirspaceClass
-    let airport: String
-    /// Feet above mean sea level.
-    let ceiling: Int
-    let floor: Int
-    /// True where the floor is the ground rather than an altitude.
-    let atSurface: Bool
+    /// What it is called: an airport's ident from the FAA, an airspace name from openAIP.
+    let name: String
+    let ceiling: AirspaceLimit
+    let floor: AirspaceLimit
 
     let directions: [SIMD3<Double>]
     let cap: SphericalCap
 
     /// Hundreds of feet, the way a chart writes it: 70 over 20, or 70 over SFC.
-    var ceilingLabel: String { "\(ceiling / 100)" }
-    var floorLabel: String { atSurface ? "SFC" : "\(floor / 100)" }
+    var ceilingLabel: String { ceiling.label }
+    var floorLabel: String { floor.label }
 
     /// Where to write the ceiling and floor.
     ///
@@ -67,12 +155,30 @@ struct MapCity {
 
 extension WorldData {
 
-    /// Class B, C and D airspace, from the FAA. United States only.
-    nonisolated static func loadAirspace() -> [MapAirspace] {
-        guard let url = Bundle.main.url(forResource: "airspace", withExtension: "txt"),
+    /// Airspace, from whichever source the Layers panel is set to.
+    ///
+    /// The FAA's table is bundled; openAIP's is a file you build yourself with
+    /// `Tools/make_openaip.py` and your own key, so it may simply not be there — in which
+    /// case this reads nothing and the panel says why.
+    nonisolated static func loadAirspace(from source: AirspaceSource = .faa) -> [MapAirspace] {
+        let url = source.fileURL
+            ?? Bundle.main.url(forResource: "airspace", withExtension: "txt")
+        guard let url = url,
               let data = try? Data(contentsOf: url, options: [.mappedIfSafe])
         else { return [] }
-        return parseAirspace(data)
+        return inDrawingOrder(parseAirspace(data))
+    }
+
+    /// The rings, quietest first, so that drawing them in order paints the busy airspace over
+    /// the quiet and the areas to keep out of over everything.
+    ///
+    /// Sorted once here rather than filtered by kind inside the draw. openAIP's table is ten
+    /// times the FAA's, and a pass per kind is eight passes over fifty thousand rings on
+    /// every frame to save one comparison each.
+    nonisolated static func inDrawingOrder(_ rings: [MapAirspace]) -> [MapAirspace] {
+        var rank: [AirspaceClass: Int] = [:]
+        for (index, klass) in AirspaceClass.drawingOrder.enumerated() { rank[klass] = index }
+        return rings.sorted { rank[$0.klass, default: 0] < rank[$1.klass, default: 0] }
     }
 
     /// Kept apart from the reading so it can be checked against the table on disk, without a
@@ -85,13 +191,10 @@ extension WorldData {
         where !line.hasPrefix("#") {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
             guard fields.count >= 5,
-                  let klass = AirspaceClass(rawValue: String(fields[0])),
-                  let ceiling = Int(fields[2])
+                  let klass = AirspaceClass(rawValue: fields[0].uppercased()),
+                  let ceiling = AirspaceLimit(fields[2]),
+                  let floor = AirspaceLimit(fields[3])
             else { continue }
-
-            let floorText = String(fields[3])
-            let atSurface = floorText == "SFC"
-            let floor = atSurface ? 0 : (Int(floorText) ?? 0)
 
             var directions: [SIMD3<Double>] = []
             let numbers = fields[4].split(separator: " ")
@@ -107,10 +210,9 @@ extension WorldData {
             guard directions.count >= 4 else { continue }
 
             out.append(MapAirspace(klass: klass,
-                                   airport: String(fields[1]),
+                                   name: String(fields[1]),
                                    ceiling: ceiling,
                                    floor: floor,
-                                   atSurface: atSurface,
                                    directions: directions,
                                    cap: SphericalCap(directions)))
         }

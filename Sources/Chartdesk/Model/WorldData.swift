@@ -130,17 +130,21 @@ enum WorldData {
     /// Reads one tier off disk. Costs tens of milliseconds for the deepest one, so this is
     /// called from `MapGeography` on a background queue rather than during a draw.
     ///
-    /// Only the deepest level's *land* follows the chosen coastline. Lakes and borders stay
-    /// Natural Earth whatever is picked: OpenStreetMap's coastline is the coast and nothing
-    /// else — its download holds no lakes and no frontiers — so the alternative to a slightly
-    /// coarser lake beside a finer coast is no lake at all.
-    nonisolated static func geography(_ detail: MapDetail,
-                                      coastline: CoastlineSource) -> Geography {
-        let land = detail == .fine ? coastline.deepestLandTable : "land-\(detail.scale)"
+    /// Only the deepest level's *land* is OpenStreetMap's. Lakes and borders stay Natural
+    /// Earth: OpenStreetMap's coastline is the coast and nothing else — its download holds no
+    /// lakes and no frontiers — so the alternative to a slightly coarser lake beside a finer
+    /// coast is no lake at all.
+    nonisolated static func geography(_ detail: MapDetail) -> Geography {
         return Geography(detail: detail,
-                         land: shapes(land),
+                         land: shapes(landTable(for: detail)),
                          lakes: shapes("lakes-\(detail.scale)"),
                          borders: shapes("borders-\(detail.scale)"))
+    }
+
+    /// Which land table a tier draws from: OpenStreetMap's for the deepest, Natural Earth's
+    /// for the two above it, which have no OpenStreetMap equivalent and need none.
+    nonisolated static func landTable(for detail: MapDetail) -> String {
+        detail == .fine ? Coastline.deepestLandTable : "land-\(detail.scale)"
     }
 
     // MARK: - Loading

@@ -16,14 +16,15 @@ source.
 **What that requires of this app, and where it is done:**
 
 - **Attribution.** "© OpenStreetMap contributors" has to be shown wherever the data is drawn.
-  The map's readout carries it whenever an OpenStreetMap coastline is selected, and the Layers
-  panel carries it beside the choice.
+  The map's readout carries it, and the Layers panel says the same under its note about where
+  the coast comes from.
 - **Share-alike.** Those tables are a Derived Database, so they are offered under ODbL too —
   not under whatever terms the rest of this app carries. Take them and the same conditions
   follow you.
 
-Chartdesk ships Natural Earth as the default coastline, and never needs OpenStreetMap to work.
-The choice is in Layers, on the map.
+This is the coastline now — there is no longer a choice of one. Natural Earth still draws the
+two zoomed-out tiers, which have no OpenStreetMap equivalent, and still provides every lake
+and every border.
 
 ## Natural Earth — public domain
 
@@ -37,11 +38,31 @@ headers of the tables and in the release notes.
 
 `Resources/airspace.txt`: Class B, C and D with the ceiling and floor of every shelf, from the
 FAA's own airspace service, built by `Tools/make_airspace.py`. A work of the United States
-government and so not subject to copyright.
+government and so not subject to copyright. The airspace layer's default source, and the only
+one that is bundled.
 
 Not United States only, as it turns out — the FAA publishes airspace for 1,579 airports
 worldwide, from CYVR to EGLL to YSSY — but it is thorough over the United States and thinner
 the further you go, so treat anything else as a courtesy rather than a guarantee.
+
+## openAIP — CC BY-NC 4.0
+
+**What:** worldwide airspace — classes A to E, plus prohibited, restricted and danger areas —
+fetched from [openAIP](https://www.openaip.net/)'s API by `Tools/make_openaip.py`. The
+alternative to the FAA's table, chosen in Layers.
+
+**Licence:** [Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/),
+as stated on openAIP's own front page. Attribution, and no commercial use. No share-alike
+clause, unlike ODbL above.
+
+**Not shipped.** No openAIP data is in this repository or in the app. The table is built on
+your own Mac, with your own free key, into Application Support — for three reasons, in order:
+the release runner has no key; a worldwide airspace database bundled at release time is stale
+by the next amendment cycle; and a non-commercial condition is one to accept on purpose rather
+than to inherit with a download.
+
+**Attribution, where it is done:** "© openAIP contributors · CC BY-NC 4.0" appears on the map
+whenever openAIP airspace is being drawn, and beside the choice in the Layers panel.
 
 ## OurAirports — public domain
 

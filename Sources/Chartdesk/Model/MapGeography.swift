@@ -14,30 +14,18 @@ final class MapGeography: ObservableObject {
 
     static let shared = MapGeography()
 
-    /// A level of detail together with where its land comes from.
-    ///
-    /// Only the deepest level differs by coastline, so the two shallower ones are held once
-    /// however the Layers panel is set — switching coastline should not mean reading the
-    /// whole world again to draw the same continents.
-    struct Wanted: Hashable {
-        let detail: MapDetail
-        let coastline: CoastlineSource
-
-        init(_ detail: MapDetail, _ coastline: CoastlineSource) {
-            self.detail = detail
-            self.coastline = detail == .fine ? coastline : .naturalEarth
-        }
-    }
-
     /// Tiers already read. Published, so a tier landing redraws the map.
-    @Published private(set) var tiers: [Wanted: Geography] = [:]
+    @Published private(set) var tiers: [MapDetail: Geography] = [:]
     @Published private(set) var runways: [MapRunway] = []
     /// The layers the Layers button switches on, each read the first time it is wanted.
-    @Published private(set) var airspace: [MapAirspace] = []
+    ///
+    /// Airspace is held by source. Switching between the FAA's table and openAIP's then
+    /// switching back is a dictionary lookup rather than fifteen megabytes read again.
+    @Published private(set) var airspaces: [AirspaceSource: [MapAirspace]] = [:]
     @Published private(set) var states: [MapShape] = []
     @Published private(set) var cities: [MapCity] = []
 
-    private var loading: Set<Wanted> = []
+    private var loading: Set<MapDetail> = []
     private var loadingRunways = false
     private var reading: Set<String> = []
 
@@ -48,34 +36,31 @@ final class MapGeography: ObservableObject {
     /// Called from inside a draw, so it only reports what is in hand and never starts work:
     /// asking for a tier is `request`'s job, and a draw that kicked off a file read would do it
     /// again on the next frame.
-    func best(for detail: MapDetail, coastline: CoastlineSource) -> Geography? {
-        if let exact = tiers[Wanted(detail, coastline)] { return exact }
+    func best(for detail: MapDetail) -> Geography? {
+        if let exact = tiers[detail] { return exact }
         // Coarser first: a generalised coastline in the right place beats a detailed one
         // drawn for a different zoom, and beats an empty sheet either way.
         for fallback in MapDetail.allCases.reversed() where fallback < detail {
-            if let ready = tiers[Wanted(fallback, coastline)] { return ready }
+            if let ready = tiers[fallback] { return ready }
         }
         for fallback in MapDetail.allCases.reversed() where fallback > detail {
-            if let ready = tiers[Wanted(fallback, coastline)] { return ready }
+            if let ready = tiers[fallback] { return ready }
         }
         return nil
     }
 
     /// True while the map is showing something other than what the zoom calls for.
-    func isCatchingUp(to detail: MapDetail, coastline: CoastlineSource) -> Bool {
-        tiers[Wanted(detail, coastline)] == nil
-    }
+    func isCatchingUp(to detail: MapDetail) -> Bool { tiers[detail] == nil }
 
     /// Reads a tier, unless it is already in hand or on its way.
-    func request(_ detail: MapDetail, coastline: CoastlineSource = .naturalEarth) {
-        let wanted = Wanted(detail, coastline)
-        guard tiers[wanted] == nil, !loading.contains(wanted) else { return }
-        loading.insert(wanted)
+    func request(_ detail: MapDetail) {
+        guard tiers[detail] == nil, !loading.contains(detail) else { return }
+        loading.insert(detail)
         queue.async {
-            let geography = WorldData.geography(wanted.detail, coastline: wanted.coastline)
+            let geography = WorldData.geography(detail)
             Task { @MainActor in
-                self.tiers[wanted] = geography
-                self.loading.remove(wanted)
+                self.tiers[detail] = geography
+                self.loading.remove(detail)
             }
         }
     }
@@ -85,17 +70,27 @@ final class MapGeography: ObservableObject {
     /// One shape for all three because they are the same job: a table that is worth nothing
     /// until a switch is turned on, and should not be read at launch on the chance that it
     /// might be. Airspace alone is fifteen megabytes.
-    func requestAirspace() {
-        guard airspace.isEmpty, !reading.contains("airspace") else { return }
-        reading.insert("airspace")
+    func requestAirspace(_ source: AirspaceSource) {
+        let key = "airspace-\(source.rawValue)"
+        guard airspaces[source] == nil, !reading.contains(key) else { return }
+        reading.insert(key)
         queue.async {
-            let read = WorldData.loadAirspace()
+            let read = WorldData.loadAirspace(from: source)
             Task { @MainActor in
-                self.airspace = read
-                self.reading.remove("airspace")
+                // Held even when it read nothing, so a missing openAIP table is not asked
+                // for again on every frame — `refresh` is what notices one arriving.
+                self.airspaces[source] = read
+                self.reading.remove(key)
             }
         }
     }
+
+    /// Whichever airspace table is in hand for this source.
+    func airspace(from source: AirspaceSource) -> [MapAirspace] { airspaces[source] ?? [] }
+
+    /// Forgets a source's table, so the next ask reads it again. For when one is built while
+    /// the app is running.
+    func forgetAirspace(_ source: AirspaceSource) { airspaces[source] = nil }
 
     func requestStates() {
         guard states.isEmpty, !reading.contains("states") else { return }

@@ -1,60 +1,24 @@
 import Foundation
 
-/// Where the map's coastline comes from.
+/// OpenStreetMap's coastline, which is the only one the map draws.
 ///
-/// The first of what the Layers button offers, and the only one so far. Natural Earth is what
-/// the app has always drawn and is public domain; the two OpenStreetMap choices are finer and
-/// carry an obligation with them, which is why the choice is a choice.
-enum CoastlineSource: String, CaseIterable, Identifiable {
+/// There were three to choose from for a while — Natural Earth's, OpenStreetMap simplified,
+/// and OpenStreetMap in full. The choice is gone: a menu asking which of three coastlines you
+/// would like is a question about the app rather than about where you are flying, and the
+/// answer was always the most detailed one that would draw.
+///
+/// So it goes the other way now. The bundled simplified table draws close in, the full one
+/// takes over cell by cell wherever it is on the Mac, and Natural Earth stays for the two
+/// zoomed-out tiers, the lakes and the borders — which OpenStreetMap's coastline download
+/// does not contain.
+enum Coastline {
 
-    /// Natural Earth, 1:110m through 1:10m. Public domain.
-    case naturalEarth
-    /// OpenStreetMap's coastline, simplified. Bundled.
-    case openStreetMap
-    /// OpenStreetMap's coastline in full, read a cell at a time from a table on disk.
-    case openStreetMapFull
+    /// Shown on the map. ODbL asks for it, and it is not optional.
+    static let attribution = "© OpenStreetMap contributors"
+    static let licence = "ODbL"
 
-    var id: String { rawValue }
-
-    var name: String {
-        switch self {
-        case .naturalEarth: return "Natural Earth"
-        case .openStreetMap: return "OpenStreetMap"
-        case .openStreetMapFull: return "OpenStreetMap, full detail"
-        }
-    }
-
-    /// What picking it actually gets you, in the terms that matter: how close you can go
-    /// before the coast turns polygonal. Measured in the same box around Boston each time.
-    var detail: String {
-        switch self {
-        case .naturalEarth:
-            return "Smooth to about 600km across. 77 points around Boston."
-        case .openStreetMap:
-            return "Smooth to about 100km across. 456 points around Boston."
-        case .openStreetMapFull:
-            return "Smooth at any zoom. 41,457 points around Boston."
-        }
-    }
-
-    /// Shown on the map whenever this is drawn. ODbL asks for it, and it is not optional.
-    var attribution: String? {
-        switch self {
-        case .naturalEarth: return nil
-        case .openStreetMap, .openStreetMapFull: return "© OpenStreetMap contributors"
-        }
-    }
-
-    /// The table the deepest bundled level of detail reads its land from.
-    var deepestLandTable: String {
-        switch self {
-        case .naturalEarth: return "land-10"
-        case .openStreetMap, .openStreetMapFull: return "land-osm"
-        }
-    }
-
-    /// True for the one that needs a table this app does not ship.
-    var needsCoastlineOnDisk: Bool { self == .openStreetMapFull }
+    /// The table the deepest bundled tier reads its land from.
+    static let deepestLandTable = "land-osm"
 }
 
 /// One degree of the full coastline, west and south edges.
