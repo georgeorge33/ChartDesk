@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0-rc.4
+
+What this candidate fixes in rc.3. Full release soon.
+
+- **rc.3 went out signed ad-hoc**, despite being the release that was supposed to fix exactly
+  that. The certificate reached the runner and the identity was found, but `codesign` could
+  not reach the private key — and `build.sh` had been sending codesign's error to
+  `/dev/null`, so the release published with notes claiming a signature it did not have and
+  nothing anywhere saying otherwise. The keychain now goes into the search list as well as
+  being named outright, which is what the key access needed, and a signature that fails now
+  prints the reason it failed.
+- **The push build signs the same way a release does**, so a broken signature fails on a push
+  instead of being found in something already published. That earned its keep immediately: it
+  caught a second fault in the same change, where `security import` could not work out the
+  format of a temporary file that had no suffix.
+- Nothing else changes from rc.3. The map's levels of detail and its runways are as they were.
+
 ## 1.1.0-rc.3
 
 What this candidate adds to rc.2. Full release soon.
@@ -108,6 +125,16 @@ first thing to stop.
 - A ring crossing the antimeridian used to jump from 179° to −179°, which drew a line sweeping
   back across the whole map through Siberia and Antarctica. Longitudes now run past ±180 and
   each shape is drawn at whichever offsets reach the view.
+
+**Asked once, not after every update**
+
+- **macOS stops asking for the Downloads folder each time the app updates.** It ties a
+  permission you have granted to the signature's designated requirement, and an ad-hoc
+  signature's requirement is the build's own hash — so every release looked like a different
+  app and asked again. Releases are signed with a certificate now, which makes that
+  requirement the bundle identifier and the certificate: the same next release, and the answer
+  sticks. It will ask once more after updating to this, and then stop. The certificate is
+  self-signed and vouches for nobody, so Gatekeeper treats the app exactly as it did before.
 
 ## 1.0.8
 
