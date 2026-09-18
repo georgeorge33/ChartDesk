@@ -197,9 +197,14 @@ def build_full(source, destination):
     reaches and an index says where each cell's rings are in the file. The map reads the cells
     it is looking at and nothing else.
 
-    No Douglas-Peucker here, deliberately: this level of detail is the point of it. Rounding
-    to four decimals — about eleven metres, and finer than the deepest zoom can show — does
-    all the thinning that is wanted, by dropping points that land on top of each other.
+    No Douglas-Peucker here, deliberately: this level of detail is the point of it. Five
+    decimals is about a metre, which is roughly what OpenStreetMap's coastline is surveyed to
+    and finer than any zoom can show; rounding to it does all the thinning that is wanted, by
+    dropping points that land on top of one another.
+
+    Four decimals was the first choice, and eleven metres turned out to be visible — it threw
+    away a quarter of the vertices around Boston and drew a staircase once the map could be
+    zoomed in far enough to notice.
     """
     path = os.path.join(source, "land-polygons-split-4326", "land_polygons.shp")
     if not os.path.exists(path):
@@ -214,11 +219,11 @@ def build_full(source, destination):
     rings = written = points = 0
     with open(table, "w", encoding="utf-8") as out:
         for polygon in polygons(path):
-            ready = prepare(polygon[0], tolerance=0, precision=4, smallest=0.0)
+            ready = prepare(polygon[0], tolerance=0, precision=5, smallest=0.0)
             if not ready:
                 continue
             rings += 1
-            line = row(ready, 4) + "\n"
+            line = row(ready, 5) + "\n"
             encoded = line.encode("utf-8")
             for cell in cells_of(ready):
                 at = out.tell()

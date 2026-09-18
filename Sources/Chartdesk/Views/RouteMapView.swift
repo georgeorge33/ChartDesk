@@ -558,7 +558,20 @@ struct RouteMapView: View {
             let wanted = MapSheet(camera: camera, size: size).coastlineCells()
             if !wanted.allSatisfy(coastline.holds) { tier += " …" }
         }
-        return String(format: "%.0f° across · %@ · %@", degreesAcross, position, tier)
+        return "\(across) across · \(position) · \(tier)"
+    }
+
+    /// How wide the view is, in whatever unit says something at this zoom.
+    ///
+    /// Degrees stop meaning anything once the map can go down to half a metre to the point:
+    /// the readout spent the last stretch of the zoom saying "0° across".
+    private var across: String {
+        let degrees = degreesAcross
+        guard degrees < 1 else { return String(format: "%.0f°", degrees) }
+        let metres = degrees / 360 * 40_075_000
+        return metres >= 1_000
+            ? String(format: "%.1f km", metres / 1_000)
+            : String(format: "%.0f m", metres)
     }
 
     private var position: String {

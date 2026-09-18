@@ -71,23 +71,49 @@ struct MapSheet {
         var path = Path()
         var drawing = false
         var last = CGPoint.zero
+        var previous: CGPoint?
 
         for direction in directions {
             guard projection.faces(direction) else {
+                previous = nil
                 drawing = false
                 continue
             }
             let here = projection.point(direction)
-            if drawing {
-                guard abs(here.x - last.x) >= 0.5 || abs(here.y - last.y) >= 0.5 else { continue }
-                path.addLine(to: here)
-            } else {
-                path.move(to: here)
-                drawing = true
+            defer { previous = here }
+
+            // A segment is wanted, not a point: a lone point on the near side draws nothing.
+            guard let before = previous else { continue }
+
+            // Nowhere near the panel, so lift the pen. Without this a meridian thirty degrees
+            // away still went into the path, and zoomed in to half a metre per point that is
+            // a line ending three million points off the edge of the sheet.
+            guard touchesPanel(before, here) else {
+                drawing = false
+                continue
             }
+
+            if !drawing {
+                path.move(to: before)
+                drawing = true
+                last = before
+            }
+            guard abs(here.x - last.x) >= 0.5 || abs(here.y - last.y) >= 0.5 else { continue }
+            path.addLine(to: here)
             last = here
         }
         return path
+    }
+
+    /// Whether the box around two points reaches the panel.
+    ///
+    /// Grown by a point before asking, because a level or upright segment makes a rectangle of
+    /// no height or no width, and an empty rectangle intersects nothing at all — which would
+    /// have quietly dropped every meridian.
+    private func touchesPanel(_ from: CGPoint, _ to: CGPoint) -> Bool {
+        let box = CGRect(x: min(from.x, to.x), y: min(from.y, to.y),
+                         width: abs(to.x - from.x), height: abs(to.y - from.y))
+        return box.insetBy(dx: -1, dy: -1).intersects(panel)
     }
 
     /// True when every point is already on the panel, and the clip is work for nothing.
