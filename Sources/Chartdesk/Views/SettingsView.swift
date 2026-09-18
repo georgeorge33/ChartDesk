@@ -20,6 +20,7 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var updater: UpdateController
     @EnvironmentObject private var importer: ImportController
+    @EnvironmentObject private var navdata: NavDataStore
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var weather: WeatherStore
 
@@ -48,6 +49,53 @@ private struct GeneralSettingsView: View {
                             .controlSize(.small)
                     }
                 }
+            }
+
+            Section("Navigation Data") {
+                HStack(spacing: 8) {
+                    if let cycle = navdata.installed {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Cycle \(cycle.stamp)")
+                                .font(.callout)
+                            Text(cycle.span
+                                 + (navdata.isCurrent ? " · current" : " · out of date"))
+                                .font(.ngSmall)
+                                .foregroundStyle(navdata.isCurrent ? .secondary : Color.orange)
+                        }
+                    } else {
+                        Text("Not installed")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if navdata.isWorking {
+                        ProgressView().progressViewStyle(.circular).controlSize(.small)
+                    } else {
+                        Button(navdata.installed == nil ? "Download" : "Check Now") {
+                            navdata.update()
+                        }
+                    }
+                }
+
+                Toggle("Fetch the current cycle on launch", isOn: $navdata.updateOnLaunch)
+
+                if let status = navdata.status {
+                    Text(status)
+                        .font(.ngSmall)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("SID and STAR altitude restrictions, from the FAA's Coded Instrument "
+                     + "Flight Procedures — public domain, reissued every 28 days, and United "
+                     + "States only. A restriction shows on the route in magenta with a bar "
+                     + "under a floor, over a ceiling, or both for a single altitude. The "
+                     + "cycle before is deleted when a new one lands.")
+                    .font(.ngSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Startup") {

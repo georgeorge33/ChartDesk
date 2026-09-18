@@ -16,6 +16,7 @@ enum DefaultsKey {
     static let restoreLastChart = "restoreLastChart"
     static let checkForUpdates = "checkForUpdates"
     static let importOnLaunch = "importOnLaunch"
+    static let navdataOnLaunch = "navdataOnLaunch"
     static let lastAutoUpdate = "lastAutoUpdate"
     static let showAnnotations = "showAnnotations"
     static let annotationTool = "annotationTool"

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0-rc.2
+
+What this candidate adds to rc.1. Full release soon.
+
+**Altitude restrictions, from real navigation data**
+
+- The route list states what a SID or STAR demands, not only what SimBrief predicts. On the
+  HYLND7 out of Boston, HURBE reads **4000** in magenta with a bar beneath it — at or above —
+  while the fixes either side stay green predictions. SimBrief had that fix at 6,800: a
+  prediction and a restriction are different numbers, and only one of them is a clearance.
+- Airbus F-PLN formatting: magenta for a restriction and green for a prediction, a bar under a
+  floor, over a ceiling, both for a single altitude, and two stacked figures for a block. No
+  words — the bars say it.
+- The data is the FAA's Coded Instrument Flight Procedures: public domain, reissued every 28
+  days, United States only. 18,592 restrictions at 496 airports, distilled from the 53 MB the
+  FAA ships to the 0.7 MB that says anything about an altitude.
+- **It keeps itself current.** At launch the cycle in force — which is arithmetic, not a
+  question for the network — is compared with the cycle on disk, named in the file. Out of date
+  or missing, the new one is fetched, distilled and written, and only then is the old one
+  deleted: an interrupted update leaves you on the previous cycle rather than on nothing.
+  Settings ▸ Navigation Data shows the cycle and its dates, with a Check Now button.
+
+**Also**
+
+- An altitude that repeats the one above it shows a ditto instead, centred under the figure it
+  stands for, so a cruise of a dozen fixes states FL360 once. A restriction is never dittoed.
+- Altitudes lost their "ft": every figure in the column is feet, and saying so twelve times
+  says nothing.
+
 ## 1.1.0
 
 **A map**

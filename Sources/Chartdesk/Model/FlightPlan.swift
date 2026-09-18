@@ -58,6 +58,7 @@ struct FlightPlan: Codable, Equatable {
 
         var id: String { "\(ident)-\(latitude)-\(longitude)" }
         var isAirport: Bool { kind == "apt" }
+
     }
 
     var airline: String?

@@ -14,6 +14,7 @@ struct ChartdeskApp: App {
     @StateObject private var flight = FlightPlanStore()
     @StateObject private var weather = WeatherStore()
     @StateObject private var importer = ImportController()
+    @StateObject private var navdata = NavDataStore()
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +27,7 @@ struct ChartdeskApp: App {
                 .environmentObject(flight)
                 .environmentObject(weather)
                 .environmentObject(importer)
+                .environmentObject(navdata)
                 .frame(minWidth: 940, minHeight: 620)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
@@ -61,6 +63,7 @@ struct ChartdeskApp: App {
                 .environmentObject(flight)
                 .environmentObject(weather)
                 .environmentObject(importer)
+                .environmentObject(navdata)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }

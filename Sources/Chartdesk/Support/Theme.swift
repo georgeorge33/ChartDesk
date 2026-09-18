@@ -31,6 +31,13 @@ enum Theme {
     static let land             = rgb(0x14243A)
     /// Map coastline.
     static let coast            = rgb(0x2E4A68)
+    /// Altitude and speed restrictions, which on an Airbus display are magenta and nothing
+    /// else is: on an F-PLN page only the constrained fix's figures are magenta, and that is
+    /// exactly what makes the colour worth reading.
+    static let constraint       = rgb(0xFF00FF)
+    /// What the aeroplane is predicted to do, which on the same page is green. Both are
+    /// eyeballed from a real F-PLN rather than taken from a specification.
+    static let prediction       = rgb(0x24E024)
     /// Map country borders. Drawn dashed as well as lighter: at the same weight as a coast a
     /// border reads as one, and the St Lawrence and the 49th parallel are not the same thing.
     static let border           = rgb(0x44607F)

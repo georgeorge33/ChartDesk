@@ -9,8 +9,52 @@ struct RouteFixList: View {
 
     @EnvironmentObject private var library: ChartLibrary
     @EnvironmentObject private var flight: FlightPlanStore
+    @EnvironmentObject private var navdata: NavDataStore
 
     private var waypoints: [FlightPlan.Waypoint] { flight.plan?.waypoints ?? [] }
+
+    /// What the procedure demands at a fix, from the navigation data.
+    ///
+    /// A SID belongs to the origin and a STAR to the destination, and the plan does not say
+    /// which of the two a fix came off, so both are asked — a procedure name only matches at
+    /// the airport that publishes it. The planned runway goes with the question because the
+    /// same fix can carry different restrictions on different runway transitions.
+    private func constraint(for waypoint: FlightPlan.Waypoint) -> AltitudeConstraint? {
+        guard waypoint.isProcedure,
+              let procedure = waypoint.via, procedure != "DCT",
+              let plan = flight.plan
+        else { return nil }
+
+        for field in plan.airfields where field.role != .alternate {
+            if let found = navdata.constraint(for: waypoint.ident,
+                                              procedure: procedure,
+                                              airport: field.icao,
+                                              runway: field.runway) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// A fix and whether its altitude simply repeats the one above.
+    ///
+    /// A cruise run is a dozen rows of FL360, which is a dozen figures saying one thing. A
+    /// restriction is never dittoed, whatever the figure: the point of the magenta and its bars
+    /// is that the number is stated, and "same as above" does not state it.
+    private var rows: [(waypoint: FlightPlan.Waypoint,
+                        constraint: AltitudeConstraint?,
+                        repeats: Bool)] {
+        var out: [(FlightPlan.Waypoint, AltitudeConstraint?, Bool)] = []
+        var previous: Int?
+        for waypoint in waypoints {
+            let restriction = constraint(for: waypoint)
+            let altitude = restriction?.feet ?? waypoint.altitude
+            let repeats = restriction == nil && altitude != nil && altitude == previous
+            out.append((waypoint, restriction, repeats))
+            if let altitude = altitude { previous = altitude }
+        }
+        return out
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,13 +122,17 @@ struct RouteFixList: View {
 
     private var list: some View {
         List {
-            ForEach(waypoints) { waypoint in
+            ForEach(rows, id: \.waypoint.id) { row in
+                let waypoint = row.waypoint
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // One colour per column, not one per kind of fix: idents read as idents,
+                    // the airway beside them as secondary, altitudes as the magenta column.
+                    // An airport is told apart by weight, which is a difference you can see
+                    // without having to learn what a fourth colour meant.
                     Text(waypoint.ident)
-                        .font(.ngSmallBold)
+                        .font(waypoint.isAirport ? .ngSmallBold : .ngSmall)
                         .monospacedDigit()
-                        .foregroundStyle(waypoint.isProcedure ? Color.orange
-                                         : (waypoint.isAirport ? Color.ngAccentText : .primary))
+                        .foregroundStyle(.primary)
                         .frame(width: 58, alignment: .leading)
 
                     // "DCT" is every other leg and says nothing; the airway or procedure name
@@ -98,9 +146,9 @@ struct RouteFixList: View {
                     Spacer(minLength: 4)
 
                     if let altitude = waypoint.altitude, altitude > 0 {
-                        Text(level(altitude))
-                            .font(.ngSmallMono)
-                            .foregroundStyle(.tertiary)
+                        AltitudeLabel(feet: altitude,
+                                      constraint: row.constraint,
+                                      repeatsAbove: row.repeats)
                     }
                 }
                 .padding(.vertical, 1)
@@ -110,10 +158,4 @@ struct RouteFixList: View {
         .scrollContentBackground(.hidden)
     }
 
-    /// Flight levels above the transition, feet below it — the way a plan reads them.
-    private func level(_ altitude: Int) -> String {
-        altitude >= 18_000
-            ? String(format: "FL%03d", altitude / 100)
-            : "\(altitude) ft"
-    }
 }

@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject private var updater: UpdateController
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var importer: ImportController
+    @EnvironmentObject private var navdata: NavDataStore
 
     @Environment(\.openWindow) private var openWindow
 
@@ -71,6 +72,7 @@ struct ContentView: View {
             restoreSelection()
             updater.checkOnLaunchIfWanted()
             flight.refreshOnLaunchIfWanted()
+            navdata.checkOnLaunchIfWanted()
             // The map's geography takes 47ms to parse, which on the main thread is three
             // dropped frames the first time you open the map. Read it now, off to one side.
             DispatchQueue.global(qos: .utility).async { _ = WorldData.land.count }
