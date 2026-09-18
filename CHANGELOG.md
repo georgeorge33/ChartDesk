@@ -37,16 +37,20 @@ What this candidate adds to rc.2. Full release soon.
   continent instead of drawing it. Clipped, that ring draws from four points and Kansas stays
   land.
 
-**A signature that is the same one next time**
+**A signature that is the same one next time** — *this did not work in rc.3; see rc.4 above.*
 
-- **macOS stops asking for the Downloads folder after every update.** It ties a permission you
-  have granted to the signature's designated requirement, and an ad-hoc signature's requirement
-  is the build's own hash — so every release looked like a different app and asked again.
-  Releases are now signed with a certificate, which makes the requirement the bundle identifier
-  and the certificate: the same next release, and the answer sticks. It will ask once more after
-  this one, and then stop. The certificate is self-signed and vouches for nobody — Gatekeeper
-  treats the app exactly as it did before.
-- **Fixed: builds intermittently came out unsigned.** The strip of Finder attributes walked
+- ~~**macOS stops asking for the Downloads folder after every update.**~~ Not in this build.
+  rc.3 went out signed ad-hoc: the certificate reached the build but `codesign` could not
+  reach its private key, and the error was being discarded, so the release published with
+  these notes claiming a signature it did not carry. The reasoning below holds and the fix
+  landed in rc.4. macOS ties a permission you have granted to the signature's designated
+  requirement, and an ad-hoc signature's requirement is the build's own hash — so every
+  release looked like a different app and asked again. Signed with a certificate the
+  requirement is the bundle identifier and the certificate instead: the same next release, and
+  the answer sticks. The certificate is self-signed and vouches for nobody — Gatekeeper treats
+  the app exactly as it did before.
+- **Fixed: builds intermittently came out unsigned.** (This part did work.) The strip of
+  Finder attributes walked
   every file in the bundle while iCloud re-stamped the one directory `codesign` objects to, and
   lost that race often enough to matter. It now clears that directory immediately before each
   attempt, and `--install` clears it again on the way into /Applications.
