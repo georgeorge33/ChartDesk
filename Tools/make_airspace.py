@@ -5,13 +5,18 @@
 
 Class B, C and D, with the ceiling and floor of every shelf, which is what lets the map label
 a ring "70/20" the way a chart does. Public domain: a work of the United States government,
-like the CIFP the procedures come from, and United States only for the same reason.
+like the CIFP the procedures come from.
+
+Not United States only, as it turns out. The FAA publishes airspace worldwide — 1,579
+airports, from CYVR to EGLL to YSSY — though the further from the United States the thinner it
+gets, so treat anything outside it as a courtesy rather than a guarantee.
 
 Fetched rather than downloaded from a file because the FAA publishes this as a feature
 service. 4,400 polygons, two thousand to a request.
 """
 import json
 import os
+import time
 import sys
 import urllib.parse
 import urllib.request
@@ -21,10 +26,18 @@ SERVICE = ("https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/ArcGIS/rest/services"
 WANTED = ("IDENT_TXT,NAME_TXT,CLASS_CODE,DISTVERTUPPER_VAL,DISTVERTUPPER_UOM,"
           "DISTVERTUPPER_CODE,DISTVERTLOWER_VAL,DISTVERTLOWER_UOM,DISTVERTLOWER_CODE")
 PRECISION = 4          # about eleven metres, finer than an airspace boundary is surveyed
-PAGE = 2000
+PAGE = 150          # a page of 2,000 with geometry is 19MB, and the connection drops part-way
+ATTEMPTS = 8
+PAUSE = 2.0         # the service allows so many request units a minute, and geometry is dear
 
 
 def fetch(where, offset):
+    """One page, with retries.
+
+    The service truncates a large response rather than refusing it, so this used to die with
+    `IncompleteRead` — and the first version of this script reported "0 features" because the
+    failure happened to land where nothing checked for it.
+    """
     query = urllib.parse.urlencode({
         "where": where,
         "outFields": WANTED,
@@ -34,8 +47,30 @@ def fetch(where, offset):
         "resultRecordCount": PAGE,
         "f": "geojson",
     })
-    with urllib.request.urlopen(f"{SERVICE}?{query}", timeout=180) as response:
-        return json.load(response)
+    last = None
+    for attempt in range(ATTEMPTS):
+        try:
+            with urllib.request.urlopen(f"{SERVICE}?{query}", timeout=180) as response:
+                page = json.loads(response.read().decode("utf-8"))
+        except Exception as problem:            # truncated, timed out, refused
+            last = f"{type(problem).__name__}: {problem}"
+            print(f"    retrying at {offset}: {last}", file=sys.stderr)
+            time.sleep(3 * (attempt + 1))
+            continue
+
+        # A refusal comes back as a perfectly good HTTP 200 with an error in the body. Read as
+        # "no features" it looks exactly like the end of the data, which is how the first run
+        # of this stopped at 500 of 4,371 and said nothing was wrong.
+        problem = page.get("error")
+        if problem:
+            code = problem.get("code")
+            last = f"{code}: {problem.get('message')}"
+            wait = 65 if code == 429 else 5 * (attempt + 1)
+            print(f"    {last} — waiting {wait}s", file=sys.stderr)
+            time.sleep(wait)
+            continue
+        return page
+    raise RuntimeError(f"giving up at offset {offset}: {last}")
 
 
 def figure(value):
@@ -93,7 +128,9 @@ def main():
                 continue
             upper, _ = feet(properties, "UPPER")
             lower, lowerCode = feet(properties, "LOWER")
-            if upper is None:
+            # The service uses negative sentinels where it has no figure -- -9998 and
+            # -999800 both turn up -- and a ring labelled "-99/SFC" is worse than no ring.
+            if upper is None or upper <= 0:
                 continue
             # A floor at the surface is drawn "SFC" rather than "0", the way a chart has it.
             floor = "SFC" if lowerCode == "SFC" or not lower else str(lower)
@@ -112,10 +149,11 @@ def main():
                 kept[klass] += 1
                 points += len(thinned)
 
-        print(f"  {offset + len(features)} features", file=sys.stderr)
-        if not page.get("properties", {}).get("exceededTransferLimit") and len(features) < PAGE:
-            break
         offset += len(features)
+        print(f"  {offset} features", file=sys.stderr)
+        if len(features) < PAGE:
+            break
+        time.sleep(PAUSE)
 
     with open(out_path, "w", encoding="utf-8") as out:
         out.write("# Class B, C and D airspace from the FAA (public domain, United States "

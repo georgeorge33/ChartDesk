@@ -27,10 +27,21 @@ The choice is in Layers, on the map.
 
 ## Natural Earth — public domain
 
-`Resources/land-*.txt`, `lakes-*.txt`, `borders-*.txt`, at 1:110m, 1:50m and 1:10m, built by
-`Tools/make_mapdata.py`. [naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/)
+`Resources/land-*.txt`, `lakes-*.txt`, `borders-*.txt` at 1:110m, 1:50m and 1:10m, plus
+`states.txt` (internal borders) and `cities.txt` (towns, with Natural Earth's own scale rank),
+all built by `Tools/make_mapdata.py`. [naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/)
 places these in the public domain, with no attribution required. It is credited anyway, in the
 headers of the tables and in the release notes.
+
+## FAA airspace — public domain
+
+`Resources/airspace.txt`: Class B, C and D with the ceiling and floor of every shelf, from the
+FAA's own airspace service, built by `Tools/make_airspace.py`. A work of the United States
+government and so not subject to copyright.
+
+Not United States only, as it turns out — the FAA publishes airspace for 1,579 airports
+worldwide, from CYVR to EGLL to YSSY — but it is thorough over the United States and thinner
+the further you go, so treat anything else as a courtesy rather than a guarantee.
 
 ## OurAirports — public domain
 

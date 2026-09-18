@@ -31,11 +31,15 @@ final class MapGeography: ObservableObject {
 
     /// Tiers already read. Published, so a tier landing redraws the map.
     @Published private(set) var tiers: [Wanted: Geography] = [:]
-    /// Runway ends, read on demand like a tier.
     @Published private(set) var runways: [MapRunway] = []
+    /// The layers the Layers button switches on, each read the first time it is wanted.
+    @Published private(set) var airspace: [MapAirspace] = []
+    @Published private(set) var states: [MapShape] = []
+    @Published private(set) var cities: [MapCity] = []
 
     private var loading: Set<Wanted> = []
     private var loadingRunways = false
+    private var reading: Set<String> = []
 
     private let queue = DispatchQueue(label: "chartdesk.mapdata", qos: .userInitiated)
 
@@ -72,6 +76,47 @@ final class MapGeography: ObservableObject {
             Task { @MainActor in
                 self.tiers[wanted] = geography
                 self.loading.remove(wanted)
+            }
+        }
+    }
+
+    /// Reads a layer if it has not been read, off the main thread.
+    ///
+    /// One shape for all three because they are the same job: a table that is worth nothing
+    /// until a switch is turned on, and should not be read at launch on the chance that it
+    /// might be. Airspace alone is fifteen megabytes.
+    func requestAirspace() {
+        guard airspace.isEmpty, !reading.contains("airspace") else { return }
+        reading.insert("airspace")
+        queue.async {
+            let read = WorldData.loadAirspace()
+            Task { @MainActor in
+                self.airspace = read
+                self.reading.remove("airspace")
+            }
+        }
+    }
+
+    func requestStates() {
+        guard states.isEmpty, !reading.contains("states") else { return }
+        reading.insert("states")
+        queue.async {
+            let read = WorldData.loadStates()
+            Task { @MainActor in
+                self.states = read
+                self.reading.remove("states")
+            }
+        }
+    }
+
+    func requestCities() {
+        guard cities.isEmpty, !reading.contains("cities") else { return }
+        reading.insert("cities")
+        queue.async {
+            let read = WorldData.loadCities()
+            Task { @MainActor in
+                self.cities = read
+                self.reading.remove("cities")
             }
         }
     }

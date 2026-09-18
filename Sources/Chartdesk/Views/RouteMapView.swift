@@ -61,6 +61,9 @@ struct RouteMapView: View {
         ZStack(alignment: .topLeading) {
             canvas
             overlay
+            // On its own, in the far corner: the layer switches are not map controls and
+            // belong away from them.
+            layers
         }
         .background(Color(nsColor: Theme.canvas))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
@@ -100,7 +103,11 @@ struct RouteMapView: View {
             geography.request(camera.detail, coastline: browser.coastline)
             if camera.showsRunways { geography.requestRunways() }
             requestCells()
+            requestLayers()
         }
+        .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
+        .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
+        .onChange(of: browser.showsCityNames) { _, _ in requestLayers() }
         // Zooming past a threshold is the only thing that calls for another tier, and the
         // request is idempotent: the store ignores one it already holds or is already reading.
         .onChange(of: camera.detail) { _, detail in
@@ -140,9 +147,25 @@ struct RouteMapView: View {
     /// airport's name off the map.
     private struct Label {
         let text: Text
+        /// A second line, with a rule between — how a chart writes a ceiling over a floor.
+        var under: Text?
+        /// The rule's colour, so it matches the figures rather than the furniture.
+        var ruleColour: Color?
         let at: CGPoint
         let anchor: UnitPoint
+
+        init(text: Text, under: Text? = nil, ruleColour: Color? = nil,
+             at: CGPoint, anchor: UnitPoint) {
+            self.text = text
+            self.under = under
+            self.ruleColour = ruleColour
+            self.at = at
+            self.anchor = anchor
+        }
     }
+
+    /// The air above and below the rule in a stacked label.
+    private static let ruleGap: CGFloat = 2
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         var labels: [Label] = []
@@ -176,9 +199,16 @@ struct RouteMapView: View {
                  in: &beneath, sheet: sheet)
 
             if !full.isEmpty {
+                // Filled and not outlined, unlike every other layer. The full coastline comes
+                // cut into pieces on a whole-degree grid so that no single polygon is enormous,
+                // and those cuts run through the middle of the land: 3,130 perfectly straight
+                // segments sitting on whole degrees, in a sample of one piece in forty.
+                // Stroked, they draw as coastline — which is the grid of straight lines that
+                // appeared across the land close in. The edge between land and sea is the edge
+                // between two fills and needs no line of its own.
                 fill(coastline.shapes(in: full),
                      colour: Color(nsColor: Theme.land),
-                     stroke: Color(nsColor: Theme.coast), width: 0.7,
+                     stroke: .clear, width: 0,
                      in: &context, sheet: sheet)
             }
 
@@ -190,6 +220,16 @@ struct RouteMapView: View {
                 context.stroke(sheet.path(line: shape.directions),
                                with: .color(Color(nsColor: Theme.border)),
                                style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
+            }
+        }
+
+        // State and province borders, fainter than a frontier between countries. Outside the
+        // block above because they are a layer of their own and do not wait on a coastline.
+        if browser.showsStateBorders, camera.worldWidth >= MapLayerRoom.statesFrom {
+            for shape in geography.states where sheet.mayShow(shape.cap) {
+                context.stroke(sheet.path(line: shape.directions),
+                               with: .color(Color(nsColor: Theme.stateBorder)),
+                               lineWidth: 0.6)
             }
         }
 
@@ -208,7 +248,9 @@ struct RouteMapView: View {
                            lineWidth: 1)
         }
 
+        airspace(in: &context, sheet: sheet, labels: &labels)
         runways(in: &context, sheet: sheet, labels: &labels)
+        places(in: &context, sheet: sheet, labels: &labels)
 
         // Airports before fixes, so their labels win the space.
         for airport in pinned {
@@ -226,7 +268,89 @@ struct RouteMapView: View {
             let path = sheet.path(ring: shape)
             guard !path.isEmpty else { continue }
             context.fill(path, with: .color(colour))
+            guard width > 0 else { continue }
             context.stroke(path, with: .color(stroke), lineWidth: width)
+        }
+    }
+
+    /// Controlled airspace, in the colours a chart uses: Class B solid blue, Class C magenta,
+    /// Class D blue and dashed, each ring labelled with its ceiling over its floor in hundreds
+    /// of feet.
+    ///
+    /// Drawn D first so the busier airspace reads over the quieter, and filled faintly as well
+    /// as outlined: a Class B is four or five shelves stacked over one another and the fill is
+    /// what shows which one you are under.
+    private func airspace(in context: inout GraphicsContext, sheet: MapSheet,
+                          labels: inout [Label]) {
+        guard browser.showsAirspace,
+              camera.worldWidth >= MapLayerRoom.airspaceFrom,
+              !geography.airspace.isEmpty
+        else { return }
+
+        for klass in [AirspaceClass.d, .c, .b] {
+            let colour: Color
+            let style: StrokeStyle
+            switch klass {
+            case .b:
+                colour = Color(nsColor: Theme.airspaceB)
+                style = StrokeStyle(lineWidth: 1.6)
+            case .c:
+                colour = Color(nsColor: Theme.airspaceC)
+                style = StrokeStyle(lineWidth: 1.4)
+            case .d:
+                colour = Color(nsColor: Theme.airspaceD)
+                style = StrokeStyle(lineWidth: 1.2, dash: [5, 3])
+            }
+
+            for space in geography.airspace
+            where space.klass == klass && sheet.mayShow(space.cap) {
+                let path = sheet.path(ring: MapShape(directions: space.directions,
+                                                     cap: space.cap))
+                guard !path.isEmpty else { continue }
+                context.fill(path, with: .color(colour.opacity(0.07)))
+                context.stroke(path, with: .color(colour), style: style)
+
+                // The ceiling and floor, at the middle of the ring — which is what the cap's
+                // own centre already is.
+                let where_ = space.labelAt
+                guard sheet.projection.faces(where_.direction) else { continue }
+                let at = sheet.point(where_)
+                guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
+                else { continue }
+                labels.append(Label(text: Text(space.ceilingLabel)
+                                        .font(.ngSmallMono)
+                                        .foregroundStyle(colour),
+                                    under: Text(space.floorLabel)
+                                        .font(.ngSmallMono)
+                                        .foregroundStyle(colour),
+                                    ruleColour: colour,
+                                    at: at, anchor: .center))
+            }
+        }
+    }
+
+    /// The names of towns and cities, as many as there is room for.
+    ///
+    /// Asked for in rank order — Natural Earth's own, 0 for the places that belong on a world
+    /// map — so the declutterer gives the space to the ones that matter, and anything that
+    /// will not fit simply does not appear.
+    private func places(in context: inout GraphicsContext, sheet: MapSheet,
+                        labels: inout [Label]) {
+        guard browser.showsCityNames, !geography.cities.isEmpty else { return }
+        let deepest = MapLayerRoom.cityRank(degreesAcross: degreesAcross)
+        let colour = Color(nsColor: Theme.place)
+
+        for city in geography.cities where city.rank <= deepest {
+            guard sheet.projection.faces(city.direction) else { continue }
+            let at = sheet.point(city.coordinate)
+            guard at.x > -20, at.x < sheet.size.width + 20,
+                  at.y > -10, at.y < sheet.size.height + 10 else { continue }
+
+            let dot = CGRect(x: at.x - 1.5, y: at.y - 1.5, width: 3, height: 3)
+            context.fill(Path(ellipseIn: dot), with: .color(colour.opacity(0.8)))
+            labels.append(Label(text: Text(city.name).font(.ngSmall).foregroundStyle(colour),
+                                at: CGPoint(x: at.x + 4, y: at.y),
+                                anchor: .leading))
         }
     }
 
@@ -278,7 +402,23 @@ struct RouteMapView: View {
         var taken: [CGRect] = []
         for label in labels {
             let resolved = context.resolve(label.text)
-            let measured = resolved.measure(in: CGSize(width: 200, height: 40))
+            let room = CGSize(width: 200, height: 40)
+            let topSize = resolved.measure(in: room)
+
+            // A second line sits under a rule, and the two together are what has to be
+            // measured for space — kept apart from the first line's own height, which is what
+            // the rule is positioned from. Using the combined height for both put the rule
+            // and the floor on top of one another.
+            var below: (text: GraphicsContext.ResolvedText, size: CGSize)?
+            if let under = label.under {
+                let resolvedBelow = context.resolve(under)
+                below = (resolvedBelow, resolvedBelow.measure(in: room))
+            }
+
+            let measured = below.map {
+                CGSize(width: max(topSize.width, $0.size.width),
+                       height: topSize.height + Self.ruleGap * 2 + $0.size.height)
+            } ?? topSize
             var frame = CGRect(origin: label.at, size: measured)
             frame.origin.x -= measured.width * label.anchor.x
             frame.origin.y -= measured.height * label.anchor.y
@@ -291,7 +431,25 @@ struct RouteMapView: View {
             else { continue }
 
             taken.append(padded)
-            context.draw(resolved, at: label.at, anchor: label.anchor)
+            guard let below = below else {
+                context.draw(resolved, at: label.at, anchor: label.anchor)
+                continue
+            }
+
+            // Ceiling over floor with a rule between, the way a chart writes it: the rule sits
+            // a hair under the ceiling and the floor a hair under the rule.
+            let middle = frame.midX
+            context.draw(resolved, at: CGPoint(x: middle, y: frame.minY), anchor: .top)
+
+            let ruleY = frame.minY + topSize.height + Self.ruleGap
+            var rule = Path()
+            rule.move(to: CGPoint(x: middle - measured.width / 2, y: ruleY))
+            rule.addLine(to: CGPoint(x: middle + measured.width / 2, y: ruleY))
+            context.stroke(rule, with: label.ruleColour.map { .color($0) } ?? .color(.secondary),
+                           lineWidth: 0.8)
+
+            context.draw(below.text, at: CGPoint(x: middle, y: ruleY + Self.ruleGap),
+                         anchor: .top)
         }
     }
 
@@ -317,6 +475,13 @@ struct RouteMapView: View {
     }()
 
     private func graticule(in context: inout GraphicsContext, sheet: MapSheet) {
+        // Only while the globe is being looked at as a globe. Meridians thirty degrees apart
+        // say which way it is turned; zoomed in on a city they are two grey lines ruled across
+        // the view, saying nothing and getting in the way of what does. The cut is where the
+        // deepest geography takes over, which is the same point the view stops being a globe
+        // and starts being a place.
+        guard camera.worldWidth < MapDetail.fineFrom else { return }
+
         let colour = Color(nsColor: Theme.separator).opacity(0.5)
         for line in Self.graticuleLines {
             context.stroke(sheet.path(line: line), with: .color(colour), lineWidth: 0.5)
@@ -418,6 +583,13 @@ struct RouteMapView: View {
         return path
     }
 
+    /// Asks for whichever layer tables are switched on.
+    private func requestLayers() {
+        if browser.showsAirspace { geography.requestAirspace() }
+        if browser.showsStateBorders { geography.requestStates() }
+        if browser.showsCityNames { geography.requestCities() }
+    }
+
     /// Asks for the cells of the full coastline the view covers.
     private func requestCells() {
         guard browser.coastline == .openStreetMapFull,
@@ -481,6 +653,29 @@ struct RouteMapView: View {
 
     // MARK: - Controls
 
+    /// The Layers button, top right.
+    private var layers: some View {
+        Button {
+            showsLayers.toggle()
+        } label: {
+            Image(systemName: "square.3.layers.3d")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 30, height: 30)
+        }
+        .buttonStyle(.plain)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.ngSeparator)
+        }
+        .help("Layers")
+        .popover(isPresented: $showsLayers, arrowEdge: .bottom) {
+            MapLayerPanel()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    }
+
     private var overlay: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let plan = plan {
@@ -513,15 +708,6 @@ struct RouteMapView: View {
                     zoom(by: 1 / 1.4, around: nil)
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
-                }
-                Button {
-                    showsLayers.toggle()
-                } label: {
-                    Image(systemName: "square.3.layers.3d")
-                }
-                .help("Layers")
-                .popover(isPresented: $showsLayers, arrowEdge: .bottom) {
-                    MapLayerPanel()
                 }
             }
             .controlSize(.small)

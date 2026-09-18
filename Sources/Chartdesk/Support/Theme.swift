@@ -44,6 +44,16 @@ enum Theme {
     /// Runway tarmac, drawn once the zoom is close enough for a runway to be longer than a
     /// few points. Pale, because at that zoom it is the brightest thing on the sheet.
     static let runway           = rgb(0x8EA6BE)
+    /// Controlled airspace, in the colours a VFR chart uses: Class B solid blue, Class C
+    /// magenta, Class D blue and dashed. Not ForeFlight's own greys — these are the ones a
+    /// pilot already reads without having to learn them.
+    static let airspaceB        = rgb(0x4A9BE8)
+    static let airspaceC        = rgb(0xC85AA8)
+    static let airspaceD        = rgb(0x6FA8DC)
+    /// Internal borders — states, provinces — fainter than a frontier between countries.
+    static let stateBorder      = rgb(0x35506B)
+    /// The names of towns.
+    static let place            = rgb(0x9FB3C8)
     /// The "not for real-world navigation" red. Brighter than the system red, which goes
     /// muddy at caption sizes against this navy.
     static let warning          = rgb(0xFF5A5A)

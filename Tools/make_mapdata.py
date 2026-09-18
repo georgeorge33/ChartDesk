@@ -370,6 +370,56 @@ def build_runways(source, report):
     report("Resources/runway-ends.txt", rows, rows, os.path.getsize("Resources/runway-ends.txt"))
 
 
+def build_states(source, report):
+    """Internal borders — states, provinces, counties — as lines, for every country.
+
+    A layer of its own because they are only wanted sometimes: on a route across a continent
+    they are clutter, and over one state they are what tells you where you are.
+    """
+    lines = []
+    for line in geojson_lines(source("ne_10m_admin_1_states_provinces_lines.geojson")):
+        ready = prepare(line, tolerance=0.004, precision=3, smallest=0.02, closed=False)
+        if ready:
+            lines.append(ready)
+    path = "Resources/states.txt"
+    report(path, *write(path, "Internal borders at 1:10m from Natural Earth (public domain).",
+                        lines, 3))
+
+
+def build_cities(source, report):
+    """Towns and cities, with a rank so the map can show the ones there is room for.
+
+    Natural Earth's own scale rank, 0 for the places that belong on a world map and 10 for the
+    ones that only belong on a local one, which is exactly the question the map has to answer
+    at every zoom. Written in rank order, so drawing them in file order draws the most
+    important first — and the map's label placer gives the space to whoever asks first.
+    """
+    places = []
+    for feature in json.load(open(source("ne_10m_populated_places.geojson"),
+                                  encoding="utf-8"))["features"]:
+        geometry = feature.get("geometry")
+        properties = feature.get("properties") or {}
+        if not geometry or geometry["type"] != "Point":
+            continue
+        name = (properties.get("NAME") or properties.get("NAMEASCII") or "").strip()
+        if not name:
+            continue
+        rank = properties.get("SCALERANK")
+        rank = 10 if rank is None else int(rank)
+        longitude, latitude = geometry["coordinates"][0], geometry["coordinates"][1]
+        places.append((rank, latitude, longitude, name.replace("\t", " ")))
+
+    places.sort(key=lambda place: (place[0], -abs(place[1])))
+    with open("Resources/cities.txt", "w", encoding="utf-8") as out:
+        out.write("# Towns and cities from Natural Earth (public domain): rank, lat, lon, "
+                  "name.\n# Rank 0 belongs on a world map, 10 on a local one. In rank order.\n"
+                  "# Rebuild with Tools/make_mapdata.py\n")
+        for rank, latitude, longitude, name in places:
+            out.write(f"{rank}\t{latitude:.4f}\t{longitude:.4f}\t{name}\n")
+    report("Resources/cities.txt", len(places), len(places),
+           os.path.getsize("Resources/cities.txt"))
+
+
 def main():
     directory = sys.argv[1] if len(sys.argv) > 1 else "."
 
@@ -388,6 +438,8 @@ def main():
         build_tier(tier, source, report)
     build_airports(source, report)
     build_runways(source, report)
+    build_states(source, report)
+    build_cities(source, report)
 
     total = 0
     for path, count, points, size in written:

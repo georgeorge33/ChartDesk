@@ -75,6 +75,22 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(coastline.rawValue, forKey: DefaultsKey.coastlineSource) }
     }
 
+    /// Controlled airspace, drawn the way a chart draws it. Off by default: it is only wanted
+    /// when you are looking at where you are flying, and it is a lot of ink.
+    @Published var showsAirspace: Bool {
+        didSet { UserDefaults.standard.set(showsAirspace, forKey: DefaultsKey.showsAirspace) }
+    }
+
+    /// State and province borders.
+    @Published var showsStateBorders: Bool {
+        didSet { UserDefaults.standard.set(showsStateBorders, forKey: DefaultsKey.showsStateBorders) }
+    }
+
+    /// The names of towns and cities.
+    @Published var showsCityNames: Bool {
+        didSet { UserDefaults.standard.set(showsCityNames, forKey: DefaultsKey.showsCityNames) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
@@ -88,6 +104,9 @@ final class BrowserState: ObservableObject {
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
         coastline = CoastlineSource(rawValue: defaults.string(forKey: DefaultsKey.coastlineSource) ?? "")
             ?? .naturalEarth
+        showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
+        showsStateBorders = defaults.bool(forKey: DefaultsKey.showsStateBorders)
+        showsCityNames = defaults.bool(forKey: DefaultsKey.showsCityNames)
     }
 
     // MARK: - Derived

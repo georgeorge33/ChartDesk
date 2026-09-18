@@ -16,6 +16,24 @@ struct MapLayerPanel: View {
             Text("Layers")
                 .font(.headline)
 
+            section("Aeronautical") {
+                switchRow("Airspace", on: $browser.showsAirspace,
+                          detail: "Class B, C and D with their ceilings and floors, from the "
+                                + "FAA. Thorough over the United States, thinner elsewhere. "
+                                + "Drawn from about 15° across.")
+            }
+
+            Divider().overlay(Color.ngSeparator)
+
+            section("Places") {
+                switchRow("State borders", on: $browser.showsStateBorders,
+                          detail: "States, provinces and counties.")
+                switchRow("Town and city names", on: $browser.showsCityNames,
+                          detail: "As many as there is room for, the largest first.")
+            }
+
+            Divider().overlay(Color.ngSeparator)
+
             section("Coastline") {
                 ForEach(CoastlineSource.allCases) { source in
                     choice(source)
@@ -42,6 +60,21 @@ struct MapLayerPanel: View {
                 .foregroundStyle(.secondary)
             content()
         }
+    }
+
+    private func switchRow(_ title: String, on: Binding<Bool>,
+                           detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle(title, isOn: on)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .font(.ngSmallMedium)
+            Text(detail)
+                .font(.ngSmall)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.bottom, 2)
     }
 
     private func choice(_ source: CoastlineSource) -> some View {

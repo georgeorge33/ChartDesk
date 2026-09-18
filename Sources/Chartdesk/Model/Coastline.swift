@@ -146,12 +146,15 @@ final class CoastlineStore: ObservableObject {
         }
     }
 
-    /// True when this cell is accounted for: read, or known from the index to hold no coast.
+    /// True when this cell has actually been read and has land in it.
     ///
-    /// An ocean cell counts. The full coastline saying "nothing here" is an answer, and the
-    /// bundled coast should not be drawn underneath it on the strength of a missing entry.
+    /// A cell missing from the index does not count. Absence means the finer table has nothing
+    /// to say about that square — open ocean, in practice, since the pieces tile the land
+    /// rather than tracing only its edge — and the bundled coastline stays the authority
+    /// there. It draws nothing over open water either way, so this changes nothing visible;
+    /// it is simply the honest reading of a missing entry.
     func holds(_ cell: CoastlineCell) -> Bool {
-        isReady && (cells[cell] != nil || spans[cell] == nil)
+        isReady && cells[cell] != nil
     }
 
     /// The rings of whichever of these cells have been read.
