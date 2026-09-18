@@ -163,22 +163,23 @@ def stitch(arcs, indices):
     return line
 
 
-def topology_rings(geometry):
-    """Every ring in a TopoJSON geometry, whichever of the two polygon shapes it is."""
+def topology_polygons(geometry):
+    """Every polygon in a TopoJSON geometry, as a list of its rings.
+
+    The first ring of a polygon is its outline and the rest are holes in it. Kept apart,
+    because a hole in a landmass is water: the Caspian Sea is a hole in Eurasia, and flattening
+    the two together fills it in.
+    """
     if geometry["type"] == "Polygon":
-        return list(geometry["arcs"])
+        return [list(geometry["arcs"])]
     if geometry["type"] == "MultiPolygon":
-        return [ring for polygon in geometry["arcs"] for ring in polygon]
+        return [list(polygon) for polygon in geometry["arcs"]]
     return []
 
 
-def geojson_rings(path, outlines_only=True):
-    """Outer rings of every polygon in a GeoJSON file.
-
-    A lake's later rings are islands within it, and this map fills lakes with the sea's
-    colour — an island in a lake would be painted sea too, so they are left out.
-    """
-    rings = []
+def geojson_polygons(path):
+    """Every polygon in a GeoJSON file, as a list of its rings — outline first."""
+    found = []
     for feature in json.load(open(path, encoding="utf-8"))["features"]:
         geometry = feature.get("geometry")
         if not geometry:
@@ -191,9 +192,22 @@ def geojson_rings(path, outlines_only=True):
         else:
             continue
         for polygon in polygons:
-            for ring in (polygon[:1] if outlines_only else polygon):
-                rings.append([(p[0], p[1]) for p in ring])
-    return rings
+            found.append([[(p[0], p[1]) for p in ring] for ring in polygon])
+    return found
+
+
+def outlines(polygons):
+    """Just the outlines, for a layer whose holes are not wanted.
+
+    A lake's later rings are islands within it, and this map fills lakes with the sea's
+    colour — an island in a lake would be painted sea too, so they are left out.
+    """
+    return [polygon[0] for polygon in polygons if polygon]
+
+
+def holes(polygons):
+    """The holes, which in a land layer are the water inside it."""
+    return [ring for polygon in polygons for ring in polygon[1:]]
 
 
 def geojson_lines(path):
@@ -224,9 +238,10 @@ def shared_arcs(topology, arcs):
     counted = {}
     for geometry in topology["objects"]["countries"]["geometries"]:
         seen = set()
-        for ring in topology_rings(geometry):
-            for index in ring:
-                seen.add(index if index >= 0 else ~index)
+        for polygon in topology_polygons(geometry):
+            for ring in polygon:
+                for index in ring:
+                    seen.add(index if index >= 0 else ~index)
         for index in seen:
             counted[index] = counted.get(index, 0) + 1
     return [arcs[index] for index, count in counted.items() if count >= 2]
@@ -263,18 +278,22 @@ def build_tier(tier, source, report):
     scale = f"1:{name}m"
 
     if name == "10":
-        land_rings = (geojson_rings(source("ne_10m_land.geojson"))
-                      + geojson_rings(source("ne_10m_minor_islands.geojson")))
+        land = (geojson_polygons(source("ne_10m_land.geojson"))
+                + geojson_polygons(source("ne_10m_minor_islands.geojson")))
         border_lines = geojson_lines(source("ne_10m_admin_0_boundary_lines_land.geojson"))
     else:
         topology = json.load(open(source(f"countries-{name}m.json"), encoding="utf-8"))
         arcs = decode_arcs(topology)
-        land_rings = [stitch(arcs, ring)
-                      for geometry in topology["objects"]["land"]["geometries"]
-                      for ring in topology_rings(geometry)]
+        land = [[stitch(arcs, ring) for ring in polygon]
+                for geometry in topology["objects"]["land"]["geometries"]
+                for polygon in topology_polygons(geometry)]
         border_lines = shared_arcs(topology, arcs)
 
-    lake_rings = geojson_rings(source(f"ne_{name}m_lakes.geojson"))
+    land_rings = outlines(land)
+    # A hole in the land is water, and this map draws water by filling it back in with the
+    # sea's colour — which is what the lakes layer is. Natural Earth keeps the Caspian Sea
+    # this way, as a hole in Eurasia rather than as a lake, and it is the only one.
+    lake_rings = outlines(geojson_polygons(source(f"ne_{name}m_lakes.geojson"))) + holes(land)
 
     for layer, rings, closed in (("land", land_rings, True),
                                  ("lakes", lake_rings, True),
