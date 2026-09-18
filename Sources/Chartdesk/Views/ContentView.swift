@@ -73,9 +73,10 @@ struct ContentView: View {
             updater.checkOnLaunchIfWanted()
             flight.refreshOnLaunchIfWanted()
             navdata.checkOnLaunchIfWanted()
-            // The map's geography takes 47ms to parse, which on the main thread is three
-            // dropped frames the first time you open the map. Read it now, off to one side.
-            DispatchQueue.global(qos: .utility).async { _ = WorldData.land.count }
+            // So the first frame the map ever draws has a world on it. Only the coarsest
+            // tier, which is a hundred kilobytes: the finer ones are read when a zoom asks
+            // for them, and reading all three at launch would be reading two for nothing.
+            MapGeography.shared.warmUp()
         }
         .onChange(of: library.scanID) { restoreSelection() }
         .alert("Update Available",

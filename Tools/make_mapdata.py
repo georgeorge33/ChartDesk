@@ -1,31 +1,144 @@
 #!/usr/bin/env python3
-"""Builds the map's bundled tables.
+"""Builds the map's bundled tables, at three levels of detail.
 
-    python3 Tools/make_mapdata.py countries-50m.json ne_50m_lakes.geojson airports.csv
+    python3 Tools/make_mapdata.py path/to/sources
 
-Writes Resources/land.txt, borders.txt, lakes.txt and airports.txt. Every source is public
-domain: Natural Earth at 1:50m for the geography (by way of world-atlas' TopoJSON and the
-natural-earth-vector GeoJSON), OurAirports for the fields.
+Writes Resources/{land,lakes,borders}-{110,50,10}.txt, airports.txt and runway-ends.txt.
+Every source is public domain: Natural Earth for the geography, OurAirports for the fields
+and the runways. The sources wanted in that directory, all under their published names:
 
-Three files rather than one because each is drawn differently: land is filled, lakes are
-filled back in with the sea's colour, and borders are stroked. Borders are the arcs that two
-countries share, so a border is one line rather than two on top of each other, and a coastline
-is not mistaken for one.
+    countries-110m.json                     world-atlas TopoJSON, for land and borders
+    countries-50m.json                          "
+    ne_110m_lakes.geojson                   Natural Earth GeoJSON
+    ne_50m_lakes.geojson                        "
+    ne_10m_land.geojson                         "
+    ne_10m_minor_islands.geojson                "
+    ne_10m_lakes.geojson                        "
+    ne_10m_admin_0_boundary_lines_land.geojson  "
+    airports.csv                            OurAirports
+    runways.csv                                 "
+
+Three tiers rather than one because a coastline is only ever right for one scale. Natural
+Earth publishes the same world at 1:110m, 1:50m and 1:10m, each generalised by cartographers
+for the scale it is meant to be seen at, and that is a better thing to draw than one file
+thinned on the fly: at a whole-world zoom the 1:50m rings carry ten times the points the
+screen has pixels, and zoomed in on the Aegean they carry too few. The map picks the tier
+from its zoom, so what it draws is always the one drawn for that scale.
+
+Simplified past the quantisation step, per layer rather than per tier, because how exactly a
+feature is drawn matters differently for each: a coastline has an airport sitting on it and
+is held to 165m, while a dashed border and a lake shore are held to 400m and nobody can tell.
+Islands below each tier's threshold are dropped — at 1:110m a 60km island is a pixel.
 
 Longitudes are *unwrapped*: a ring crossing the antimeridian keeps counting past 180 rather
 than jumping to -179. A jump is what drew those sweeping horizontal lines across Siberia and
 Antarctica — the renderer draws each ring a second time shifted by 360° to cover the seam.
-
-Coordinates are rounded to two decimals, about a kilometre, and rings smaller than a fifth of
-a degree are dropped: at 1:50m the file is mostly islands too small to see.
 """
 import csv
 import json
+import os
 import sys
 
-PRECISION = 2
-MIN_SPAN = 0.2
+# name, precision, and the tolerance and smallest ring worth keeping for each layer.
+# Tolerances are degrees; 0.001° is about 110m.
+TIERS = [
+    {"name": "110", "precision": 2,
+     "land": (0.01, 0.6), "lakes": (0.01, 0.6), "borders": (0.01, 0.0)},
+    {"name": "50", "precision": 2,
+     "land": (0.005, 0.15), "lakes": (0.005, 0.15), "borders": (0.005, 0.0)},
+    {"name": "10", "precision": 3,
+     "land": (0.0015, 0.02), "lakes": (0.004, 0.03), "borders": (0.004, 0.0)},
+]
 
+
+# --- Geometry ----------------------------------------------------------------------------
+
+def simplify(points, tolerance):
+    """Douglas-Peucker, iteratively: the deep rings here are 80,000 points long.
+
+    Keeps the vertices that carry the shape and drops the ones that only sit on a line
+    between two others, which after rounding to the grid is most of what a tier hands over.
+    """
+    count = len(points)
+    if count < 3 or tolerance <= 0:
+        return points
+
+    keep = [False] * count
+    keep[0] = keep[count - 1] = True
+    limit = tolerance * tolerance
+    stack = [(0, count - 1)]
+
+    while stack:
+        first, last = stack.pop()
+        if last <= first + 1:
+            continue
+        ax, ay = points[first]
+        dx, dy = points[last][0] - ax, points[last][1] - ay
+        span = dx * dx + dy * dy
+
+        worst, at = -1.0, -1
+        for index in range(first + 1, last):
+            px, py = points[index]
+            if span == 0:
+                offset = (px - ax) ** 2 + (py - ay) ** 2
+            else:
+                along = ((px - ax) * dx + (py - ay) * dy) / span
+                along = 0.0 if along < 0 else (1.0 if along > 1 else along)
+                offset = (px - ax - along * dx) ** 2 + (py - ay - along * dy) ** 2
+            if offset > worst:
+                worst, at = offset, index
+
+        if worst > limit:
+            keep[at] = True
+            stack.append((first, at))
+            stack.append((at, last))
+
+    return [point for point, wanted in zip(points, keep) if wanted]
+
+
+def unwrap(points):
+    """Keeps longitudes continuous across the antimeridian by letting them run past ±180."""
+    out = []
+    shift = 0.0
+    for index, (lon, lat) in enumerate(points):
+        if index:
+            previous = points[index - 1][0] + shift
+            while lon + shift - previous > 180:
+                shift -= 360
+            while lon + shift - previous < -180:
+                shift += 360
+        out.append((lon + shift, lat))
+    return out
+
+
+def quantise(points, precision):
+    out = []
+    for lon, lat in points:
+        point = (round(lon, precision), round(lat, precision))
+        if not out or point != out[-1]:
+            out.append(point)
+    return out
+
+
+def span(points):
+    lons = [p[0] for p in points]
+    lats = [p[1] for p in points]
+    return max(lons) - min(lons), max(lats) - min(lats)
+
+
+def prepare(points, tolerance, precision, smallest, closed=True):
+    """One ring or line, ready to write: unwrapped, simplified, on the grid, or None."""
+    points = quantise(simplify(unwrap(points), tolerance), precision)
+    if len(points) < (4 if closed else 2):
+        return None
+    if smallest > 0:
+        across, up = span(points)
+        if across < smallest and up < smallest:
+            return None
+    return points
+
+
+# --- Sources -----------------------------------------------------------------------------
 
 def decode_arcs(topology):
     scale = topology["transform"]["scale"]
@@ -50,8 +163,8 @@ def stitch(arcs, indices):
     return line
 
 
-def polygons(geometry):
-    """Every ring in a geometry, whichever of the two polygon shapes it is."""
+def topology_rings(geometry):
+    """Every ring in a TopoJSON geometry, whichever of the two polygon shapes it is."""
     if geometry["type"] == "Polygon":
         return list(geometry["arcs"])
     if geometry["type"] == "MultiPolygon":
@@ -59,126 +172,210 @@ def polygons(geometry):
     return []
 
 
-def unwrap(points):
-    """Keeps longitudes continuous across the antimeridian by letting them run past ±180."""
-    out = []
-    shift = 0.0
-    for index, (lon, lat) in enumerate(points):
-        if index:
-            previous = points[index - 1][0] + shift
-            while lon + shift - previous > 180:
-                shift -= 360
-            while lon + shift - previous < -180:
-                shift += 360
-        out.append((lon + shift, lat))
-    return out
+def geojson_rings(path, outlines_only=True):
+    """Outer rings of every polygon in a GeoJSON file.
+
+    A lake's later rings are islands within it, and this map fills lakes with the sea's
+    colour — an island in a lake would be painted sea too, so they are left out.
+    """
+    rings = []
+    for feature in json.load(open(path, encoding="utf-8"))["features"]:
+        geometry = feature.get("geometry")
+        if not geometry:
+            continue
+        kind, coordinates = geometry["type"], geometry["coordinates"]
+        if kind == "Polygon":
+            polygons = [coordinates]
+        elif kind == "MultiPolygon":
+            polygons = coordinates
+        else:
+            continue
+        for polygon in polygons:
+            for ring in (polygon[:1] if outlines_only else polygon):
+                rings.append([(p[0], p[1]) for p in ring])
+    return rings
 
 
-def thin(points):
-    result = []
-    for lon, lat in points:
-        point = (round(lon, PRECISION), round(lat, PRECISION))
-        if not result or point != result[-1]:
-            result.append(point)
-    return result
+def geojson_lines(path):
+    """Every line in a GeoJSON file, for sources that publish borders as lines already."""
+    lines = []
+    for feature in json.load(open(path, encoding="utf-8"))["features"]:
+        geometry = feature.get("geometry")
+        if not geometry:
+            continue
+        kind, coordinates = geometry["type"], geometry["coordinates"]
+        if kind == "LineString":
+            parts = [coordinates]
+        elif kind == "MultiLineString":
+            parts = coordinates
+        else:
+            continue
+        for part in parts:
+            lines.append([(p[0], p[1]) for p in part])
+    return lines
 
 
-def worth_drawing(points):
-    if len(points) < 4:
-        return False
-    lons = [p[0] for p in points]
-    lats = [p[1] for p in points]
-    return (max(lons) - min(lons)) >= MIN_SPAN or (max(lats) - min(lats)) >= MIN_SPAN
+def shared_arcs(topology, arcs):
+    """The arcs two countries have in common — a frontier, rather than a coast.
+
+    Drawn from the topology rather than from each country's outline, so a border is one
+    line instead of two on top of each other and a coastline is never mistaken for one.
+    """
+    counted = {}
+    for geometry in topology["objects"]["countries"]["geometries"]:
+        seen = set()
+        for ring in topology_rings(geometry):
+            for index in ring:
+                seen.add(index if index >= 0 else ~index)
+        for index in seen:
+            counted[index] = counted.get(index, 0) + 1
+    return [arcs[index] for index, count in counted.items() if count >= 2]
 
 
-def write(path, header, lines):
+# --- Writing -----------------------------------------------------------------------------
+
+def figure(value, precision):
+    """A number as short as it can be written without ever reaching for an exponent.
+
+    `%g` would be shorter still and turns 0.0001 into `1e-04`, which the app's byte-scanning
+    parser does not read. Nothing in today's tables is small enough to trip it; a rebuilt
+    table at finer precision would be, silently, and a map with a coastline in the wrong
+    ocean is a poor way to find that out.
+    """
+    text = f"{value:.{precision}f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-", "-0") else text
+
+
+def write(path, header, lines, precision):
     with open(path, "w", encoding="utf-8") as out:
         out.write(f"# {header}\n")
         out.write("# lon lat lon lat …  Longitudes may run past ±180; see Tools/make_mapdata.py\n")
         for points in lines:
-            out.write(" ".join(f"{lon:g} {lat:g}" for lon, lat in points) + "\n")
-    return len(lines)
+            out.write(" ".join(f"{figure(lon, precision)} {figure(lat, precision)}"
+                               for lon, lat in points) + "\n")
+    return len(lines), sum(len(points) for points in lines), os.path.getsize(path)
 
 
-def main():
-    countries_file, lakes_file, airports_file = sys.argv[1], sys.argv[2], sys.argv[3]
-    topology = json.load(open(countries_file, encoding="utf-8"))
-    arcs = decode_arcs(topology)
+def build_tier(tier, source, report):
+    name, precision = tier["name"], tier["precision"]
+    scale = f"1:{name}m"
 
-    # --- Land, filled --------------------------------------------------------------------
-    land = []
-    for geometry in topology["objects"]["land"]["geometries"]:
-        for ring in polygons(geometry):
-            points = thin(unwrap(stitch(arcs, ring)))
-            if worth_drawing(points):
-                land.append(points)
+    if name == "10":
+        land_rings = (geojson_rings(source("ne_10m_land.geojson"))
+                      + geojson_rings(source("ne_10m_minor_islands.geojson")))
+        border_lines = geojson_lines(source("ne_10m_admin_0_boundary_lines_land.geojson"))
+    else:
+        topology = json.load(open(source(f"countries-{name}m.json"), encoding="utf-8"))
+        arcs = decode_arcs(topology)
+        land_rings = [stitch(arcs, ring)
+                      for geometry in topology["objects"]["land"]["geometries"]
+                      for ring in topology_rings(geometry)]
+        border_lines = shared_arcs(topology, arcs)
 
-    # --- Borders: the arcs two countries have in common ----------------------------------
-    used = {}
-    for geometry in topology["objects"]["countries"]["geometries"]:
-        seen = set()
-        for ring in polygons(geometry):
-            for index in ring:
-                seen.add(index if index >= 0 else ~index)
-        for index in seen:
-            used[index] = used.get(index, 0) + 1
+    lake_rings = geojson_rings(source(f"ne_{name}m_lakes.geojson"))
 
-    borders = []
-    for index, count in used.items():
-        if count < 2:
-            continue
-        points = thin(unwrap(arcs[index]))
-        if len(points) >= 2:
-            borders.append(points)
+    for layer, rings, closed in (("land", land_rings, True),
+                                 ("lakes", lake_rings, True),
+                                 ("borders", border_lines, False)):
+        tolerance, smallest = tier[layer]
+        ready = [points for points in
+                 (prepare(ring, tolerance, precision, smallest, closed) for ring in rings)
+                 if points]
+        headers = {
+            "land": f"Land at {scale} from Natural Earth (public domain).",
+            "lakes": f"Lakes at {scale} from Natural Earth.",
+            "borders": f"Shared country borders at {scale}, Natural Earth.",
+        }
+        path = f"Resources/{layer}-{name}.txt"
+        report(path, *write(path, headers[layer], ready, precision))
 
-    # --- Lakes, filled back in with the sea ----------------------------------------------
-    lakes = []
-    for feature in json.load(open(lakes_file, encoding="utf-8"))["features"]:
-        geometry = feature["geometry"]
-        rings = ([geometry["coordinates"]] if geometry["type"] == "Polygon"
-                 else geometry["coordinates"])
-        for polygon in rings:
-            # The first ring is the outline; the rest are islands within the lake.
-            points = thin(unwrap([(p[0], p[1]) for p in polygon[0]]))
-            if worth_drawing(points):
-                lakes.append(points)
 
-    counts = [
-        ("Resources/land.txt", write("Resources/land.txt",
-                                     "Land at 1:50m from Natural Earth (public domain).", land)),
-        ("Resources/borders.txt", write("Resources/borders.txt",
-                                        "Shared country borders at 1:50m, Natural Earth.",
-                                        borders)),
-        ("Resources/lakes.txt", write("Resources/lakes.txt",
-                                      "Lakes at 1:50m from Natural Earth.", lakes)),
-    ]
-
-    # --- Airports ------------------------------------------------------------------------
+def build_airports(source, report):
+    """The fields the map marks, and the runways it draws once you are close enough."""
     wanted = {"large_airport", "medium_airport"}
     rows = 0
     with open("Resources/airports.txt", "w", encoding="utf-8") as out:
         out.write("# Airports from OurAirports (public domain): ident, lat, lon, name, town, "
                   "country.\n# Rebuild with Tools/make_mapdata.py\n")
-        with open(airports_file, newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                kind = row["type"]
-                if kind not in wanted and not (kind == "small_airport"
-                                               and row["scheduled_service"] == "yes"):
-                    continue
-                ident = (row["ident"] or "").strip().upper()
-                if not ident or not row["latitude_deg"] or not row["longitude_deg"]:
-                    continue
-                out.write("\t".join([ident,
-                                     f"{float(row['latitude_deg']):.4f}",
-                                     f"{float(row['longitude_deg']):.4f}",
-                                     (row["name"] or "").replace("\t", " ").strip(),
-                                     (row["municipality"] or "").replace("\t", " ").strip(),
-                                     row["iso_country"]]) + "\n")
-                rows += 1
-    counts.append(("Resources/airports.txt", rows))
+        for row in csv.DictReader(open(source("airports.csv"), newline="", encoding="utf-8")):
+            kind = row["type"]
+            if kind not in wanted and not (kind == "small_airport"
+                                           and row["scheduled_service"] == "yes"):
+                continue
+            ident = (row["ident"] or "").strip().upper()
+            if not ident or not row["latitude_deg"] or not row["longitude_deg"]:
+                continue
+            out.write("\t".join([ident,
+                                 f"{float(row['latitude_deg']):.4f}",
+                                 f"{float(row['longitude_deg']):.4f}",
+                                 (row["name"] or "").replace("\t", " ").strip(),
+                                 (row["municipality"] or "").replace("\t", " ").strip(),
+                                 row["iso_country"]]) + "\n")
+            rows += 1
+    report("Resources/airports.txt", rows, rows, os.path.getsize("Resources/airports.txt"))
 
-    for path, count in counts:
-        print(f"{path}: {count}", file=sys.stderr)
+
+def build_runways(source, report):
+    """Runway ends, which is the last thing left to draw once the coast is a straight line.
+
+    Five decimals, about a metre: this is the one table drawn at a scale where the ends of a
+    runway are hundreds of points apart, and a rounded threshold would sit off the tarmac.
+    Only runways OurAirports gives both ends for, and only the ones still open.
+    """
+    rows = 0
+    with open("Resources/runway-ends.txt", "w", encoding="utf-8") as out:
+        out.write("# Runway ends from OurAirports (public domain): airport, ident, lat, lon, "
+                  "lat, lon, width in feet.\n# Rebuild with Tools/make_mapdata.py\n")
+        for row in csv.DictReader(open(source("runways.csv"), newline="", encoding="utf-8")):
+            if row.get("closed") == "1":
+                continue
+            try:
+                ends = [float(row[field]) for field in ("le_latitude_deg", "le_longitude_deg",
+                                                        "he_latitude_deg", "he_longitude_deg")]
+            except (TypeError, ValueError):
+                continue
+            airport = (row["airport_ident"] or "").strip().upper()
+            if not airport:
+                continue
+            # The low end names the runway; the pair reads as "04L" whichever way you fly it.
+            ident = (row["le_ident"] or "").strip().upper()
+            try:
+                width = int(float(row["width_ft"]))
+            except (TypeError, ValueError):
+                width = 0
+            out.write("\t".join([airport, ident] + [f"{value:.5f}" for value in ends]
+                                + [str(width)]) + "\n")
+            rows += 1
+    report("Resources/runway-ends.txt", rows, rows, os.path.getsize("Resources/runway-ends.txt"))
+
+
+def main():
+    directory = sys.argv[1] if len(sys.argv) > 1 else "."
+
+    def source(name):
+        path = os.path.join(directory, name)
+        if not os.path.exists(path):
+            sys.exit(f"{path}: missing. See the list at the top of this file.")
+        return path
+
+    written = []
+
+    def report(path, count, points, size):
+        written.append((path, count, points, size))
+
+    for tier in TIERS:
+        build_tier(tier, source, report)
+    build_airports(source, report)
+    build_runways(source, report)
+
+    total = 0
+    for path, count, points, size in written:
+        total += size
+        print(f"{path:32s} {count:6d} lines {points:8d} points {size / 1024:8.0f} KB",
+              file=sys.stderr)
+    print(f"{'total':32s} {'':6s}       {'':8s}        {total / 1024:8.0f} KB", file=sys.stderr)
 
 
 if __name__ == "__main__":

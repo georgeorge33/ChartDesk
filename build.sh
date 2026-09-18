@@ -273,8 +273,12 @@ else
 	warn "Resources/runways.txt missing — runway menus will fall back to 01-36"
 fi
 
-# The map's geography and airport positions.
-for TABLE in land lakes borders airports; do
+# The map's geography, at each level of detail, plus airport and runway positions. The
+# geography is one file per layer per tier: the map reads the tier its zoom calls for.
+for TABLE in land-110 lakes-110 borders-110 \
+             land-50 lakes-50 borders-50 \
+             land-10 lakes-10 borders-10 \
+             airports runway-ends; do
 	if [ -f "Resources/${TABLE}.txt" ]; then
 		cp "Resources/${TABLE}.txt" "${CONTENTS}/Resources/${TABLE}.txt"
 	else

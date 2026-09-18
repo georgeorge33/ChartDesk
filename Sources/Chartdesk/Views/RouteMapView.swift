@@ -16,6 +16,10 @@ struct RouteMapView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var flight: FlightPlanStore
 
+    /// Whichever levels of detail have been read. Shared, not owned: shutting the panel and
+    /// opening it again should not mean reading the world in again.
+    @ObservedObject private var geography = MapGeography.shared
+
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
     @State private var cameraAtDragStart: MapCamera?
@@ -83,7 +87,20 @@ struct RouteMapView: View {
             guard count > 1, !userMoved else { return }
             fitRoute()
         }
-        .onAppear(perform: watchScroll)
+        .onAppear {
+            watchScroll()
+            // The coarsest tier as well as the wanted one, so there is always something to
+            // fall back on while a finer one is read.
+            geography.request(.coarse)
+            geography.request(camera.detail)
+            if camera.showsRunways { geography.requestRunways() }
+        }
+        // Zooming past a threshold is the only thing that calls for another tier, and the
+        // request is idempotent: the store ignores one it already holds or is already reading.
+        .onChange(of: camera.detail) { _, detail in geography.request(detail) }
+        .onChange(of: camera.showsRunways) { _, shows in
+            if shows { geography.requestRunways() }
+        }
         .onDisappear {
             if let monitor = scrollMonitor { NSEvent.removeMonitor(monitor) }
             scrollMonitor = nil
@@ -109,27 +126,40 @@ struct RouteMapView: View {
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         var labels: [Label] = []
         let visible = camera.visibleRect(in: size)
+        let plotter = MapPlotter(camera: camera, size: size)
+        // Four points of slack, so the edges a clip leaves behind fall outside the panel.
+        let windows = (-1...1).map {
+            MapWindow(visible: visible, shift: Double($0), padding: 4 / Double(camera.worldWidth))
+        }
 
-        // Land, then the lakes cut back out of it, then borders. Each shape is drawn at every
-        // 360° offset that reaches the view, which is how a ring crossing the antimeridian
-        // appears on both edges instead of sweeping across the middle.
-        fill(WorldData.land, colour: Color(nsColor: Theme.land),
-             stroke: Color(nsColor: Theme.coast), width: 0.7,
-             in: &context, size: size, visible: visible)
+        // Land, then the lakes cut back out of it, then borders — all from the one tier, since
+        // a 1:10m coast beside a 1:50m border puts the frontier out at sea. Each feature is
+        // drawn in every copy of the world that reaches the view, which is how a ring crossing
+        // the antimeridian shows up on both edges rather than sweeping across the middle.
+        if let world = geography.best(for: camera.detail) {
+            fill(world.land, colour: Color(nsColor: Theme.land),
+                 stroke: Color(nsColor: Theme.coast), width: 0.7,
+                 in: &context, windows: windows, plotter: plotter)
 
-        fill(WorldData.lakes, colour: Color(nsColor: Theme.canvas),
-             stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
-             in: &context, size: size, visible: visible)
+            fill(world.lakes, colour: Color(nsColor: Theme.canvas),
+                 stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
+                 in: &context, windows: windows, plotter: plotter)
 
-        for shape in WorldData.borders {
-            for shift in shifts(for: shape, visible: visible) {
-                context.stroke(path(for: shape, in: size, shift: shift, closed: false),
-                               with: .color(Color(nsColor: Theme.border)),
-                               style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
+            // Borders are short lines rather than continent-sized rings, so culling by extent
+            // is all they need — and an open line has no inside to clip.
+            for shape in world.borders {
+                for window in windows where window.bounds.intersects(shape.bounds) {
+                    context.stroke(plotter.path(shape.points,
+                                                offset: window.shift * Double(camera.worldWidth),
+                                                closed: false),
+                                   with: .color(Color(nsColor: Theme.border)),
+                                   style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
+                }
             }
         }
 
         graticule(in: &context, size: size)
+        runways(in: &context, windows: windows, plotter: plotter, labels: &labels)
 
         // Airports before fixes, so their labels win the space.
         for airport in pinned {
@@ -142,58 +172,65 @@ struct RouteMapView: View {
     }
 
     private func fill(_ shapes: [MapShape], colour: Color, stroke: Color, width: CGFloat,
-                      in context: inout GraphicsContext, size: CGSize, visible: CGRect) {
+                      in context: inout GraphicsContext, windows: [MapWindow], plotter: MapPlotter) {
         for shape in shapes {
-            for shift in shifts(for: shape, visible: visible) {
-                let path = path(for: shape, in: size, shift: shift, closed: true)
+            for window in windows where window.bounds.intersects(shape.bounds) {
+                let ring = window.box.holds(shape.box)
+                    ? shape.points
+                    : window.clip(shape.points, box: shape.box)
+                guard ring.count > 2 else { continue }
+
+                let path = plotter.path(ring, offset: window.shift * Double(camera.worldWidth),
+                                        closed: true)
                 context.fill(path, with: .color(colour))
                 context.stroke(path, with: .color(stroke), lineWidth: width)
             }
         }
     }
 
-    /// Which copies of a shape reach the view: none, its own, or one wrapped round the world.
-    private func shifts(for shape: MapShape, visible: CGRect) -> [Double] {
-        var found: [Double] = []
-        for shift in [-1.0, 0.0, 1.0] {
-            if shape.bounds.offsetBy(dx: shift, dy: 0).intersects(visible) { found.append(shift) }
-        }
-        return found
-    }
-
-    /// One ring as a path, sampled to the detail the scale can actually show.
+    /// Runway tarmac, once a runway is more than a few points long.
     ///
-    /// At a whole-world zoom a 1:50m ring carries far more points than it has pixels, and
-    /// drawing all of them is most of the cost of a frame. The stride asks for about two points
-    /// per pixel of the shape's own width, so close in nothing is dropped.
-    private func path(for shape: MapShape, in size: CGSize, shift: Double, closed: Bool) -> Path {
-        let onScreen = shape.bounds.width * camera.worldWidth
-        let wanted = max(16.0, Double(onScreen) * 2)
-        let step = max(1, Int((Double(shape.points.count) / wanted).rounded(.down)))
-        let offset = shift * camera.worldWidth
+    /// The last level of detail there is: closer in than this a coastline is a straight line
+    /// and a border is nowhere near, and what tells you where you are looking is the shape of
+    /// the field. Idents go on only once a strip is long enough to hang one off.
+    private func runways(in context: inout GraphicsContext, windows: [MapWindow],
+                         plotter: MapPlotter, labels: inout [Label]) {
+        guard camera.showsRunways else { return }
 
-        var path = Path()
-        var started = false
-        var index = 0
-        while index < shape.points.count {
-            var point = camera.screen(shape.points[index], in: size)
-            point.x += offset
-            if started {
-                path.addLine(to: point)
-            } else {
-                path.move(to: point)
-                started = true
+        let colour = Color(nsColor: Theme.runway)
+        let scale = Double(camera.worldWidth)
+        let named = camera.worldWidth >= 500_000
+
+        for runway in geography.runways {
+            for window in windows where window.bounds.intersects(runway.bounds) {
+                let offset = window.shift * scale
+                let low = plotter.point(runway.low, offset: offset)
+                let high = plotter.point(runway.high, offset: offset)
+
+                // Feet across, in points. Mercator stretches northwards away from the equator
+                // and the length on screen is stretched with it, so the width is too.
+                let stretch = cos(runway.low.latitude * .pi / 180)
+                let across = max(1.2, Double(runway.widthFeet) * 0.3048
+                                     / (111_320 * max(stretch, 0.01)) / 360 * scale)
+
+                var path = Path()
+                path.move(to: low)
+                path.addLine(to: high)
+                context.stroke(path, with: .color(colour),
+                               style: StrokeStyle(lineWidth: across, lineCap: .butt))
+
+                let run = hypot(low.x - high.x, low.y - high.y)
+                if named, run > 24, !runway.ident.isEmpty {
+                    // Just off the threshold, on the runway's own line, the way a plate has it.
+                    let at = CGPoint(x: low.x + (low.x - high.x) / run * 10,
+                                     y: low.y + (low.y - high.y) / run * 10)
+                    labels.append(Label(text: Text(runway.ident)
+                                            .font(.ngSmallMono)
+                                            .foregroundStyle(colour),
+                                        at: at, anchor: .center))
+                }
             }
-            index += step
         }
-        // The last point matters: dropping it leaves a visible notch in a coastline.
-        if step > 1, let last = shape.points.last {
-            var point = camera.screen(last, in: size)
-            point.x += offset
-            path.addLine(to: point)
-        }
-        if closed { path.closeSubpath() }
-        return path
     }
 
     /// Draws labels in the order asked for, skipping any that would land on one already there.
@@ -406,7 +443,7 @@ struct RouteMapView: View {
             }
             .controlSize(.small)
 
-            Text(String(format: "%.0f° across · %@", degreesAcross, position))
+            Text(readout)
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
         }
@@ -417,6 +454,15 @@ struct RouteMapView: View {
                 .strokeBorder(Color.ngSeparator)
         }
         .padding(12)
+    }
+
+    /// Where the map is looking, how wide, and which of the three worlds it is drawing —
+    /// so that the tier is something you can see rather than infer. An ellipsis while a finer
+    /// one is still being read.
+    private var readout: String {
+        let tier = "\(camera.detail)"
+            + (geography.isCatchingUp(to: camera.detail) ? " …" : "")
+        return String(format: "%.0f° across · %@ · %@", degreesAcross, position, tier)
     }
 
     private var position: String {

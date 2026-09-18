@@ -41,6 +41,9 @@ enum Theme {
     /// Map country borders. Drawn dashed as well as lighter: at the same weight as a coast a
     /// border reads as one, and the St Lawrence and the 49th parallel are not the same thing.
     static let border           = rgb(0x44607F)
+    /// Runway tarmac, drawn once the zoom is close enough for a runway to be longer than a
+    /// few points. Pale, because at that zoom it is the brightest thing on the sheet.
+    static let runway           = rgb(0x8EA6BE)
     /// The "not for real-world navigation" red. Brighter than the system red, which goes
     /// muddy at caption sizes against this navy.
     static let warning          = rgb(0xFF5A5A)

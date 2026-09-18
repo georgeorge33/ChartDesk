@@ -22,33 +22,113 @@ struct MapAirport: Identifiable, Equatable {
     }
 }
 
-/// One drawn feature — a ring of land, a lake, a stretch of border — with its extent.
-///
-/// The extent is in the projection's own 0…1 space and is worked out once at load, so a
-/// feature that is off screen costs a rectangle comparison instead of a path. With a thousand
-/// rings on the sheet that is the difference between a map that drags and one that stutters.
-struct MapShape {
-    let points: [Coordinate]
+/// A runway, as its two ends — the last thing left to draw once you are closer in than a
+/// coastline can tell you anything.
+struct MapRunway {
+    let airport: String
+    let ident: String
+    let low: Coordinate
+    let high: Coordinate
+    let widthFeet: Int
+    /// In the projection's 0…1 space, so an off-screen runway costs a rectangle comparison.
     let bounds: CGRect
 }
 
-/// The geography and airport positions the map draws, all bundled.
+/// A box of longitudes and latitudes.
 ///
-/// Built by `Tools/make_mapdata.py` from public-domain sources: Natural Earth at 1:50m for the
-/// land, lakes and borders, OurAirports for the fields. Bundled rather than fetched because the
-/// rest of the app works with the network off, and a map that needed tiles would be the first
-/// thing to stop doing that.
+/// Mercator is linear in longitude and monotonic in latitude, so this and a projected `CGRect`
+/// describe the very same rectangle — one in degrees, which is what clipping a ring compares
+/// against, and one projected, which is what culling one compares against.
+struct CoordinateBox {
+    var west: Double
+    var east: Double
+    var south: Double
+    var north: Double
+
+    /// True when this box holds all of `other` — so a ring that need not be clipped at all.
+    func holds(_ other: CoordinateBox) -> Bool {
+        west <= other.west && east >= other.east
+            && south <= other.south && north >= other.north
+    }
+}
+
+/// One drawn feature — a ring of land, a lake, a stretch of border — with its extent.
 ///
-/// Three layers because each is drawn differently: land filled, lakes filled back in with the
-/// sea's colour so a coast reads as a coast, and borders stroked. Borders are only the arcs two
-/// countries share, so no line is drawn twice and no coastline is mistaken for a frontier.
+/// The extent is worked out once at load, so a feature that is off screen costs a rectangle
+/// comparison instead of a path. With a thousand rings on the sheet that is the difference
+/// between a map that drags and one that stutters.
+struct MapShape {
+    let points: [Coordinate]
+    /// Projected, in 0…1, for culling against what the view covers.
+    let bounds: CGRect
+    /// The same extent in degrees, for deciding which edges of the view a ring crosses.
+    let box: CoordinateBox
+}
+
+// MARK: - Detail
+
+/// How closely the map is drawn, and so which of the three bundled worlds it draws.
+///
+/// A coastline is only ever right for one scale. Natural Earth publishes the same world at
+/// 1:110m, 1:50m and 1:10m, each generalised for the scale it is meant to be seen at, and the
+/// map picks between them by zoom: at a whole-world view the 1:50m rings carry ten times the
+/// points the screen has pixels, and zoomed in on the Aegean they carry too few.
+enum MapDetail: Int, CaseIterable, Comparable, CustomStringConvertible {
+    case coarse = 0
+    case medium = 1
+    case fine = 2
+
+    /// The Natural Earth scale this tier comes from, which is also its file suffix.
+    var scale: String { ["110", "50", "10"][rawValue] }
+
+    /// "1:50m", for the readout — so which tier you are on is something you can see.
+    var description: String { "1:\(scale)m" }
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// Where each tier takes over, as how many points wide the whole world is drawn.
+    ///
+    /// Keyed off the zoom alone rather than off how many degrees the panel shows, because what
+    /// decides which generalisation is right is ground distance per point, and that does not
+    /// change when you widen the window. On a 900pt panel these land at about 135° across and
+    /// 27° across: roughly a hemisphere, and roughly a country.
+    static let mediumFrom: CGFloat = 2_400
+    static let fineFrom: CGFloat = 12_000
+    /// Runways start to be longer than a few points at about 2.5° across.
+    static let runwaysFrom: CGFloat = 120_000
+
+    static func matching(worldWidth: CGFloat) -> MapDetail {
+        if worldWidth >= fineFrom { return .fine }
+        if worldWidth >= mediumFrom { return .medium }
+        return .coarse
+    }
+}
+
+/// One tier's three layers, drawn together or not at all — a 1:10m coast beside a 1:50m
+/// border puts the frontier in the sea.
+struct Geography {
+    let detail: MapDetail
+    let land: [MapShape]
+    let lakes: [MapShape]
+    let borders: [MapShape]
+}
+
+// MARK: - The tables
+
+/// The geography, airport positions and runways the map draws, all bundled.
+///
+/// Built by `Tools/make_mapdata.py` from public-domain sources: Natural Earth for the land,
+/// lakes and borders at three scales, OurAirports for the fields and the runways. Bundled
+/// rather than fetched because the rest of the app works with the network off, and a map that
+/// needed tiles would be the first thing to stop doing that.
+///
+/// Three layers per tier because each is drawn differently: land filled, lakes filled back in
+/// with the sea's colour so a coast reads as a coast, and borders stroked. Borders are only the
+/// arcs two countries share, so no line is drawn twice and no coastline is mistaken for one.
 enum WorldData {
 
-    static let land: [MapShape] = load("land")
-    static let lakes: [MapShape] = load("lakes")
-    static let borders: [MapShape] = load("borders")
-
-    /// Airports by ident, for looking up what a flight plan names.
+    /// Airports by ident, for looking up what a flight plan names. Small, and wanted whatever
+    /// the zoom, so this one is not deferred.
     static let airports: [String: MapAirport] = loadAirports()
 
     static func airport(_ icao: String?) -> MapAirport? {
@@ -56,40 +136,189 @@ enum WorldData {
         return airports[icao.uppercased()]
     }
 
+    /// Reads one tier off disk. Costs tens of milliseconds for the deepest one, so this is
+    /// called from `MapGeography` on a background queue rather than during a draw.
+    nonisolated static func geography(_ detail: MapDetail) -> Geography {
+        Geography(detail: detail,
+                  land: shapes("land-\(detail.scale)"),
+                  lakes: shapes("lakes-\(detail.scale)"),
+                  borders: shapes("borders-\(detail.scale)"))
+    }
+
     // MARK: - Loading
 
-    private static func load(_ resource: String) -> [MapShape] {
-        guard let url = Bundle.main.url(forResource: resource, withExtension: "txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8)
-        else { return [] }
+    private static func mapped(_ resource: String) -> Data? {
+        guard let url = Bundle.main.url(forResource: resource, withExtension: "txt") else {
+            return nil
+        }
+        return try? Data(contentsOf: url, options: [.mappedIfSafe])
+    }
 
+    nonisolated static func shapes(_ resource: String) -> [MapShape] {
+        guard let data = mapped(resource) else { return [] }
+        return parseShapes(data)
+    }
+
+    /// One ring per line, `lon lat lon lat …`.
+    ///
+    /// Scanned as bytes. The obvious spelling — decode the file, `split` on newlines, split each
+    /// line on spaces, `Double(String(field))` — allocates a string per number, and the deepest
+    /// tier holds 380,000 of them: it is the difference between a tier that arrives in the gap
+    /// between two frames and one you wait for.
+    nonisolated static func parseShapes(_ data: Data) -> [MapShape] {
         var shapes: [MapShape] = []
-        for line in text.split(separator: "\n") {
-            guard !line.hasPrefix("#") else { continue }
-            let numbers = line.split(separator: " ").compactMap { Double($0) }
-            guard numbers.count >= 4 else { continue }
 
-            var points: [Coordinate] = []
-            points.reserveCapacity(numbers.count / 2)
-            var minX = Double.infinity, maxX = -Double.infinity
-            var minY = Double.infinity, maxY = -Double.infinity
+        data.withUnsafeBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var start = 0
+            while start < bytes.count {
+                var end = start
+                while end < bytes.count, bytes[end] != 0x0A { end += 1 }
+                defer { start = end + 1 }
 
-            // The file is "lon lat lon lat …", the order a projection wants them in.
-            // Longitudes may run past ±180 where a ring crosses the antimeridian.
-            for index in stride(from: 0, to: numbers.count - 1, by: 2) {
-                let coordinate = Coordinate(latitude: numbers[index + 1], longitude: numbers[index])
-                points.append(coordinate)
-                let projected = Mercator.point(coordinate)
-                minX = min(minX, projected.x); maxX = max(maxX, projected.x)
-                minY = min(minY, projected.y); maxY = max(maxY, projected.y)
+                // Comments carry the provenance, and an empty line carries nothing.
+                guard end > start, bytes[start] != 0x23 else { continue }
+
+                var points: [Coordinate] = []
+                var minLongitude = Double.infinity, maxLongitude = -Double.infinity
+                var minLatitude = Double.infinity, maxLatitude = -Double.infinity
+
+                // The file is "lon lat lon lat …", the order a projection wants them in.
+                // Longitudes may run past ±180 where a ring crosses the antimeridian.
+                var index = start
+                while let longitude = number(bytes, &index, end),
+                      let latitude = number(bytes, &index, end) {
+                    points.append(Coordinate(latitude: latitude, longitude: longitude))
+                    minLongitude = min(minLongitude, longitude)
+                    maxLongitude = max(maxLongitude, longitude)
+                    minLatitude = min(minLatitude, latitude)
+                    maxLatitude = max(maxLatitude, latitude)
+                }
+                guard points.count >= 2 else { continue }
+
+                shapes.append(MapShape(points: points,
+                                       bounds: projected(minLongitude: minLongitude,
+                                                         maxLongitude: maxLongitude,
+                                                         minLatitude: minLatitude,
+                                                         maxLatitude: maxLatitude),
+                                       box: CoordinateBox(west: minLongitude,
+                                                          east: maxLongitude,
+                                                          south: minLatitude,
+                                                          north: maxLatitude)))
             }
-
-            shapes.append(MapShape(points: points,
-                                   bounds: CGRect(x: minX, y: minY,
-                                                  width: max(maxX - minX, 0.0000001),
-                                                  height: max(maxY - minY, 0.0000001))))
         }
         return shapes
+    }
+
+    /// The projected extent of a lon/lat box, from its corners alone.
+    ///
+    /// Mercator is linear in longitude and monotonic in latitude, so the extreme coordinates
+    /// project to the extreme points: two projections per ring rather than one per point, which
+    /// across the deepest tier saves 380,000 logarithms.
+    nonisolated private static func projected(minLongitude: Double, maxLongitude: Double,
+                                              minLatitude: Double, maxLatitude: Double) -> CGRect {
+        let topLeft = Mercator.point(Coordinate(latitude: maxLatitude, longitude: minLongitude))
+        let bottomRight = Mercator.point(Coordinate(latitude: minLatitude,
+                                                    longitude: maxLongitude))
+        return CGRect(x: topLeft.x, y: topLeft.y,
+                      width: max(bottomRight.x - topLeft.x, 0.0000001),
+                      height: max(bottomRight.y - topLeft.y, 0.0000001))
+    }
+
+    /// Parses `-73.78` straight out of the bytes, advancing past it. Nil at the end of a line.
+    ///
+    /// The digits are gathered as an integer and divided once, rather than accumulated a tenth
+    /// at a time, so the answer is the same one `Double("…")` would have given.
+    @inline(__always)
+    nonisolated private static func number(_ bytes: UnsafeBufferPointer<UInt8>,
+                                           _ index: inout Int, _ end: Int) -> Double? {
+        while index < end, bytes[index] == 0x20 { index += 1 }   // spaces
+        guard index < end else { return nil }
+
+        var negative = false
+        if bytes[index] == 0x2D {                                // '-'
+            negative = true
+            index += 1
+        }
+
+        var digits = 0
+        var scale = 1.0
+        var sawDigit = false
+        while index < end, bytes[index] >= 0x30, bytes[index] <= 0x39 {
+            digits = digits * 10 + Int(bytes[index] - 0x30)
+            index += 1
+            sawDigit = true
+        }
+        if index < end, bytes[index] == 0x2E {                   // '.'
+            index += 1
+            while index < end, bytes[index] >= 0x30, bytes[index] <= 0x39 {
+                digits = digits * 10 + Int(bytes[index] - 0x30)
+                scale *= 10
+                index += 1
+                sawDigit = true
+            }
+        }
+        guard sawDigit else { return nil }
+
+        let value = Double(digits) / scale
+        return negative ? -value : value
+    }
+
+    /// Runway ends, for the deepest zoom. Read on demand like a tier: 15,000 of them are worth
+    /// nothing until you are close enough that a runway is longer than a few points.
+    nonisolated static func loadRunways() -> [MapRunway] {
+        guard let data = mapped("runway-ends") else { return [] }
+
+        var runways: [MapRunway] = []
+        runways.reserveCapacity(15_000)
+
+        data.withUnsafeBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var start = 0
+            while start < bytes.count {
+                var end = start
+                while end < bytes.count, bytes[end] != 0x0A { end += 1 }
+                defer { start = end + 1 }
+                guard end > start, bytes[start] != 0x23 else { continue }
+
+                // airport, ident, lat, lon, lat, lon, width — tab separated.
+                var fields: [Range<Int>] = []
+                var field = start
+                var cursor = start
+                while cursor <= end {
+                    if cursor == end || bytes[cursor] == 0x09 {
+                        fields.append(field..<cursor)
+                        field = cursor + 1
+                    }
+                    cursor += 1
+                }
+                guard fields.count >= 7 else { continue }
+
+                var figures: [Double] = []
+                for slot in 2..<6 {
+                    var at = fields[slot].lowerBound
+                    guard let value = number(bytes, &at, fields[slot].upperBound) else { break }
+                    figures.append(value)
+                }
+                guard figures.count == 4 else { continue }
+
+                var widthAt = fields[6].lowerBound
+                let width = number(bytes, &widthAt, fields[6].upperBound) ?? 0
+
+                let low = Coordinate(latitude: figures[0], longitude: figures[1])
+                let high = Coordinate(latitude: figures[2], longitude: figures[3])
+                runways.append(MapRunway(
+                    airport: String(decoding: bytes[fields[0]], as: UTF8.self),
+                    ident: String(decoding: bytes[fields[1]], as: UTF8.self),
+                    low: low, high: high,
+                    widthFeet: Int(width),
+                    bounds: projected(minLongitude: min(low.longitude, high.longitude),
+                                      maxLongitude: max(low.longitude, high.longitude),
+                                      minLatitude: min(low.latitude, high.latitude),
+                                      maxLatitude: max(low.latitude, high.latitude))))
+            }
+        }
+        return runways
     }
 
     private static func loadAirports() -> [String: MapAirport] {
@@ -148,6 +377,12 @@ enum Mercator {
         return Coordinate(latitude: latitude, longitude: longitude)
     }
 
+    /// The latitude drawn at a projected y — the inverse of the y above, on its own, for
+    /// turning a visible rectangle back into the band of latitudes it covers.
+    static func latitude(atY y: Double) -> Double {
+        atan(sinh(.pi * (1 - 2 * y))) * 180 / .pi
+    }
+
     /// Points along the great circle between two coordinates.
     ///
     /// Straight lines in Mercator are rhumb lines, not the shortest path, and an ocean crossing
@@ -197,6 +432,12 @@ struct MapCamera: Equatable {
     var worldWidth: CGFloat = 900
 
     static let widthRange: ClosedRange<CGFloat> = 320...4_000_000
+
+    /// Which of the bundled worlds is the right one to draw at this zoom.
+    var detail: MapDetail { MapDetail.matching(worldWidth: worldWidth) }
+
+    /// True once a runway is long enough on screen to be worth drawing.
+    var showsRunways: Bool { worldWidth >= MapDetail.runwaysFrom }
 
     func screen(_ coordinate: Coordinate, in size: CGSize) -> CGPoint {
         let point = Mercator.point(coordinate)
