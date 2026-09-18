@@ -40,6 +40,13 @@ struct ChartdeskCommands: Commands {
 
     var body: some Commands {
 
+        CommandGroup(after: .sidebar) {
+            Button("Route Map") {
+                browser.sidebarSelection = .map
+            }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+        }
+
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") {
                 updater.check(manual: true)

@@ -71,6 +71,9 @@ struct ContentView: View {
             restoreSelection()
             updater.checkOnLaunchIfWanted()
             flight.refreshOnLaunchIfWanted()
+            // The map's geography takes 47ms to parse, which on the main thread is three
+            // dropped frames the first time you open the map. Read it now, off to one side.
+            DispatchQueue.global(qos: .utility).async { _ = WorldData.land.count }
         }
         .onChange(of: library.scanID) { restoreSelection() }
         .alert("Update Available",
@@ -115,6 +118,9 @@ struct ContentView: View {
             return
         }
 
+        // Pinned and the map are selections in their own right; only an airport that has
+        // gone missing from the library should be cleared.
+        if browser.sidebarSelection == .map { return }
         if let code = browser.sidebarSelection?.airportCode, library.airport(code: code) == nil {
             browser.sidebarSelection = nil
         }

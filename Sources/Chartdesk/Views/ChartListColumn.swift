@@ -23,6 +23,10 @@ struct ChartListColumn: View {
         browser.sidebarSelection == .pinned
     }
 
+    private var isMap: Bool {
+        browser.sidebarSelection == .map
+    }
+
     private var baseCharts: [Chart] {
         if isPinnedList { return library.pinnedCharts }
         guard let airport = selectedAirport else { return [] }
@@ -64,6 +68,14 @@ struct ChartListColumn: View {
     }
 
     var body: some View {
+        if isMap {
+            RouteFixList()
+        } else {
+            column
+        }
+    }
+
+    private var column: some View {
         VStack(spacing: 0) {
             header
 
@@ -148,6 +160,7 @@ struct ChartListColumn: View {
     // MARK: - Header
 
     private var headerTitle: String {
+        if isMap { return "Route Map" }
         if isPinnedList { return "Pinned Charts" }
         return selectedAirport?.displayTitle ?? "No Airport Selected"
     }

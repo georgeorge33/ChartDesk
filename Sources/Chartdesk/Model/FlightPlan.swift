@@ -39,12 +39,38 @@ struct FlightPlan: Codable, Equatable {
         var id: String { "\(role.rawValue)-\(icao)" }
     }
 
+    /// A point on the route, as SimBrief's navlog gives it.
+    ///
+    /// The coordinates are the whole reason this is worth keeping: with them the route can be
+    /// drawn without a navigation database, which is otherwise licensed data. The route string
+    /// on its own — "HYLND7 HYLND DCT HANAA Q816 …" — needs one to mean anything.
+    struct Waypoint: Codable, Equatable, Identifiable {
+        var ident: String
+        var latitude: Double
+        var longitude: Double
+        /// The airway or procedure that leads to this point: "Q816", "HYLND7", "DCT".
+        var via: String?
+        /// SimBrief's own flag for a point belonging to the SID or STAR.
+        var isProcedure: Bool
+        var altitude: Int?
+        /// "apt", "wpt" or "ltlg" — an airport, a named fix, or a bare latitude/longitude.
+        var kind: String?
+
+        var id: String { "\(ident)-\(latitude)-\(longitude)" }
+        var isAirport: Bool { kind == "apt" }
+    }
+
     var airline: String?
     var flightNumber: String?
     var aircraft: String?
     var route: String?
     var airfields: [Airfield]
+    /// Optional rather than defaulted so a flight.json written before this existed still
+    /// decodes: a synthesised decoder demands every non-optional key, default or not.
+    var navlog: [Waypoint]?
     var fetchedAt: Date
+
+    var waypoints: [Waypoint] { navlog ?? [] }
 
     /// "BAW117", else the city pair.
     var title: String {
@@ -144,12 +170,52 @@ enum SimBrief {
             return .failure(Problem(message: "SimBrief answered, but there were no airports in the plan."))
         }
 
+        // The navlog is where the coordinates live. Read leniently: SimBrief sends numbers as
+        // strings, a single fix as an object rather than an array, and any field can be absent.
+        func number(_ container: [String: Any], _ key: String) -> Double? {
+            if let value = container[key] as? Double { return value }
+            if let text = container[key] as? String { return Double(text) }
+            if let value = container[key] as? Int { return Double(value) }
+            return nil
+        }
+
+        let fixes: [Any]
+        if let log = root["navlog"] as? [String: Any] {
+            if let many = log["fix"] as? [Any] {
+                fixes = many
+            } else if let one = log["fix"] as? [String: Any] {
+                fixes = [one]
+            } else {
+                fixes = []
+            }
+        } else {
+            fixes = []
+        }
+
+        var navlog: [FlightPlan.Waypoint] = []
+        for entry in fixes {
+            guard let fix = entry as? [String: Any],
+                  let ident = field(fix, "ident")?.uppercased(),
+                  let latitude = number(fix, "pos_lat"),
+                  let longitude = number(fix, "pos_long")
+            else { continue }
+            navlog.append(FlightPlan.Waypoint(
+                ident: ident,
+                latitude: latitude,
+                longitude: longitude,
+                via: field(fix, "via_airway"),
+                isProcedure: field(fix, "is_sid_star") == "1",
+                altitude: number(fix, "altitude_feet").map { Int($0) },
+                kind: field(fix, "type")))
+        }
+
         let general = root["general"]
         return .success(FlightPlan(airline: field(general, "icao_airline"),
                                    flightNumber: field(general, "flight_number"),
                                    aircraft: field(root["aircraft"], "icaocode"),
                                    route: field(general, "route"),
                                    airfields: airfields,
+                                   navlog: navlog.isEmpty ? nil : navlog,
                                    fetchedAt: Date()))
     }
 }

@@ -25,8 +25,15 @@ enum Theme {
     /// Accent-coloured *text and glyphs*. `accent` is only 2.7:1 against the shell, so it
     /// fails as a foreground colour; this is 8.6:1.
     static let accentText       = rgb(0x30B8F0)
-    /// Backdrop behind a chart.
+    /// Backdrop behind a chart, and the sea on the map.
     static let canvas           = rgb(0x000810)
+    /// Map land. Lifted well clear of the sea: at the old panel colour the coast was a guess.
+    static let land             = rgb(0x14243A)
+    /// Map coastline.
+    static let coast            = rgb(0x2E4A68)
+    /// Map country borders. Drawn dashed as well as lighter: at the same weight as a coast a
+    /// border reads as one, and the St Lawrence and the 49th parallel are not the same thing.
+    static let border           = rgb(0x44607F)
     /// The "not for real-world navigation" red. Brighter than the system red, which goes
     /// muddy at caption sizes against this navy.
     static let warning          = rgb(0xFF5A5A)

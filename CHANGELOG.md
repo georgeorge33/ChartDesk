@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.0
+
+**A map**
+
+- **Route Map** joins the sidebar, beside Pinned Charts. Selecting it lists the route in the
+  middle column — ident, airway or procedure, altitude as a flight level above the transition —
+  and draws the map where a chart would be. Drag to pan, scroll to zoom at the cursor, **Fit**
+  to frame the flight. ⇧⌘M selects it.
+- **Your SimBrief flight is drawn on it**, and needs no navigation database to be: the navlog
+  gives every fix a latitude and longitude, which the app had been discarding in favour of the
+  route string. The SID and STAR legs are picked out in orange, from SimBrief's own flag.
+- Legs are drawn as **great circles**, so an ocean crossing bends the way the aircraft flies
+  rather than running straight across a Mercator sheet.
+- The airports you hold charts for are on the map whether or not a flight is loaded.
+
+**Bundled, not fetched**
+
+The geography is Natural Earth at 1:50m and the airports are OurAirports, both public domain,
+both built by `Tools/make_mapdata.py` — 1.2 MB in the bundle. The rest of the app works with
+the network off and a map that needed tiles would have been the first thing to stop.
+
+- Three layers, each drawn its own way: land filled, **lakes filled back in with the sea's
+  colour**, and borders stroked. Borders are only the arcs two countries share, so no line is
+  drawn twice and no coastline is mistaken for a frontier.
+- Ten times the geometry of a first attempt at 1:110m, which is what brings back the Great
+  Lakes. Each shape carries its extent, so 48 of 1,778 draw at route zoom, and rings are
+  sampled to about two points per pixel of their own width — the world view drops from 107,000
+  points to 39,000 with nothing lost close in. The tables are read on a background queue at
+  launch rather than costing three dropped frames on first open.
+- A ring crossing the antimeridian used to jump from 179° to −179°, which drew a line sweeping
+  back across the whole map through Siberia and Antarctica. Longitudes now run past ±180 and
+  each shape is drawn at whichever offsets reach the view.
+
 ## 1.0.8
 
 - **The Info tab carries the two facts that were missing**: the magnetic variation in force for

@@ -142,11 +142,13 @@ struct SidebarView: View {
                     }
                 }
 
-                if !library.pinnedCharts.isEmpty {
-                    Section {
+                Section {
+                    if !library.pinnedCharts.isEmpty {
                         pinnedRow
                             .tag(SidebarItem.pinned)
                     }
+                    mapRow
+                        .tag(SidebarItem.map)
                 }
 
                 if trimmedQuery.isEmpty, !library.recentAirports.isEmpty {
@@ -190,6 +192,24 @@ struct SidebarView: View {
     }
 
     // MARK: - Pieces
+
+    /// The map is a place in the app rather than a window of its own: one selection, one
+    /// window, and it keeps the flight's airports a click away in the same sidebar.
+    private var mapRow: some View {
+        HStack(spacing: 8) {
+            Label("Route Map", systemImage: "map")
+            Spacer(minLength: 4)
+            if let count = flight.plan?.waypoints.count, count > 0 {
+                Text("\(count)")
+                    .font(.ngSmall)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .help(flight.plan == nil
+              ? "The world, and the airports you hold charts for"
+              : "The loaded flight drawn on the map")
+    }
 
     private var pinnedRow: some View {
         HStack(spacing: 8) {

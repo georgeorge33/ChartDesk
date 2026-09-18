@@ -61,6 +61,7 @@ struct ChartDetailView: View {
     @EnvironmentObject private var browser: BrowserState
     @EnvironmentObject private var viewer: ChartViewerController
     @EnvironmentObject private var annotations: AnnotationStore
+    @EnvironmentObject private var flight: FlightPlanStore
     @StateObject private var model = ChartRenderModel()
 
     private var chart: Chart? {
@@ -87,6 +88,15 @@ struct ChartDetailView: View {
     }
 
     var body: some View {
+        // The map is a selection rather than a window, so this pane is where it draws.
+        if browser.sidebarSelection == .map {
+            RouteMapView()
+        } else {
+            chartBody
+        }
+    }
+
+    private var chartBody: some View {
         ZStack {
             if let chart = chart {
                 ChartCanvas(image: model.image,

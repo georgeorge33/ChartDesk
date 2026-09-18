@@ -287,6 +287,8 @@ enum SearchKey {
 
 enum SidebarItem: Hashable {
     case pinned
+    /// The route map, which is not an airport and has no chart list of its own.
+    case map
     case airport(String)
 
     var airportCode: String? {

@@ -273,6 +273,15 @@ else
 	warn "Resources/runways.txt missing — runway menus will fall back to 01-36"
 fi
 
+# The map's geography and airport positions.
+for TABLE in land lakes borders airports; do
+	if [ -f "Resources/${TABLE}.txt" ]; then
+		cp "Resources/${TABLE}.txt" "${CONTENTS}/Resources/${TABLE}.txt"
+	else
+		warn "Resources/${TABLE}.txt missing — the map will be short of it"
+	fi
+done
+
 if ! plutil -lint "${CONTENTS}/Info.plist" >/dev/null 2>&1; then
 	warn "Info.plist failed plutil -lint"
 fi
