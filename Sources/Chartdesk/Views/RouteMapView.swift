@@ -75,7 +75,10 @@ struct RouteMapView: View {
                     let start = cameraAtDragStart ?? camera
                     cameraAtDragStart = start
                     userMoved = true
-                    camera.pan(from: start, by: value.translation)
+                    // Turned, not slid: whatever was grabbed stays under the finger, which is
+                    // why this needs where the drag began and not only how far it has gone.
+                    camera.turn(from: start, grabbing: value.startLocation,
+                                to: value.location, in: size)
                 }
                 .onEnded { _ in cameraAtDragStart = nil }
         )
@@ -124,66 +127,67 @@ struct RouteMapView: View {
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         var labels: [Label] = []
-        let visible = camera.visibleRect(in: size)
-        let plotter = MapPlotter(camera: camera, size: size)
-        // Four points of slack, so the edges a clip leaves behind fall outside the panel.
-        let windows = (-1...1).map {
-            MapWindow(visible: visible, shift: Double($0), padding: 4 / Double(camera.worldWidth))
+        let sheet = MapSheet(camera: camera, size: size)
+
+        // The sea first, as the sphere itself. Only when the globe's edge is on the sheet:
+        // zoomed in past that, the sea is simply the colour behind everything.
+        let globe = Path(ellipseIn: sheet.disc)
+        if sheet.showsEdge {
+            context.fill(globe, with: .color(Color(nsColor: Theme.canvas)))
         }
 
-        // Land, then the lakes cut back out of it, then borders — all from the one tier, since
-        // a 1:10m coast beside a 1:50m border puts the frontier out at sea. Each feature is
-        // drawn in every copy of the world that reaches the view, which is how a ring crossing
-        // the antimeridian shows up on both edges rather than sweeping across the middle.
+        // Land, then the lakes cut back out of it, then borders — all from the one level of
+        // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
         if let world = geography.best(for: camera.detail) {
             fill(world.land, colour: Color(nsColor: Theme.land),
                  stroke: Color(nsColor: Theme.coast), width: 0.7,
-                 in: &context, windows: windows, plotter: plotter)
+                 in: &context, sheet: sheet)
 
             fill(world.lakes, colour: Color(nsColor: Theme.canvas),
                  stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
-                 in: &context, windows: windows, plotter: plotter)
+                 in: &context, sheet: sheet)
 
-            // Borders are short lines rather than continent-sized rings, so culling by extent
-            // is all they need — and an open line has no inside to clip.
-            for shape in world.borders {
-                for window in windows where window.bounds.intersects(shape.bounds) {
-                    context.stroke(plotter.path(shape.points,
-                                                offset: window.shift * Double(camera.worldWidth),
-                                                closed: false),
-                                   with: .color(Color(nsColor: Theme.border)),
-                                   style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
-                }
+            for shape in world.borders where sheet.mayShow(shape.cap) {
+                context.stroke(sheet.path(line: shape.directions),
+                               with: .color(Color(nsColor: Theme.border)),
+                               style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
             }
         }
 
-        graticule(in: &context, size: size)
-        runways(in: &context, windows: windows, plotter: plotter, labels: &labels)
+        graticule(in: &context, sheet: sheet)
+
+        // What makes it read as a ball rather than a disc: the limb falls away from the light
+        // the way a sphere's does. Over the geography, so the whole globe turns with it, and
+        // under the route, which has to stay legible wherever it runs.
+        if sheet.showsEdge {
+            context.fill(globe, with: .radialGradient(
+                Gradient(colors: [.clear, .black.opacity(0.55)]),
+                center: CGPoint(x: sheet.disc.midX, y: sheet.disc.midY),
+                startRadius: sheet.disc.width * 0.3,
+                endRadius: sheet.disc.width * 0.52))
+            context.stroke(globe, with: .color(Color(nsColor: Theme.coast).opacity(0.7)),
+                           lineWidth: 1)
+        }
+
+        runways(in: &context, sheet: sheet, labels: &labels)
 
         // Airports before fixes, so their labels win the space.
         for airport in pinned {
-            marker(airport, in: &context, size: size, labels: &labels)
+            marker(airport, in: &context, sheet: sheet, labels: &labels)
         }
         if !waypoints.isEmpty {
-            route(in: &context, size: size, labels: &labels)
+            route(in: &context, sheet: sheet, labels: &labels)
         }
         place(labels, in: &context, size: size)
     }
 
     private func fill(_ shapes: [MapShape], colour: Color, stroke: Color, width: CGFloat,
-                      in context: inout GraphicsContext, windows: [MapWindow], plotter: MapPlotter) {
-        for shape in shapes {
-            for window in windows where window.bounds.intersects(shape.bounds) {
-                let ring = window.box.holds(shape.box)
-                    ? shape.points
-                    : window.clip(shape.points, box: shape.box)
-                guard ring.count > 2 else { continue }
-
-                let path = plotter.path(ring, offset: window.shift * Double(camera.worldWidth),
-                                        closed: true)
-                context.fill(path, with: .color(colour))
-                context.stroke(path, with: .color(stroke), lineWidth: width)
-            }
+                      in context: inout GraphicsContext, sheet: MapSheet) {
+        for shape in shapes where sheet.mayShow(shape.cap) {
+            let path = sheet.path(ring: shape)
+            guard !path.isEmpty else { continue }
+            context.fill(path, with: .color(colour))
+            context.stroke(path, with: .color(stroke), lineWidth: width)
         }
     }
 
@@ -192,42 +196,37 @@ struct RouteMapView: View {
     /// The last level of detail there is: closer in than this a coastline is a straight line
     /// and a border is nowhere near, and what tells you where you are looking is the shape of
     /// the field. Idents go on only once a strip is long enough to hang one off.
-    private func runways(in context: inout GraphicsContext, windows: [MapWindow],
-                         plotter: MapPlotter, labels: inout [Label]) {
+    private func runways(in context: inout GraphicsContext, sheet: MapSheet,
+                         labels: inout [Label]) {
         guard camera.showsRunways else { return }
 
         let colour = Color(nsColor: Theme.runway)
-        let scale = Double(camera.worldWidth)
         let named = camera.worldWidth >= 500_000
+        // Feet across, in points. The globe is drawn to one scale at the middle of the view,
+        // so this is the same arithmetic wherever on Earth the runway is — which under
+        // Mercator it was not.
+        let perFoot = 0.3048 / 6_371_000 * camera.radius
 
-        for runway in geography.runways {
-            for window in windows where window.bounds.intersects(runway.bounds) {
-                let offset = window.shift * scale
-                let low = plotter.point(runway.low, offset: offset)
-                let high = plotter.point(runway.high, offset: offset)
+        for runway in geography.runways where sheet.mayShow(runway.cap) {
+            let low = sheet.point(runway.low)
+            let high = sheet.point(runway.high)
+            let across = max(1.2, Double(runway.widthFeet) * perFoot)
 
-                // Feet across, in points. Mercator stretches northwards away from the equator
-                // and the length on screen is stretched with it, so the width is too.
-                let stretch = cos(runway.low.latitude * .pi / 180)
-                let across = max(1.2, Double(runway.widthFeet) * 0.3048
-                                     / (111_320 * max(stretch, 0.01)) / 360 * scale)
+            var path = Path()
+            path.move(to: low)
+            path.addLine(to: high)
+            context.stroke(path, with: .color(colour),
+                           style: StrokeStyle(lineWidth: across, lineCap: .butt))
 
-                var path = Path()
-                path.move(to: low)
-                path.addLine(to: high)
-                context.stroke(path, with: .color(colour),
-                               style: StrokeStyle(lineWidth: across, lineCap: .butt))
-
-                let run = hypot(low.x - high.x, low.y - high.y)
-                if named, run > 24, !runway.ident.isEmpty {
-                    // Just off the threshold, on the runway's own line, the way a plate has it.
-                    let at = CGPoint(x: low.x + (low.x - high.x) / run * 10,
-                                     y: low.y + (low.y - high.y) / run * 10)
-                    labels.append(Label(text: Text(runway.ident)
-                                            .font(.ngSmallMono)
-                                            .foregroundStyle(colour),
-                                        at: at, anchor: .center))
-                }
+            let run = hypot(low.x - high.x, low.y - high.y)
+            if named, run > 24, !runway.ident.isEmpty {
+                // Just off the threshold, on the runway's own line, the way a plate has it.
+                let at = CGPoint(x: low.x + (low.x - high.x) / run * 10,
+                                 y: low.y + (low.y - high.y) / run * 10)
+                labels.append(Label(text: Text(runway.ident)
+                                        .font(.ngSmallMono)
+                                        .foregroundStyle(colour),
+                                    at: at, anchor: .center))
             }
         }
     }
@@ -257,59 +256,63 @@ struct RouteMapView: View {
         }
     }
 
-    /// Meridians and parallels every 30°, faint. Without them a dark map has no sense of scale.
-    private func graticule(in context: inout GraphicsContext, size: CGSize) {
-        let colour = Color(nsColor: Theme.separator).opacity(0.5)
-        for longitude in stride(from: -180.0, through: 180.0, by: 30) {
-            var path = Path()
-            path.move(to: screen(Coordinate(latitude: Mercator.limit, longitude: longitude), in: size))
-            path.addLine(to: screen(Coordinate(latitude: -Mercator.limit, longitude: longitude), in: size))
-            context.stroke(path, with: .color(colour), lineWidth: 0.5)
+    /// Meridians and parallels every 30°, faint. Without them a dark globe has no sense of
+    /// which way it is turned.
+    ///
+    /// Worked out once: on a globe these are arcs rather than the two straight lines Mercator
+    /// drew them as, and re-deriving 800 points of them every frame is trigonometry for
+    /// nothing. The pen lifts where each runs round the back of the sphere.
+    private static let graticuleLines: [[SIMD3<Double>]] = {
+        var lines: [[SIMD3<Double>]] = []
+        for longitude in stride(from: -180.0, to: 180.0, by: 30) {
+            lines.append(stride(from: -88.0, through: 88.0, by: 4).map {
+                Coordinate(latitude: $0, longitude: longitude).direction
+            })
         }
         for latitude in stride(from: -60.0, through: 60.0, by: 30) {
-            var path = Path()
-            path.move(to: screen(Coordinate(latitude: latitude, longitude: -180), in: size))
-            path.addLine(to: screen(Coordinate(latitude: latitude, longitude: 180), in: size))
-            context.stroke(path, with: .color(colour), lineWidth: 0.5)
+            lines.append(stride(from: -180.0, through: 180.0, by: 4).map {
+                Coordinate(latitude: latitude, longitude: $0).direction
+            })
+        }
+        return lines
+    }()
+
+    private func graticule(in context: inout GraphicsContext, sheet: MapSheet) {
+        let colour = Color(nsColor: Theme.separator).opacity(0.5)
+        for line in Self.graticuleLines {
+            context.stroke(sheet.path(line: line), with: .color(colour), lineWidth: 0.5)
         }
     }
 
-    private func route(in context: inout GraphicsContext, size: CGSize,
+    private func route(in context: inout GraphicsContext, sheet: MapSheet,
                        labels: inout [Label]) {
         // Two passes so the enroute line and the procedure legs each read as one colour
         // rather than alternating down the route.
         for procedure in [false, true] {
-            var path = Path()
-            var started = false
+            let colour = procedure ? Color.orange : Color.ngAccentText
+            let style = StrokeStyle(lineWidth: procedure ? 2.5 : 2,
+                                    lineCap: .round, lineJoin: .round)
             for (index, waypoint) in waypoints.enumerated() where index > 0 {
                 let previous = waypoints[index - 1]
                 guard waypoint.isProcedure == procedure else { continue }
-                let arc = Mercator.arc(from: Coordinate(latitude: previous.latitude,
-                                                        longitude: previous.longitude),
+                // A great circle, which on a globe is simply the way the aeroplane goes.
+                let arc = Spherical.arc(from: Coordinate(latitude: previous.latitude,
+                                                         longitude: previous.longitude),
                                         to: Coordinate(latitude: waypoint.latitude,
                                                        longitude: waypoint.longitude))
-                for (step, coordinate) in arc.enumerated() {
-                    let point = screen(coordinate, in: size)
-                    if step == 0 {
-                        path.move(to: point)
-                        started = true
-                    } else {
-                        path.addLine(to: point)
-                    }
-                }
+                let path = sheet.path(line: arc)
+                guard !path.isEmpty else { continue }
+                context.stroke(path, with: .color(colour), style: style)
             }
-            guard started else { continue }
-            context.stroke(path,
-                           with: .color(procedure ? Color.orange : Color.ngAccentText),
-                           style: StrokeStyle(lineWidth: procedure ? 2.5 : 2,
-                                              lineCap: .round, lineJoin: .round))
         }
 
         // Fixes, with their names once there is room for them.
         let labelled = degreesAcross < 40
         for waypoint in waypoints where !waypoint.isAirport {
-            let point = screen(Coordinate(latitude: waypoint.latitude,
-                                          longitude: waypoint.longitude), in: size)
+            let coordinate = Coordinate(latitude: waypoint.latitude,
+                                        longitude: waypoint.longitude)
+            guard sheet.projection.faces(coordinate.direction) else { continue }
+            let point = sheet.point(coordinate)
             let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
             context.fill(Path(ellipseIn: dot),
                          with: .color(waypoint.isProcedure ? Color.orange : Color.ngAccentText))
@@ -324,10 +327,13 @@ struct RouteMapView: View {
     }
 
     private func marker(_ airport: MapAirport, in context: inout GraphicsContext,
-                        size: CGSize, labels: inout [Label]) {
-        let point = screen(airport.coordinate, in: size)
-        guard point.x > -40, point.x < size.width + 40,
-              point.y > -20, point.y < size.height + 20 else { return }
+                        sheet: MapSheet, labels: inout [Label]) {
+        // Round the back of the globe, and there is nothing to draw — which is a thing a
+        // sphere can say and a sheet could not.
+        guard sheet.projection.faces(airport.coordinate.direction) else { return }
+        let point = sheet.point(airport.coordinate)
+        guard point.x > -40, point.x < sheet.size.width + 40,
+              point.y > -20, point.y < sheet.size.height + 20 else { return }
 
         let onRoute = plan?.airfields.contains { $0.icao == airport.icao } ?? false
         let colour = onRoute ? Color.ngAccentText : Color.secondary
@@ -347,11 +353,6 @@ struct RouteMapView: View {
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }
 
-    private func screen(_ coordinate: Coordinate, in size: CGSize) -> CGPoint {
-        camera.screen(coordinate, in: size)
-    }
-
-
     private func zoom(by factor: CGFloat, around point: CGPoint?) {
         userMoved = true
         camera.zoom(by: factor, around: point, in: size)
@@ -364,8 +365,9 @@ struct RouteMapView: View {
         let points = waypoints.map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
             + pinned.map(\.coordinate)
         guard points.count > 1 else {
+            // A globe filling the panel: its circumference is pi times its width on screen.
             camera = MapCamera(centre: Coordinate(latitude: 25, longitude: -20),
-                               worldWidth: max(size.width, 600))
+                               worldWidth: max(min(size.width, size.height) * .pi, 900))
             return
         }
         camera.fit(points, in: size)

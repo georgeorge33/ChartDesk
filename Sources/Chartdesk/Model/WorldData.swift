@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import simd
 
 /// A point on the globe, in degrees.
 struct Coordinate: Equatable {
@@ -30,39 +32,24 @@ struct MapRunway {
     let low: Coordinate
     let high: Coordinate
     let widthFeet: Int
-    /// In the projection's 0…1 space, so an off-screen runway costs a rectangle comparison.
-    let bounds: CGRect
+    /// So a runway on the other side of the world costs one dot product.
+    let cap: SphericalCap
 }
 
-/// A box of longitudes and latitudes.
+/// One drawn feature — a ring of land, a lake, a stretch of border.
 ///
-/// Mercator is linear in longitude and monotonic in latitude, so this and a projected `CGRect`
-/// describe the very same rectangle — one in degrees, which is what clipping a ring compares
-/// against, and one projected, which is what culling one compares against.
-struct CoordinateBox {
-    var west: Double
-    var east: Double
-    var south: Double
-    var north: Double
-
-    /// True when this box holds all of `other` — so a ring that need not be clipped at all.
-    func holds(_ other: CoordinateBox) -> Bool {
-        west <= other.west && east >= other.east
-            && south <= other.south && north >= other.north
-    }
-}
-
-/// One drawn feature — a ring of land, a lake, a stretch of border — with its extent.
+/// Held as unit vectors rather than as degrees, worked out once at load. The globe needs the
+/// direction of every point, and four trigonometric calls per point is not a thing to do
+/// sixty times a second: this way putting a point on the sheet is two dot products.
 ///
-/// The extent is worked out once at load, so a feature that is off screen costs a rectangle
-/// comparison instead of a path. With a thousand rings on the sheet that is the difference
-/// between a map that drags and one that stutters.
+/// The cap is the smallest cap of the sphere holding the shape, so a feature on the far side
+/// costs one dot product instead of a path. It is what a bounding box was for Mercator — a box
+/// of longitudes and latitudes says nothing useful on a globe, since near a pole it wraps the
+/// whole world, and it cannot answer the one question worth asking, which is whether any of
+/// this is turned towards us.
 struct MapShape {
-    let points: [Coordinate]
-    /// Projected, in 0…1, for culling against what the view covers.
-    let bounds: CGRect
-    /// The same extent in degrees, for deciding which edges of the view a ring crosses.
-    let box: CoordinateBox
+    let directions: [SIMD3<Double>]
+    let cap: SphericalCap
 }
 
 // MARK: - Detail
@@ -179,50 +166,24 @@ enum WorldData {
                 // Comments carry the provenance, and an empty line carries nothing.
                 guard end > start, bytes[start] != 0x23 else { continue }
 
-                var points: [Coordinate] = []
-                var minLongitude = Double.infinity, maxLongitude = -Double.infinity
-                var minLatitude = Double.infinity, maxLatitude = -Double.infinity
+                var directions: [SIMD3<Double>] = []
 
-                // The file is "lon lat lon lat …", the order a projection wants them in.
-                // Longitudes may run past ±180 where a ring crosses the antimeridian.
+                // The file is "lon lat lon lat …", the order a projection wants them in. A
+                // longitude running past ±180 — which is how the tables cross the
+                // antimeridian — names the same direction either way, so a sphere needs no
+                // special handling for the seam it does not have.
                 var index = start
                 while let longitude = number(bytes, &index, end),
                       let latitude = number(bytes, &index, end) {
-                    points.append(Coordinate(latitude: latitude, longitude: longitude))
-                    minLongitude = min(minLongitude, longitude)
-                    maxLongitude = max(maxLongitude, longitude)
-                    minLatitude = min(minLatitude, latitude)
-                    maxLatitude = max(maxLatitude, latitude)
+                    directions.append(Coordinate(latitude: latitude,
+                                                 longitude: longitude).direction)
                 }
-                guard points.count >= 2 else { continue }
+                guard directions.count >= 2 else { continue }
 
-                shapes.append(MapShape(points: points,
-                                       bounds: projected(minLongitude: minLongitude,
-                                                         maxLongitude: maxLongitude,
-                                                         minLatitude: minLatitude,
-                                                         maxLatitude: maxLatitude),
-                                       box: CoordinateBox(west: minLongitude,
-                                                          east: maxLongitude,
-                                                          south: minLatitude,
-                                                          north: maxLatitude)))
+                shapes.append(MapShape(directions: directions, cap: SphericalCap(directions)))
             }
         }
         return shapes
-    }
-
-    /// The projected extent of a lon/lat box, from its corners alone.
-    ///
-    /// Mercator is linear in longitude and monotonic in latitude, so the extreme coordinates
-    /// project to the extreme points: two projections per ring rather than one per point, which
-    /// across the deepest tier saves 380,000 logarithms.
-    nonisolated private static func projected(minLongitude: Double, maxLongitude: Double,
-                                              minLatitude: Double, maxLatitude: Double) -> CGRect {
-        let topLeft = Mercator.point(Coordinate(latitude: maxLatitude, longitude: minLongitude))
-        let bottomRight = Mercator.point(Coordinate(latitude: minLatitude,
-                                                    longitude: maxLongitude))
-        return CGRect(x: topLeft.x, y: topLeft.y,
-                      width: max(bottomRight.x - topLeft.x, 0.0000001),
-                      height: max(bottomRight.y - topLeft.y, 0.0000001))
     }
 
     /// Parses `-73.78` straight out of the bytes, advancing past it. Nil at the end of a line.
@@ -312,10 +273,7 @@ enum WorldData {
                     ident: String(decoding: bytes[fields[1]], as: UTF8.self),
                     low: low, high: high,
                     widthFeet: Int(width),
-                    bounds: projected(minLongitude: min(low.longitude, high.longitude),
-                                      maxLongitude: max(low.longitude, high.longitude),
-                                      minLatitude: min(low.latitude, high.latitude),
-                                      maxLatitude: max(low.latitude, high.latitude))))
+                    cap: SphericalCap([low.direction, high.direction])))
             }
         }
         return runways
@@ -347,91 +305,65 @@ enum WorldData {
     }
 }
 
-// MARK: - Projection
+// MARK: - Great circles
 
-/// Web Mercator, the projection every slippy map uses.
-///
-/// Both axes come back in 0…1 for the whole world, so "zoom" is simply how many points wide
-/// the world is drawn: the camera holds that one number and a centre, and everything else is
-/// multiplication. Latitude is clamped short of the poles, where Mercator runs to infinity.
-enum Mercator {
+enum Spherical {
 
-    static let limit = 85.05112878
-
-    static func point(_ coordinate: Coordinate) -> CGPoint {
-        let latitude = min(max(coordinate.latitude, -limit), limit)
-        let x = (coordinate.longitude + 180) / 360
-        let radians = latitude * .pi / 180
-        let y = (1 - log(tan(radians) + 1 / cos(radians)) / .pi) / 2
-        return CGPoint(x: x, y: y)
-    }
-
-    static func coordinate(_ point: CGPoint) -> Coordinate {
-        // Wrapped, because x runs past 0…1 as the map is dragged round the world and a centre
-        // reported as 206°W is nonsense even when the arithmetic behind it is sound.
-        var longitude = (point.x * 360 - 180).truncatingRemainder(dividingBy: 360)
-        if longitude > 180 { longitude -= 360 }
-        if longitude < -180 { longitude += 360 }
-        let n = .pi * (1 - 2 * point.y)
-        let latitude = atan(sinh(n)) * 180 / .pi
-        return Coordinate(latitude: latitude, longitude: longitude)
-    }
-
-    /// The latitude drawn at a projected y — the inverse of the y above, on its own, for
-    /// turning a visible rectangle back into the band of latitudes it covers.
-    static func latitude(atY y: Double) -> Double {
-        atan(sinh(.pi * (1 - 2 * y))) * 180 / .pi
-    }
-
-    /// Points along the great circle between two coordinates.
+    /// Directions along the great circle between two coordinates.
     ///
-    /// Straight lines in Mercator are rhumb lines, not the shortest path, and an ocean crossing
-    /// drawn that way is visibly wrong — a London to Los Angeles leg would miss Greenland by
-    /// hundreds of miles. Interpolating the great circle and letting the projection bend it is
-    /// what makes long legs look like the route the aircraft flies.
-    static func arc(from start: Coordinate, to end: Coordinate, steps: Int = 24) -> [Coordinate] {
-        let φ1 = start.latitude * .pi / 180, λ1 = start.longitude * .pi / 180
-        let φ2 = end.latitude * .pi / 180, λ2 = end.longitude * .pi / 180
-
-        let deltaφ = φ2 - φ1, deltaλ = λ2 - λ1
-        let a = sin(deltaφ / 2) * sin(deltaφ / 2)
-            + cos(φ1) * cos(φ2) * sin(deltaλ / 2) * sin(deltaλ / 2)
-        let angle = 2 * asin(min(1, sqrt(a)))
+    /// On a globe this is simply what a leg *is* — the shortest way between two places — so
+    /// the interpolation is a turn from one direction to the other and nothing to do with any
+    /// projection. Under Mercator the same thing had to be worked out and then bent by the
+    /// projection, or a London to Los Angeles leg ran straight across the sheet and missed
+    /// Greenland by hundreds of miles.
+    static func arc(from start: Coordinate, to end: Coordinate,
+                    steps: Int = 24) -> [SIMD3<Double>] {
+        let first = start.direction, last = end.direction
+        let angle = acos(min(max(simd_dot(first, last), -1), 1))
 
         // Short legs are straight enough that the interpolation is wasted work.
-        guard angle > 0.01 else { return [start, end] }
+        guard angle > 0.01 else { return [first, last] }
 
-        var points: [Coordinate] = []
-        points.reserveCapacity(steps + 1)
+        var out: [SIMD3<Double>] = []
+        out.reserveCapacity(steps + 1)
+        let spread = sin(angle)
         for step in 0...steps {
-            let fraction = Double(step) / Double(steps)
-            let A = sin((1 - fraction) * angle) / sin(angle)
-            let B = sin(fraction * angle) / sin(angle)
-            let x = A * cos(φ1) * cos(λ1) + B * cos(φ2) * cos(λ2)
-            let y = A * cos(φ1) * sin(λ1) + B * cos(φ2) * sin(λ2)
-            let z = A * sin(φ1) + B * sin(φ2)
-            points.append(Coordinate(latitude: atan2(z, sqrt(x * x + y * y)) * 180 / .pi,
-                                     longitude: atan2(y, x) * 180 / .pi))
+            let along = Double(step) / Double(steps)
+            let here = sin((1 - along) * angle) / spread
+            let there = sin(along * angle) / spread
+            out.append(simd_normalize(first * here + last * there))
         }
-        return points
+        return out
     }
 }
 
 // MARK: - Camera
 
-/// Where the map is looking, and how closely.
+/// Where the globe is turned to, and how closely it is drawn.
 ///
-/// A struct of two numbers rather than state scattered through the view, because the one thing
-/// a map must get right is that zooming keeps the point under the cursor under the cursor, and
+/// A centre and a zoom, as before. What changed is what they mean: the centre is the place
+/// turned towards the viewer rather than the middle of a sheet, and dragging turns the sphere
+/// instead of sliding a sheet about. Kept as a struct of two numbers because the one thing a
+/// map must get right is that zooming leaves what is under the cursor under the cursor, and
 /// that is only checkable if the arithmetic can be called without a window.
 struct MapCamera: Equatable {
 
-    /// The coordinate drawn at the middle of the view.
+    /// The place on the globe turned towards the viewer.
     var centre = Coordinate(latitude: 25, longitude: -20)
-    /// How many points wide the whole world would be at this zoom.
-    var worldWidth: CGFloat = 900
 
-    static let widthRange: ClosedRange<CGFloat> = 320...4_000_000
+    /// How many points across the whole world would be drawn — the sphere's circumference on
+    /// the sheet.
+    ///
+    /// Held in those terms rather than as the sphere's radius so that "how many degrees does
+    /// the view cover" is the same arithmetic it was under Mercator: a panel shows
+    /// `width × 360 / worldWidth` degrees either way. Which means the zooms at which each
+    /// level of detail takes over did not have to be retuned for the globe.
+    var worldWidth: CGFloat = 2_600
+
+    static let widthRange: ClosedRange<CGFloat> = 900...4_000_000
+
+    /// The sphere's radius on the sheet.
+    var radius: Double { Double(worldWidth) / (2 * .pi) }
 
     /// Which of the bundled worlds is the right one to draw at this zoom.
     var detail: MapDetail { MapDetail.matching(worldWidth: worldWidth) }
@@ -439,85 +371,100 @@ struct MapCamera: Equatable {
     /// True once a runway is long enough on screen to be worth drawing.
     var showsRunways: Bool { worldWidth >= MapDetail.runwaysFrom }
 
+    func projection(in size: CGSize) -> GlobeProjection {
+        GlobeProjection(centre: centre, radius: radius, in: size)
+    }
+
     func screen(_ coordinate: Coordinate, in size: CGSize) -> CGPoint {
-        let point = Mercator.point(coordinate)
-        let anchor = Mercator.point(centre)
-        return CGPoint(x: size.width / 2 + (point.x - anchor.x) * worldWidth,
-                       y: size.height / 2 + (point.y - anchor.y) * worldWidth)
+        projection(in: size).point(coordinate.direction)
     }
 
-    func coordinate(at point: CGPoint, in size: CGSize) -> Coordinate {
-        let anchor = Mercator.point(centre)
-        return Mercator.coordinate(CGPoint(x: anchor.x + (point.x - size.width / 2) / worldWidth,
-                                           y: anchor.y + (point.y - size.height / 2) / worldWidth))
+    /// What is under a point on the sheet, or nil for a point off the globe.
+    func coordinate(at point: CGPoint, in size: CGSize) -> Coordinate? {
+        projection(in: size).direction(at: point).map(Coordinate.init)
     }
 
-    /// What the view covers, in the projection's 0…1 space. A shape whose bounds miss this
-    /// rectangle need not be drawn.
-    func visibleRect(in size: CGSize) -> CGRect {
-        let anchor = Mercator.point(centre)
-        let halfWidth = size.width / 2 / worldWidth
-        let halfHeight = size.height / 2 / worldWidth
-        return CGRect(x: anchor.x - halfWidth, y: anchor.y - halfHeight,
-                      width: halfWidth * 2, height: halfHeight * 2)
-    }
-
-    /// Degrees of longitude across the view, which is what decides when labels have room.
+    /// Degrees across the view, which is what decides when labels have room.
     func degreesAcross(in size: CGSize) -> Double {
         guard size.width > 0, worldWidth > 0 else { return 360 }
         return Double(size.width / worldWidth) * 360
     }
 
-    /// Zooms, keeping `point` looking at the same place on the ground.
+    /// Turns the globe so that a direction lands on a given point of the sheet.
+    ///
+    /// The one operation both dragging and zooming are made of. North stays up, so the turn is
+    /// only exact for a point near the middle of the view — a globe that rolled to follow the
+    /// cursor exactly would be a globe you could turn upside down by accident.
+    mutating func hold(_ direction: SIMD3<Double>, at point: CGPoint, in size: CGSize) {
+        // Not one turn but a few. North stays up, which means the basis is rebuilt after every
+        // turn and the place a direction lands moves with it — a single pass leaves the thing
+        // you grabbed a good ten points from the cursor when you grabbed it near the edge of
+        // the view. Each pass closes most of what is left; four gets inside a tenth of a point,
+        // which is finer than a cursor can ask for.
+        for _ in 0..<4 {
+            guard let now = projection(in: size).direction(at: point),
+                  simd_dot(now, direction) > -0.999999  // antipodal: any turn would do
+            else { return }
+
+            let turn = simd_quaternion(now, direction)
+            centre = Coordinate(simd_normalize(turn.act(centre.direction)))
+
+            let landed = projection(in: size).point(direction)
+            guard hypot(landed.x - point.x, landed.y - point.y) >= 0.1 else { return }
+        }
+    }
+
+    /// How far out it is worth zooming, for a panel of a given size.
+    ///
+    /// A sheet could be zoomed out for ever and only got emptier. A sphere cannot: past the
+    /// point where the whole globe is on the panel there is nothing further to reveal, and
+    /// carrying on only shrinks the world to a marble in a dark room.
+    static func smallest(in size: CGSize) -> CGFloat {
+        let fills = CGFloat(Double(min(size.width, size.height)) * .pi)
+        return max(widthRange.lowerBound, fills * 0.6)
+    }
+
+    /// Zooms, keeping whatever is under `point` under it.
     mutating func zoom(by factor: CGFloat, around point: CGPoint?, in size: CGSize) {
-        let next = min(max(worldWidth * factor, Self.widthRange.lowerBound),
-                       Self.widthRange.upperBound)
-        guard let point = point, size.width > 0, next != worldWidth else {
+        let floor = size.width > 0 ? Self.smallest(in: size) : Self.widthRange.lowerBound
+        let next = min(max(worldWidth * factor, floor), Self.widthRange.upperBound)
+        guard let point = point, size.width > 0, next != worldWidth,
+              let before = projection(in: size).direction(at: point)
+        else {
             worldWidth = next
             return
         }
-
-        let anchor = Mercator.point(centre)
-        let offset = CGPoint(x: (point.x - size.width / 2) / worldWidth,
-                             y: (point.y - size.height / 2) / worldWidth)
-        let target = CGPoint(x: anchor.x + offset.x, y: anchor.y + offset.y)
-
         worldWidth = next
-        let scaled = CGPoint(x: (point.x - size.width / 2) / worldWidth,
-                             y: (point.y - size.height / 2) / worldWidth)
-        centre = Mercator.coordinate(CGPoint(x: target.x - scaled.x,
-                                             y: min(max(target.y - scaled.y, 0), 1)))
+        hold(before, at: point, in: size)
     }
 
-    /// Pans by a drag, measured from where the drag started.
-    mutating func pan(from start: MapCamera, by translation: CGSize) {
-        let anchor = Mercator.point(start.centre)
-        let moved = CGPoint(x: anchor.x - translation.width / start.worldWidth,
-                            y: anchor.y - translation.height / start.worldWidth)
-        centre = Mercator.coordinate(CGPoint(x: moved.x, y: min(max(moved.y, 0), 1)))
-        worldWidth = start.worldWidth
+    /// Turns by a drag, measured from where the drag began, so a drag is absolute rather than
+    /// a running sum. Whatever was grabbed stays under the finger.
+    mutating func turn(from start: MapCamera, grabbing grabbed: CGPoint,
+                       to moved: CGPoint, in size: CGSize) {
+        self = start
+        guard let held = start.projection(in: size).direction(at: grabbed) else { return }
+        hold(held, at: moved, in: size)
     }
 
-    /// Frames a set of coordinates with a tenth of the view as margin, so the end points are
+    /// Frames a set of coordinates with a little of the view as margin, so the end points are
     /// not sitting on the frame.
     mutating func fit(_ coordinates: [Coordinate], in size: CGSize) {
-        guard size.width > 40, size.height > 40 else { return }
+        guard size.width > 40, size.height > 40, !coordinates.isEmpty else { return }
+
+        let cap = SphericalCap(coordinates.map(\.direction))
+        centre = Coordinate(cap.centre)
+
         guard coordinates.count > 1 else {
-            if let only = coordinates.first {
-                centre = only
-                worldWidth = max(size.width * 40, 12_000)
-            }
+            worldWidth = max(size.width * 40, 12_000)
             return
         }
 
-        let projected = coordinates.map(Mercator.point)
-        let minX = projected.map(\.x).min() ?? 0, maxX = projected.map(\.x).max() ?? 1
-        let minY = projected.map(\.y).min() ?? 0, maxY = projected.map(\.y).max() ?? 1
-        let spanX = max(maxX - minX, 0.000002)
-        let spanY = max(maxY - minY, 0.000002)
-
-        worldWidth = min(min(size.width * 0.8 / spanX, size.height * 0.8 / spanY),
+        // A place `radius` round the globe is drawn `sin(radius)` of the way out from the
+        // middle, so that is what has to fit inside the panel.
+        let out = max(cap.sinRadius, 0.02)
+        let wanted = Double(min(size.width, size.height)) * 0.4 / out * 2 * .pi
+        worldWidth = min(max(CGFloat(wanted), Self.widthRange.lowerBound),
                          Self.widthRange.upperBound)
-        centre = Mercator.coordinate(CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2))
     }
 }
