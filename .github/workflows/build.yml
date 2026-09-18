@@ -19,8 +19,23 @@ jobs:
           chmod +x build.sh
           ./build.sh --doctor
 
+      # Signed the same way a release is, so a signature that fails does so here, on a
+      # push, rather than first being noticed in something already published.
+      - name: Signing certificate
+        env:
+          CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          chmod +x Tools/ci-signing-keychain.sh
+          ./Tools/ci-signing-keychain.sh
+
       - name: Build
         run: ./build.sh
+
+      - name: Report the signature
+        run: |
+          codesign -dvvv build/Chartdesk.app 2>&1 | grep -E 'Identifier|Authority' || true
+          codesign -d --requirements - build/Chartdesk.app 2>&1 | tail -2 || true
 
       - name: Package
         run: ditto -c -k --keepParent build/Chartdesk.app Chartdesk.app.zip

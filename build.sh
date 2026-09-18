@@ -355,15 +355,19 @@ xattr -cr "$APP" 2>/dev/null || true
 find "$APP" -name '._*' -delete 2>/dev/null || true
 
 SIGNED=no
+SIGN_ERROR=""
 for ATTEMPT in 1 2 3 4 5; do
 	xattr -c "$APP" 2>/dev/null || true
-	if codesign --force "${SIGN_AS[@]}" "$APP" 2>/dev/null; then
+	if SIGN_ERROR="$(codesign --force "${SIGN_AS[@]}" "$APP" 2>&1)"; then
 		SIGNED=yes
 		break
 	fi
 done
 if [ "$SIGNED" = no ]; then
 	warn "Signing (${SIGN_LABEL}) failed; the app may be refused on Apple silicon."
+	# And what codesign said about it. This used to go to /dev/null, which meant a release
+	# went out signed ad-hoc and nothing anywhere said why.
+	printf '%s\n' "$SIGN_ERROR" | sed 's/^/    /' >&2
 fi
 
 step "Built ${APP}"
