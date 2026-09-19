@@ -304,6 +304,10 @@ struct RouteMapView: View {
         else { return }
         context.draw(Image(decorative: image, scale: 2),
                      in: CGRect(origin: .zero, size: sheet.size))
+        // Taken down a third, so what goes over it reads. Over the whole sheet rather than
+        // over the tiles, so a half-loaded view dims evenly.
+        context.fill(Path(CGRect(origin: .zero, size: sheet.size)),
+                     with: .color(.black.opacity(BaseMap.dimming)))
     }
 
     /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
@@ -359,14 +363,14 @@ struct RouteMapView: View {
     /// dashed where the boundary is advisory or the area is only sometimes active.
     private static func stroke(of klass: AirspaceClass) -> StrokeStyle {
         switch klass {
-        case .a: return StrokeStyle(lineWidth: 1.4)
-        case .b: return StrokeStyle(lineWidth: 1.6)
-        case .c: return StrokeStyle(lineWidth: 1.4)
-        case .d: return StrokeStyle(lineWidth: 1.2, dash: [5, 3])
-        case .e: return StrokeStyle(lineWidth: 1, dash: [2, 3])
-        case .prohibited: return StrokeStyle(lineWidth: 1.8)
-        case .restricted: return StrokeStyle(lineWidth: 1.5)
-        case .danger: return StrokeStyle(lineWidth: 1.4, dash: [6, 3])
+        case .a: return StrokeStyle(lineWidth: 2)
+        case .b: return StrokeStyle(lineWidth: 2.2)
+        case .c: return StrokeStyle(lineWidth: 2)
+        case .d: return StrokeStyle(lineWidth: 1.8, dash: [5, 3])
+        case .e: return StrokeStyle(lineWidth: 1.5, dash: [2, 3])
+        case .prohibited: return StrokeStyle(lineWidth: 2.4)
+        case .restricted: return StrokeStyle(lineWidth: 2.1)
+        case .danger: return StrokeStyle(lineWidth: 2, dash: [6, 3])
         }
     }
 

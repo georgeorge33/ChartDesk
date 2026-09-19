@@ -83,12 +83,14 @@ enum BaseMap: String, CaseIterable, Identifiable {
         }
     }
 
-    /// How many device pixels one tile pixel is meant to cover.
+    /// How many device pixels one tile pixel is meant to cover: one, always.
     ///
-    /// One, for a tile server: 256-pixel tiles are drawn at 256 points by every slippy map
-    /// there is, and OpenTopoMap has no Retina set. Two for Apple's, which are rendered to
-    /// order and may as well be rendered sharp.
-    var tileScale: CGFloat { isAppleMaps ? 2 : 1 }
+    /// Drawing a tile server's 256-pixel squares at 256 *points* is what a slippy map does
+    /// on a screen with one pixel to the point, and on a Retina screen it magnifies every
+    /// tile twofold — which is what a blurry map looks like. OpenTopoMap publishes no Retina
+    /// set, so the answer is to fetch one level deeper and draw it at half the size: four
+    /// times the tiles, and the difference between reading "Reichenau" and not.
+    var tileScale: CGFloat { 2 }
 
     /// As deep as the source goes. Past this the warp magnifies the deepest tiles, which is
     /// what every map does at the bottom of its pyramid.
@@ -137,6 +139,13 @@ enum BaseMap: String, CaseIterable, Identifiable {
     /// obscured. `MKMapView` draws this for you; a snapshot is a bare image, so the map draws
     /// it in the corner with the others.
     static let appleAttribution = "Apple Maps"
+
+    /// How much to take off a base map before the overlays go over it.
+    ///
+    /// Both of these are made to be looked at on their own, and airspace over bright
+    /// hillshading is two things competing. A third off puts the map behind the chart
+    /// without turning it into a silhouette.
+    static let dimming: Double = 0.32
 
     /// Beyond this the raster base is not drawn at all.
     ///
@@ -577,9 +586,14 @@ enum BaseMapWarp {
             }
         }
         guard least.x <= most.x, least.y <= most.y else { return [] }
-        // A view wrapped round the back of the globe asks for the whole world; the drawn map
-        // covers those, and this refuses rather than fetching a thousand tiles.
-        guard most.x - least.x < 12, most.y - least.y < 12 else { return [] }
+        // A view wrapped round the back of the globe asks for the whole world; the drawn
+        // map covers those, and this refuses rather than fetching a thousand tiles. Generous
+        // on purpose: a wrapped view is hundreds of tiles across, while a legitimate one is
+        // as many as the window has room for — and when this read 12, raising the zoom by a
+        // level to sharpen the map made ordinary views exceed it and draw nothing at all.
+        guard most.x - least.x < 64, most.y - least.y < 64,
+              (most.x - least.x + 1) * (most.y - least.y + 1) <= 260
+        else { return [] }
 
         let middle = (x: Double(least.x + most.x) / 2, y: Double(least.y + most.y) / 2)
         var wanted: [MapTile] = []
@@ -677,14 +691,41 @@ enum BaseMapWarp {
                               let source = sources[atY * columns + atX]
                         else { continue }
 
-                        let u = (source.u0 + (gx - Double(tileX)) * source.span) * Double(source.side)
-                        let v = (source.v0 + (gy - Double(tileY)) * source.span) * Double(source.side)
-                        let sx = min(max(Int(u), 0), source.side - 1)
-                        let sy = min(max(Int(v), 0), source.side - 1)
-                        let from = (sy * source.side + sx) * 4
-                        out[at] = source.bytes[from]
-                        out[at + 1] = source.bytes[from + 1]
-                        out[at + 2] = source.bytes[from + 2]
+                        let u = (source.u0 + (gx - Double(tileX)) * source.span)
+                            * Double(source.side) - 0.5
+                        let v = (source.v0 + (gy - Double(tileY)) * source.span)
+                            * Double(source.side) - 0.5
+
+                        // Between four pixels rather than the nearest one. A tile server's
+                        // squares are drawn two device pixels wide on a Retina screen and
+                        // the deepest zooms magnify them further still; taking the nearest
+                        // makes that a staircase, and weighing the four around it makes it
+                        // a photograph of a map.
+                        let leftX = Int(u.rounded(.down)), topY = Int(v.rounded(.down))
+                        let acrossWeight = u - Double(leftX), downWeight = v - Double(topY)
+                        let x0 = min(max(leftX, 0), source.side - 1)
+                        let y0 = min(max(topY, 0), source.side - 1)
+                        let x1 = min(x0 + 1, source.side - 1)
+                        let y1 = min(y0 + 1, source.side - 1)
+
+                        let topLeft = (y0 * source.side + x0) * 4
+                        let topRight = (y0 * source.side + x1) * 4
+                        let bottomLeft = (y1 * source.side + x0) * 4
+                        let bottomRight = (y1 * source.side + x1) * 4
+                        let leftShare = 1 - acrossWeight, topShare = 1 - downWeight
+                        let topLeftShare = leftShare * topShare
+                        let topRightShare = acrossWeight * topShare
+                        let bottomLeftShare = leftShare * downWeight
+                        let bottomRightShare = acrossWeight * downWeight
+
+                        for channel in 0..<3 {
+                            let blended =
+                                Double(source.bytes[topLeft + channel]) * topLeftShare
+                                + Double(source.bytes[topRight + channel]) * topRightShare
+                                + Double(source.bytes[bottomLeft + channel]) * bottomLeftShare
+                                + Double(source.bytes[bottomRight + channel]) * bottomRightShare
+                            out[at + channel] = UInt8(min(max(blended, 0), 255))
+                        }
                         out[at + 3] = 255
                     }
                 }

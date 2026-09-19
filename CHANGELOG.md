@@ -278,8 +278,17 @@ first thing to stop.
   works with the network off.
 - **Topographic is OpenTopoMap**: OpenStreetMap with SRTM contours and hillshading over it,
   fetched a tile at a time and **kept on this Mac**, so anywhere you have looked at works
-  with the network off afterwards. First tile in about 200ms, a whole view in under half a
-  second, and 24ms to redraw it all from the cache.
+  with the network off afterwards. A tile arrives in tens of milliseconds and a whole view
+  in about a second; from the cache, 24ms.
+- **Drawn a pixel to a pixel.** A tile server's 256-pixel squares drawn at 256 *points* are
+  magnified twofold on a Retina screen, which is what a blurry map looks like; OpenTopoMap
+  publishes no Retina set, so the map fetches one level deeper and draws it at half the
+  size. Four times the tiles, and the difference between reading a village's name and not.
+  Sampled between four pixels rather than at the nearest one, which costs 2ms a frame and
+  takes the staircases off everything.
+- **A third of the light comes off the base** before the overlays go over it. Both of these
+  maps are made to be looked at on their own, and airspace over bright hillshading is two
+  things competing.
 - **Satellite is Apple Maps**, by way of `MKMapSnapshotter` — no key, no account, and Apple
   carries the licensing of the imagery. Nothing of Apple's is kept: their terms do not allow
   it, so that layer needs the network every time.
