@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.1.0-rc.6
+
+What this candidate adds to rc.5. Full release soon.
+
+**A Layers button**
+
+- **In the top right corner of the map**, on its own, away from the map controls — what it
+  holds are not map controls. Each layer is read the first time it is switched on rather than
+  at launch.
+- **Airspace**, drawn the way a chart draws it: Class B solid blue, C magenta, D blue and
+  dashed, each ring labelled with its ceiling over its floor. Boston's Class B comes out as
+  its four shelves — 70/SFC, 70/20, 70/30, 70/40 — with each pair of figures out in the ring
+  it belongs to rather than four of them stacked over the runway. From the FAA, which is
+  public domain and thorough over the United States.
+- **Or from openAIP**, for the rest of the world: 18,488 rings against the FAA's 4,223, with
+  classes A and E as well as B, C and D, and the prohibited, restricted and danger areas that
+  a chart outside America is mostly made of. Munich comes back as a Class D CTR to 3,500ft
+  under Class C shelves to FL100, which is what the German AIP says. Not bundled — openAIP's
+  data is CC BY-NC and takes a key — so `Tools/make_openaip.py` builds it on your own Mac with
+  your own free key, into Application Support. Until it is there the choice is greyed out and
+  the FAA's table keeps drawing.
+- Heights say what they are measured from: `SFC`, `70` for hundreds of feet above the sea,
+  `FL195`, `25 AGL`. A European danger area's floor is usually the last of those, and reading
+  it as height above the sea puts it 2,000ft wrong over high ground.
+- **A ring too small to read is left out** rather than drawn as a speck. At 16° across, 1,872
+  rings are in view over Chicago and 3,835 over the Alps; only the ones more than 44 points
+  across are drawn, which is 152 and 860.
+- **State borders** and **town and city names**, both Natural Earth. Names are asked for in
+  rank order, so the room there is goes to the places that matter.
+
+**A finer coast, and twenty times further in**
+
+- The deepest level of detail now draws land from **OpenStreetMap** rather than Natural Earth:
+  450 points around Boston against 77, which is the difference between a harbour and a notch.
+  There is no choice of coastline to make — the app simply draws the best one it can.
+- Closer still, **the full OpenStreetMap coastline** — 79 million points — takes over one
+  degree at a time, where it is on the Mac. 4 GB is not shippable, so
+  `Tools/make_coastline.py` builds it into Application Support and the map reads only the
+  cells in view: 41,147 points around Boston.
+- **The zoom goes twenty times deeper**, down to about half a metre to the point, and the
+  readout switches to kilometres and metres where degrees stop meaning anything.
+- Lakes and borders stay Natural Earth: OpenStreetMap's coastline download is the coast and
+  nothing else.
+
+**Fixed**
+
+- **Ocean drawn as land.** A shape running off the edge of the globe is closed along that
+  edge, and the rule for which way round that arc goes was wrong in five different ways
+  before it was right — at 24°S 77°W it filled the South Atlantic. Every ring is now checked
+  against the face it would cover, and one that would paint over most of the globe is dropped
+  instead: the worst ring anywhere now covers 0.47 of the face, and land averages 0.30 over
+  108 views, where Earth is 0.29.
+- **Straight lines ruled across the land** at close zoom. Not the graticule, which is what it
+  looked like: the full coastline comes cut into pieces on a whole-degree grid, and stroking
+  every piece drew the cuts as though they were coast. That layer is filled and not outlined
+  now. The graticule also stops before it gets that close.
+- The gap between a ceiling, its rule and its floor — the rule was positioned using the height
+  of both lines instead of the top one, so it sat on top of the figure below it.
+
 ## 1.1.0-rc.5
 
 What this candidate adds to rc.4. Full release soon.
