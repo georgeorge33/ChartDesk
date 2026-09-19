@@ -105,6 +105,9 @@ extension Font {
     /// written out at each site so the floor is one number to change and nothing can quietly
     /// slip under it.
     static let ngSmall = Font.system(size: 10.5)
+    /// The credits in the corner of the map, and nothing else. Its own size so that making
+    /// it smaller does not shrink every caption in the app with it.
+    static let ngCredit = Font.system(size: 5)
     static let ngSmallMedium = Font.system(size: 10.5, weight: .medium)
     static let ngSmallBold = Font.system(size: 10.5, weight: .semibold)
     static let ngSmallMono = Font.system(size: 10.5, design: .monospaced)

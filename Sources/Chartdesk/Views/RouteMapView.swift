@@ -830,15 +830,15 @@ struct RouteMapView: View {
                 // Apple's own mark for Apple's own maps: the logo is in SF Symbols, which
                 // is where a Mac app is meant to get it from.
                 if line == BaseMap.appleAttribution {
-                    HStack(spacing: 3) {
-                        Image(systemName: "apple.logo").font(.system(size: 9))
+                    HStack(spacing: 2) {
+                        Image(systemName: "apple.logo").font(.system(size: 4.5))
                         Text(line)
                     }
-                    .font(.ngSmall)
+                    .font(.ngCredit)
                     .foregroundStyle(.tertiary)
                 } else {
                     Text(line)
-                        .font(.ngSmall)
+                        .font(.ngCredit)
                         .foregroundStyle(.tertiary)
                 }
             }
