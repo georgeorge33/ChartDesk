@@ -280,10 +280,24 @@ first thing to stop.
   Apple carries the licensing of the imagery. Topographic is Apple's standard map with
   realistic elevation; Satellite is its imagery.
 - **Reprojected, not stretched.** Apple's snapshots are Mercator and this map is a globe, so
-  every pixel of the sheet is traced back through the sphere to the snapshot. Stretching the
-  picture into place instead would be 2.8% out across a three-degree view at Alpine
+  every pixel of the sheet is traced back through the sphere to the tile under it. Stretching
+  the picture into place instead would be 2.8% out across a three-degree view at Alpine
   latitudes — twenty-eight points on a thousand-point panel, which looks exactly like a map
-  that is wrong. The warp costs 9ms at Retina size and is redone only when the camera moves.
+  that is wrong. On a sphere the Mercator northing collapses to `atanh` of the direction's
+  vertical component, which is what gets the whole warp down to 13ms at Retina size; it is
+  redone only when the camera moves.
+- **Tiles, kept.** One snapshot of the whole view had to be fetched again the moment anything
+  moved: 1.3 seconds inside MapKit for a 2800×2400 image, and another quarter of a second
+  encoding it to TIFF and back, every single time. It is a pyramid of Mercator tiles now,
+  asked for as map rectangles so each one is exactly a tile, and kept — so a pan of half a
+  screen reuses nine tiles of twelve and redraws in **60ms** instead of a second and a half,
+  and zooming a step you have already seen costs nothing at all. Four requests in flight at
+  once, which measured fastest: one at a time takes 12.6 seconds to fill a view, four takes
+  2.6, and ten takes 6.5 because they contend.
+- **Coarse first, then sharp.** Three levels out is one or two tiles covering the whole view,
+  so there is something to look at while the detail lands, and it sharpens as it arrives —
+  the way every map does it. Nothing is written to disk: Apple does not permit an app to keep
+  its own copy, so the tiles live in memory and go when the app does.
 - Drawn from about 30° across and closer, over the drawn map rather than instead of it: a
   snapshot arrives a moment after the view moves, and a map that goes blank while it waits is
   worse than one that sharpens. Apple does not permit an app to keep its own copy, so these

@@ -300,7 +300,7 @@ struct RouteMapView: View {
     private func appleMaps(in context: inout GraphicsContext, sheet: MapSheet) {
         guard showsAppleMaps,
               let image = base.warped(camera: camera, projection: sheet.projection,
-                                      size: sheet.size, scale: 2)
+                                      size: sheet.size, scale: 2, z: baseMapZoom)
         else { return }
         context.draw(Image(decorative: image, scale: 2),
                      in: CGRect(origin: .zero, size: sheet.size))
@@ -639,23 +639,24 @@ struct RouteMapView: View {
         guard browser.baseMap.isAppleMaps, size.width > 0, degreesAcross <= BaseMap.widest
         else { return }
         let sheet = MapSheet(camera: camera, size: size)
-        var west = 180.0, east = -180.0, south = 90.0, north = -90.0
-        var seen = false
-        for x in stride(from: 0.0, through: 1.0, by: 0.25) {
-            for y in stride(from: 0.0, through: 1.0, by: 0.25) {
-                let at = CGPoint(x: Double(size.width) * x, y: Double(size.height) * y)
-                guard let direction = sheet.projection.direction(at: at) else { continue }
-                let corner = Coordinate(direction)
-                west = min(west, corner.longitude); east = max(east, corner.longitude)
-                south = min(south, corner.latitude); north = max(north, corner.latitude)
-                seen = true
-            }
-        }
-        // A view straddling the antimeridian comes out as the whole world the wrong way
-        // round. Rare, and the drawn map covers it.
-        guard seen, east > west, east - west < 180 else { return }
-        base.request(layer: browser.baseMap, west: west, east: east, south: south, north: north,
-                     degreesAcross: degreesAcross, size: size)
+        let z = baseMapZoom
+        // A handful of coarse tiles first, then the sharp ones. Three levels out is one or
+        // two squares covering the whole view, so there is something to look at in a couple
+        // of hundred milliseconds instead of a second and a half, and it sharpens as the
+        // rest land. Every map you have ever used does this.
+        let coarse = z > 3
+            ? BaseMapWarp.tiles(projection: sheet.projection, size: size, z: z - 3) : []
+        let sharp = BaseMapWarp.tiles(projection: sheet.projection, size: size, z: z)
+        // The middle of the view first — it is what you are looking at — then the coarse
+        // cover for everything else, then the rest of the detail.
+        base.request(Array(sharp.prefix(1)) + coarse + sharp.dropFirst(),
+                     layer: browser.baseMap)
+    }
+
+    /// Which level of the tile pyramid this view calls for.
+    private var baseMapZoom: Int {
+        BaseMapWarp.zoom(worldWidth: camera.worldWidth, scale: 2,
+                         latitude: camera.centre.latitude)
     }
 
     /// Asks for the cells of the full coastline the view covers.
@@ -816,7 +817,7 @@ struct RouteMapView: View {
 
     /// True when Apple's map is chosen, close enough to be drawn, and has arrived.
     private var showsAppleMaps: Bool {
-        browser.baseMap.isAppleMaps && degreesAcross <= BaseMap.widest && base.patch != nil
+        browser.baseMap.isAppleMaps && degreesAcross <= BaseMap.widest && base.hasTiles
     }
 
     private var credit: some View {
