@@ -1,7 +1,8 @@
 # Data in Chartdesk
 
-Chartdesk draws on several public datasets. Most are public domain; two are not — the
-coastline and the airspace — and those two come with obligations rather than courtesies.
+Chartdesk draws on several public datasets. Most are public domain; the coastline, the
+airspace and the topographic base map are not, and those come with obligations rather than
+courtesies.
 
 ## OpenStreetMap — ODbL 1.0
 
@@ -55,12 +56,30 @@ than to inherit with a download.
 **Attribution, where it is done:** "© openAIP contributors · CC BY-NC 4.0" appears on the map
 whenever openAIP airspace is being drawn, and beside the choice in the Layers panel.
 
+## OpenTopoMap — CC-BY-SA 3.0
+
+**What:** the Topographic base map. OpenStreetMap data with SRTM contours and hillshading
+rendered over it, fetched a tile at a time from
+[opentopomap.org](https://opentopomap.org/about) and reprojected onto the globe. Nothing is
+bundled; tiles are fetched as you look at places and **kept** in Application Support, so
+anywhere you have been works with the network off.
+
+**Licence:** map data © OpenStreetMap contributors and SRTM, under ODbL; the rendering ©
+OpenTopoMap under [CC-BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Both
+credits appear on the map whenever the layer is drawn, and the Layers panel links to
+OpenTopoMap's own page.
+
+**Their servers, their rules.** The tiles come from volunteers. This app fetches at most four
+at a time, never re-fetches one it already has, sends a user agent that says who is calling,
+and caps what it keeps at 400 MB. OpenTopoMap asks only that their servers not be strained by
+mass downloads, and this is nowhere near that.
+
 ## Apple Maps — Apple's own terms
 
-**What:** the Topographic and Satellite base maps, which are `MKMapSnapshotter` images from
-Apple Maps, reprojected onto the globe. Nothing is bundled and nothing is stored: Apple does
-not permit an app to keep its own copy of map imagery, which is why these two need the
-network every time and the drawn map stays underneath them.
+**What:** the Satellite base map, which is `MKMapSnapshotter` imagery from Apple Maps,
+reprojected onto the globe. Nothing is bundled and nothing is stored: Apple does not permit
+an app to keep its own copy of map imagery, which is why this one needs the network every
+time and the drawn map stays underneath it.
 
 **Terms:** MapKit's, as part of the Apple Developer Program agreement. No key or account is
 needed to use it in a Mac app. Apple asks that its maps be credited where they are shown and
@@ -68,6 +87,9 @@ that the credit not be obscured — `MKMapView` draws that itself, and a snapsho
 the map draws it: the Apple logo and "Apple Maps" sit in the corner with the other credits
 whenever Apple's imagery is on the sheet, and the Layers panel links to Apple's own notices
 at [gspe21-ssl.ls.apple.com](https://gspe21-ssl.ls.apple.com/html/attribution.html).
+
+Esri's World Imagery was the obvious alternative and is not usable here: it requires an
+ArcGIS licence.
 
 ## OurAirports — public domain
 

@@ -230,11 +230,11 @@ struct RouteMapView: View {
 
         }
 
-        // Apple Maps over the drawn land, where it is switched on and has arrived. The drawn
+        // The tiles over the drawn land, where one is chosen and has arrived. The drawn
         // map stays underneath rather than being skipped: a snapshot covers the view a
         // moment after the view moves, and a map that goes blank while it waits is worse
         // than one that sharpens.
-        appleMaps(in: &context, sheet: sheet)
+        rasterBase(in: &context, sheet: sheet)
 
         // Frontiers on top of it — under the imagery they would be invisible, and a border
         // is the one thing imagery cannot show you.
@@ -296,9 +296,9 @@ struct RouteMapView: View {
         }
     }
 
-    /// Apple Maps, reprojected onto the globe.
-    private func appleMaps(in context: inout GraphicsContext, sheet: MapSheet) {
-        guard showsAppleMaps,
+    /// The tiled base map, reprojected onto the globe.
+    private func rasterBase(in context: inout GraphicsContext, sheet: MapSheet) {
+        guard showsRaster,
               let image = base.warped(camera: camera, projection: sheet.projection,
                                       size: sheet.size, scale: 2, z: baseMapZoom)
         else { return }
@@ -636,7 +636,7 @@ struct RouteMapView: View {
     /// the centre plus a span, which on a sphere is not the same thing and is short at the
     /// corners.
     private func requestBaseMap() {
-        guard browser.baseMap.isAppleMaps, size.width > 0, degreesAcross <= BaseMap.widest
+        guard browser.baseMap.needsNetwork, size.width > 0, degreesAcross <= BaseMap.widest
         else { return }
         let sheet = MapSheet(camera: camera, size: size)
         let z = baseMapZoom
@@ -655,7 +655,7 @@ struct RouteMapView: View {
 
     /// Which level of the tile pyramid this view calls for.
     private var baseMapZoom: Int {
-        BaseMapWarp.zoom(worldWidth: camera.worldWidth, scale: 2,
+        BaseMapWarp.zoom(for: browser.baseMap, worldWidth: camera.worldWidth,
                          latitude: camera.centre.latitude)
     }
 
@@ -802,7 +802,7 @@ struct RouteMapView: View {
         // Under Apple's imagery the drawn coast is there but invisible, and a credit for
         // something nobody can see is clutter rather than honesty.
         var found: [String] = []
-        if !showsAppleMaps {
+        if !showsRaster {
             found.append("\(Coastline.attribution) · \(Coastline.licence)")
         }
         found.append("Natural Earth · lakes, borders, places")
@@ -811,13 +811,13 @@ struct RouteMapView: View {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
         found.append("OurAirports · airports and runways")
-        if showsAppleMaps { found.append(BaseMap.attribution) }
+        if showsRaster { found.append(contentsOf: browser.baseMap.attribution) }
         return found
     }
 
     /// True when Apple's map is chosen, close enough to be drawn, and has arrived.
-    private var showsAppleMaps: Bool {
-        browser.baseMap.isAppleMaps && degreesAcross <= BaseMap.widest && base.hasTiles
+    private var showsRaster: Bool {
+        browser.baseMap.needsNetwork && degreesAcross <= BaseMap.widest && base.hasTiles
     }
 
     private var credit: some View {
@@ -825,7 +825,7 @@ struct RouteMapView: View {
             ForEach(credits, id: \.self) { line in
                 // Apple's own mark for Apple's own maps: the logo is in SF Symbols, which
                 // is where a Mac app is meant to get it from.
-                if line == BaseMap.attribution {
+                if line == BaseMap.appleAttribution {
                     HStack(spacing: 3) {
                         Image(systemName: "apple.logo").font(.system(size: 9))
                         Text(line)
@@ -859,7 +859,7 @@ struct RouteMapView: View {
     /// one is still being read.
     private var readout: String {
         // Which map you are looking at, which under imagery is not the coastline tier.
-        if showsAppleMaps { return "\(across) across · \(position) · \(browser.baseMap.name)" }
+        if showsRaster { return "\(across) across · \(position) · \(browser.baseMap.name)" }
         var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
         if geography.isCatchingUp(to: camera.detail) {
             tier += " …"

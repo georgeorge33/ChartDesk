@@ -23,25 +23,26 @@ struct MapLayerPanel: View {
                 ForEach(BaseMap.allCases) { layer in
                     baseChoice(layer)
                 }
-                if browser.baseMap.isAppleMaps {
+                if browser.baseMap.needsNetwork {
                     if let failure = base.failure {
-                        Text("Apple Maps did not answer: \(failure)")
+                        Text("\(browser.baseMap.name) did not answer: \(failure)")
                             .font(.ngSmall)
                             .foregroundStyle(Color.ngWarning)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Drawn from about 30° across and closer. Apple does not permit "
-                             + "an app to keep its own copy, so this one needs the network "
-                             + "every time — the drawn map stays underneath for when there "
-                             + "is none.")
+                        Text("Drawn from about 30° across and closer, over the drawn map "
+                             + "rather than instead of it — so where the tiles have not "
+                             + "arrived, or there is no network, you still have a map.")
                             .font(.ngSmall)
                             .foregroundStyle(.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    // Apple asks that its maps carry a link to who the data came from. The
-                    // map itself carries the logo; this is the other half of it.
-                    Link("Legal notices for Apple Maps", destination: BaseMap.legal)
-                        .font(.ngSmall)
+                    // Both of these ask to be credited, and one of them asks for a link to
+                    // who its data came from. The map carries the credit; this is the link.
+                    if let legal = browser.baseMap.legal {
+                        Link("Legal notices for \(browser.baseMap.name)", destination: legal)
+                            .font(.ngSmall)
+                    }
                 }
             }
 

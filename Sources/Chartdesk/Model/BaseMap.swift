@@ -14,12 +14,30 @@ enum BaseMap: String, CaseIterable, Identifiable {
 
     /// Natural Earth and OpenStreetMap, drawn as shapes. Works on a plane.
     case vector
-    /// Apple's standard map with realistic elevation: relief and place names.
+    /// OpenTopoMap: OpenStreetMap with contours and hillshading over it.
     case topographic
     /// Apple's imagery.
     case satellite
 
     var id: String { rawValue }
+
+    /// Where a layer's tiles come from, which is not the same question for all of them.
+    enum Source {
+        /// Drawn from the tables in the app; no tiles at all.
+        case drawn
+        /// Rendered on demand by MapKit, a snapshot at a time.
+        case appleMaps
+        /// Fetched over HTTP from a tile server, `{z}/{x}/{y}`.
+        case web(String)
+    }
+
+    var source: Source {
+        switch self {
+        case .vector: return .drawn
+        case .topographic: return .web("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+        case .satellite: return .appleMaps
+        }
+    }
 
     var name: String {
         switch self {
@@ -32,39 +50,100 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .vector:
-            return "Coastline, lakes and borders, drawn from the tables in the app. The only "
-                 + "one that works with the network off."
+            return "Coastline, lakes and borders, drawn from the tables in the app. Always "
+                 + "there, network or no network."
         case .topographic:
-            return "Apple Maps with terrain relief and place names. Needs the network."
+            return "OpenTopoMap: OpenStreetMap with contour lines, hillshading and peak "
+                 + "heights over it. Kept on this Mac once fetched, so anywhere you have "
+                 + "looked works offline."
         case .satellite:
-            return "Apple Maps imagery. Needs the network."
+            return "Apple Maps imagery. Needs the network every time — Apple does not "
+                 + "permit an app to keep a copy."
         }
     }
 
-    /// Which of these is Apple's, and so needs the network and the credit.
-    var isAppleMaps: Bool { self != .vector }
+    /// True for the one whose tiles come from Apple, which changes what must be credited
+    /// and what may be kept.
+    var isAppleMaps: Bool {
+        if case .appleMaps = source { return true }
+        return false
+    }
+
+    var needsNetwork: Bool {
+        if case .drawn = source { return false }
+        return true
+    }
+
+    /// Tile servers hand out what they hand out; MapKit renders whatever is asked for.
+    var tilePixels: Int {
+        switch source {
+        case .drawn: return 0
+        case .appleMaps: return Int(MapTile.applePoints) * 2      // Retina doubles the ask
+        case .web: return 256
+        }
+    }
+
+    /// How many device pixels one tile pixel is meant to cover.
+    ///
+    /// One, for a tile server: 256-pixel tiles are drawn at 256 points by every slippy map
+    /// there is, and OpenTopoMap has no Retina set. Two for Apple's, which are rendered to
+    /// order and may as well be rendered sharp.
+    var tileScale: CGFloat { isAppleMaps ? 2 : 1 }
+
+    /// As deep as the source goes. Past this the warp magnifies the deepest tiles, which is
+    /// what every map does at the bottom of its pyramid.
+    var deepestZoom: Int {
+        switch self {
+        case .vector: return 0
+        // Measured: z18 returns the same 4,343-byte placeholder everywhere.
+        case .topographic: return 17
+        case .satellite: return 20
+        }
+    }
+
+    /// Tiles from a server may be kept; Apple's may not.
+    var cachesOnDisk: Bool {
+        if case .web = source { return true }
+        return false
+    }
+
+    /// Shown on the map whenever the layer is drawn, because both of these ask for it.
+    var attribution: [String] {
+        switch self {
+        case .vector: return []
+        case .topographic:
+            return ["© OpenStreetMap contributors · SRTM",
+                    "© OpenTopoMap · CC-BY-SA"]
+        case .satellite: return ["Apple Maps"]
+        }
+    }
 
     @MainActor
     var configuration: MKMapConfiguration? {
+        guard isAppleMaps else { return nil }
+        return MKImageryMapConfiguration(elevationStyle: .flat)
+    }
+
+    /// Where to read the notices for whatever this layer is made of.
+    var legal: URL? {
         switch self {
         case .vector: return nil
-        case .topographic: return MKStandardMapConfiguration(elevationStyle: .realistic)
-        case .satellite: return MKImageryMapConfiguration(elevationStyle: .flat)
+        case .topographic: return URL(string: "https://opentopomap.org/about")
+        case .satellite: return URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")
         }
     }
 
     /// Apple asks that its maps be credited where they are shown, and that the credit not be
     /// obscured. `MKMapView` draws this for you; a snapshot is a bare image, so the map draws
     /// it in the corner with the others.
-    static let attribution = "Apple Maps"
-    static let legal = URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")!
+    static let appleAttribution = "Apple Maps"
 
     /// Beyond this the raster base is not drawn at all.
     ///
-    /// Apple's snapshots are Mercator, which has no north pole and stretches without limit
-    /// towards it; a hemisphere's worth of it is not a thing that can be asked for. Past
-    /// about thirty degrees across the drawn map takes over — which is also where imagery
-    /// stops telling you anything a coastline does not.
+    /// Tiles are Mercator, which has no north pole and stretches without limit towards it; a
+    /// hemisphere's worth of it is not a thing that can be asked for. Past about thirty
+    /// degrees across the drawn map takes over — which is also where a base map stops
+    /// telling you anything a coastline does not.
     static let widest: Double = 30
 }
 
@@ -77,15 +156,13 @@ enum BaseMap: String, CaseIterable, Identifiable {
 /// all the next time it is wanted.
 struct MapTile: Hashable {
 
-    /// How big a tile is asked for, in points; Retina doubles it, so the pixels are twice
-    /// this.
+    /// How big an Apple tile is asked for, in points; Retina doubles it.
     ///
-    /// 512 rather than the 256 every slippy map uses, because these are not fetched from a
-    /// tile server but rendered on demand, and the per-request cost dominates: measured over
-    /// fresh ground, a view is 20 tiles this size against 54 of the smaller, and is fully
-    /// sharp in 1.1 seconds against 1.7.
-    nonisolated(unsafe) static var points: CGFloat = 512
-    static var pixels: Int { Int(points) * 2 }
+    /// 512 rather than the 256 a tile server uses, because these are rendered on demand
+    /// rather than fetched, and the per-request cost dominates: measured over fresh ground,
+    /// a view is 20 tiles this size against 54 of the smaller, and is fully sharp in 1.1
+    /// seconds against 1.7.
+    nonisolated(unsafe) static var applePoints: CGFloat = 512
 
     let z: Int
     let x: Int
@@ -193,12 +270,13 @@ final class BaseMapStore: ObservableObject {
 
     /// Asks for whichever of these are not in hand, nearest the middle of the view first.
     func request(_ wanted: [MapTile], layer: BaseMap) {
-        guard layer.isAppleMaps else { return }
+        guard layer.needsNetwork else { return }
         if layer != self.layer { forget(); self.layer = layer }
 
         // Whatever was queued and is no longer wanted is dropped rather than fetched: a drag
         // across a continent should not spend the next minute filling in where it has been.
         queued = wanted.filter { tiles[$0] == nil && !loading.contains($0) }
+        if layer.cachesOnDisk { sweepCache() }
         start()
     }
 
@@ -212,9 +290,18 @@ final class BaseMapStore: ObservableObject {
     }
 
     private func fetch(_ tile: MapTile) {
+        switch layer.source {
+        case .drawn: loading.remove(tile)
+        case .appleMaps: fetchFromApple(tile)
+        case .web(let template): fetchFromServer(tile, template: template)
+        }
+    }
+
+    /// MapKit renders it to order.
+    private func fetchFromApple(_ tile: MapTile) {
         let options = MKMapSnapshotter.Options()
         options.mapRect = tile.rect
-        options.size = CGSize(width: MapTile.points, height: MapTile.points)
+        options.size = CGSize(width: MapTile.applePoints, height: MapTile.applePoints)
         if let configuration = layer.configuration {
             options.preferredConfiguration = configuration
         }
@@ -231,9 +318,134 @@ final class BaseMapStore: ObservableObject {
                     self.failure = error?.localizedDescription ?? "Apple Maps did not answer"
                     return
                 }
-                self.failure = nil
-                self.keep(pixels, as: tile)
-                self.version &+= 1
+                self.arrived(pixels, as: tile)
+            }
+        }
+    }
+
+    /// A tile server hands it over, and this one is allowed to keep it.
+    ///
+    /// Disk first, because a tile already fetched should never be asked for twice: it is
+    /// someone else's bandwidth, their usage policy asks as much, and it is the difference
+    /// between a map that works on a plane and one that does not.
+    private func fetchFromServer(_ tile: MapTile, template: String) {
+        let wanted = layer
+        let cached = Self.cacheURL(for: tile, layer: wanted)
+        guard let url = Self.address(template, tile) else {
+            loading.remove(tile)
+            start()
+            return
+        }
+
+        Self.work.async {
+            if let data = try? Data(contentsOf: cached), let pixels = Self.read(data) {
+                Task { @MainActor in
+                    self.loading.remove(tile)
+                    defer { self.start() }
+                    guard wanted == self.layer else { return }
+                    self.arrived(pixels, as: tile)
+                }
+                return
+            }
+
+            var request = URLRequest(url: url, timeoutInterval: 30)
+            // Every tile server's usage policy asks for an agent that says who is calling,
+            // and refuses the ones that do not.
+            request.setValue(Self.agent, forHTTPHeaderField: "User-Agent")
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let pixels = (code == 200 && data != nil) ? Self.read(data!) : nil
+                if let data = data, pixels != nil {
+                    try? FileManager.default.createDirectory(
+                        at: cached.deletingLastPathComponent(),
+                        withIntermediateDirectories: true)
+                    try? data.write(to: cached)
+                }
+                Task { @MainActor in
+                    self.loading.remove(tile)
+                    defer { self.start() }
+                    guard wanted == self.layer else { return }
+                    guard let pixels = pixels else {
+                        self.failure = error?.localizedDescription
+                            ?? "the tile server answered \(code)"
+                        return
+                    }
+                    self.arrived(pixels, as: tile)
+                }
+            }.resume()
+        }
+    }
+
+    private func arrived(_ pixels: TilePixels, as tile: MapTile) {
+        failure = nil
+        keep(pixels, as: tile)
+        version &+= 1
+    }
+
+    /// `{z}/{x}/{y}`, with the server's own letters spread across the tiles it asks you to.
+    nonisolated static func address(_ template: String, _ tile: MapTile) -> URL? {
+        let letters = ["a", "b", "c"]
+        let filled = template
+            .replacingOccurrences(of: "{s}", with: letters[abs(tile.x &+ tile.y) % letters.count])
+            .replacingOccurrences(of: "{z}", with: "\(tile.z)")
+            .replacingOccurrences(of: "{x}", with: "\(tile.x)")
+            .replacingOccurrences(of: "{y}", with: "\(tile.y)")
+        return URL(string: filled)
+    }
+
+    /// Where a kept tile lives. Not in the app, and not beside the charts.
+    nonisolated static func cacheURL(for tile: MapTile, layer: BaseMap) -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                                               in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+        return support
+            .appendingPathComponent("Chartdesk/tiles/\(layer.rawValue)/\(tile.z)/\(tile.x)",
+                                    isDirectory: true)
+            .appendingPathComponent("\(tile.y).png")
+    }
+
+    nonisolated static let agent =
+        "Chartdesk/1.1 (macOS; +https://github.com/georgeorge33/ChartDesk)"
+    nonisolated static let work = DispatchQueue(label: "chartdesk.tiles", qos: .userInitiated,
+                                                attributes: .concurrent)
+
+    /// Keeps the kept tiles from growing without end.
+    ///
+    /// Swept once per launch, in the background, oldest first. Four hundred megabytes is
+    /// several thousand tiles — every airfield you have looked at this year — and it is the
+    /// user's disk, not ours.
+    private var didSweep = false
+    private static let mostOnDisk = 400 * 1_048_576
+
+    private func sweepCache() {
+        guard !didSweep else { return }
+        didSweep = true
+        Self.work.async {
+            let manager = FileManager.default
+            let root = Self.cacheURL(for: MapTile(z: 0, x: 0, y: 0), layer: .topographic)
+                .deletingLastPathComponent()      // …/topographic/0/0
+                .deletingLastPathComponent()      // …/topographic/0
+                .deletingLastPathComponent()      // …/topographic
+                .deletingLastPathComponent()      // …/tiles
+            guard let walk = manager.enumerator(
+                at: root, includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey])
+            else { return }
+
+            var found: [(url: URL, size: Int, used: Date)] = []
+            var total = 0
+            for case let url as URL in walk {
+                guard let values = try? url.resourceValues(
+                        forKeys: [.fileSizeKey, .contentAccessDateKey]),
+                      let size = values.fileSize else { continue }
+                total += size
+                found.append((url, size, values.contentAccessDate ?? .distantPast))
+            }
+            guard total > Self.mostOnDisk else { return }
+
+            for tile in found.sorted(by: { $0.used < $1.used }) {
+                guard total > Self.mostOnDisk else { break }
+                try? manager.removeItem(at: tile.url)
+                total -= tile.size
             }
         }
     }
@@ -255,10 +467,21 @@ final class BaseMapStore: ObservableObject {
     ///
     /// Not by way of `tiffRepresentation`, which is what this did first: encoding a snapshot
     /// to TIFF and parsing it back cost 247ms for a full-view image and buys nothing.
+    nonisolated private static func read(_ data: Data) -> TilePixels? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return nil }
+        return read(image)
+    }
+
     nonisolated private static func read(_ image: NSImage) -> TilePixels? {
         var proposed = CGRect(origin: .zero, size: image.size)
         guard let source = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
         else { return nil }
+        return read(source)
+    }
+
+    nonisolated private static func read(_ source: CGImage) -> TilePixels? {
         let side = min(source.width, source.height)
         guard side > 0 else { return nil }
 
@@ -295,11 +518,19 @@ enum BaseMapWarp {
     /// Reckoned at the view's own latitude, because Mercator's scale is a secant of it and
     /// the globe's is not: the same tile covers less ground the further north you go.
     static func zoom(worldWidth: CGFloat, scale: CGFloat, latitude: Double,
-                     tileSide: Int = MapTile.pixels) -> Int {
+                     tileSide: Int, deepest: Int = 20) -> Int {
         let wanted = Double(worldWidth) * Double(scale)
             * cos(min(abs(latitude), 85) * .pi / 180) / Double(tileSide)
         guard wanted > 1 else { return 0 }
-        return max(0, min(20, Int(log2(wanted).rounded())))
+        return max(0, min(deepest, Int(log2(wanted).rounded())))
+    }
+
+    /// The same, for whichever layer is drawing: its tiles are its own size, and its pyramid
+    /// stops where it stops.
+    static func zoom(for layer: BaseMap, worldWidth: CGFloat, latitude: Double) -> Int {
+        guard layer.tilePixels > 0 else { return 0 }
+        return zoom(worldWidth: worldWidth, scale: layer.tileScale, latitude: latitude,
+                    tileSide: layer.tilePixels, deepest: layer.deepestZoom)
     }
 
     /// Where a coordinate falls in the tile grid, in tiles and fractions of one.

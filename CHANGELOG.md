@@ -276,9 +276,13 @@ first thing to stop.
 - **Drawn, Topographic or Satellite**, in Layers. Drawn is what it always was and stays the
   default: coastline, lakes and borders from the tables in the app, and the only one that
   works with the network off.
-- The other two are **Apple Maps**, by way of `MKMapSnapshotter` — no key, no account, and
-  Apple carries the licensing of the imagery. Topographic is Apple's standard map with
-  realistic elevation; Satellite is its imagery.
+- **Topographic is OpenTopoMap**: OpenStreetMap with SRTM contours and hillshading over it,
+  fetched a tile at a time and **kept on this Mac**, so anywhere you have looked at works
+  with the network off afterwards. First tile in about 200ms, a whole view in under half a
+  second, and 24ms to redraw it all from the cache.
+- **Satellite is Apple Maps**, by way of `MKMapSnapshotter` — no key, no account, and Apple
+  carries the licensing of the imagery. Nothing of Apple's is kept: their terms do not allow
+  it, so that layer needs the network every time.
 - **Reprojected, not stretched.** Apple's snapshots are Mercator and this map is a globe, so
   every pixel of the sheet is traced back through the sphere to the tile under it. Stretching
   the picture into place instead would be 2.8% out across a three-degree view at Alpine
