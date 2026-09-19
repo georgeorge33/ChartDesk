@@ -14,6 +14,7 @@ enum DefaultsKey {
     static let canvasBackground = "canvasBackground"
     static let showsAirspace = "showsAirspace"
     static let airspaceClasses = "airspaceClasses"
+    static let baseMap = "baseMap"
     static let showsStateBorders = "showsStateBorders"
     static let showsCityNames = "showsCityNames"
     static let zoomToFitOnOpen = "zoomToFitOnOpen"

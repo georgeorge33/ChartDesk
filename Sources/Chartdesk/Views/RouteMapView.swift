@@ -23,6 +23,8 @@ struct RouteMapView: View {
     @ObservedObject private var coastline = CoastlineStore.shared
     /// Whether openAIP's table is on this Mac, which decides whether it can be drawn.
     @ObservedObject private var openAIP = OpenAIPStore.shared
+    /// Apple Maps, when the base map is one of its two.
+    @ObservedObject private var base = BaseMapStore.shared
 
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
@@ -107,8 +109,14 @@ struct RouteMapView: View {
             geography.request(camera.detail)
             if camera.showsRunways { geography.requestRunways() }
             requestCells()
+            requestBaseMap()
             openAIP.refresh()
             requestLayers()
+        }
+        .onChange(of: browser.baseMap) { _, _ in
+            // The old picture is the wrong map, not merely the wrong place.
+            base.forget()
+            requestBaseMap()
         }
         .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
         .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
@@ -121,7 +129,10 @@ struct RouteMapView: View {
         // Panning and zooming both change which cells of the full coastline are in view. The
         // request is idempotent and skips whatever is already read, so asking on every step
         // of a drag costs a set lookup.
-        .onChange(of: camera) { _, _ in requestCells() }
+        .onChange(of: camera) { _, _ in
+            requestCells()
+            requestBaseMap()
+        }
         // The first ask for a cell only starts the index reading — fifteen megabytes of it,
         // off the main thread — and returns. Without this the cells were not asked for again
         // until something else moved the camera, so choosing full detail and sitting still
@@ -217,6 +228,17 @@ struct RouteMapView: View {
                  stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
                  in: &context, sheet: sheet)
 
+        }
+
+        // Apple Maps over the drawn land, where it is switched on and has arrived. The drawn
+        // map stays underneath rather than being skipped: a snapshot covers the view a
+        // moment after the view moves, and a map that goes blank while it waits is worse
+        // than one that sharpens.
+        appleMaps(in: &context, sheet: sheet)
+
+        // Frontiers on top of it — under the imagery they would be invisible, and a border
+        // is the one thing imagery cannot show you.
+        if let world = geography.best(for: camera.detail) {
             for shape in world.borders where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
                                with: .color(Color(nsColor: Theme.border)),
@@ -272,6 +294,16 @@ struct RouteMapView: View {
             guard width > 0 else { continue }
             context.stroke(path, with: .color(stroke), lineWidth: width)
         }
+    }
+
+    /// Apple Maps, reprojected onto the globe.
+    private func appleMaps(in context: inout GraphicsContext, sheet: MapSheet) {
+        guard showsAppleMaps,
+              let image = base.warped(camera: camera, projection: sheet.projection,
+                                      size: sheet.size, scale: 2)
+        else { return }
+        context.draw(Image(decorative: image, scale: 2),
+                     in: CGRect(origin: .zero, size: sheet.size))
     }
 
     /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
@@ -598,6 +630,34 @@ struct RouteMapView: View {
         if browser.showsCityNames { geography.requestCities() }
     }
 
+    /// Asks Apple Maps for what the view is looking at.
+    ///
+    /// The box is the view's own corners and edge middles put back through the globe — not
+    /// the centre plus a span, which on a sphere is not the same thing and is short at the
+    /// corners.
+    private func requestBaseMap() {
+        guard browser.baseMap.isAppleMaps, size.width > 0, degreesAcross <= BaseMap.widest
+        else { return }
+        let sheet = MapSheet(camera: camera, size: size)
+        var west = 180.0, east = -180.0, south = 90.0, north = -90.0
+        var seen = false
+        for x in stride(from: 0.0, through: 1.0, by: 0.25) {
+            for y in stride(from: 0.0, through: 1.0, by: 0.25) {
+                let at = CGPoint(x: Double(size.width) * x, y: Double(size.height) * y)
+                guard let direction = sheet.projection.direction(at: at) else { continue }
+                let corner = Coordinate(direction)
+                west = min(west, corner.longitude); east = max(east, corner.longitude)
+                south = min(south, corner.latitude); north = max(north, corner.latitude)
+                seen = true
+            }
+        }
+        // A view straddling the antimeridian comes out as the whole world the wrong way
+        // round. Rare, and the drawn map covers it.
+        guard seen, east > west, east - west < 180 else { return }
+        base.request(layer: browser.baseMap, west: west, east: east, south: south, north: north,
+                     degreesAcross: degreesAcross, size: size)
+    }
+
     /// Asks for the cells of the full coastline the view covers.
     private func requestCells() {
         guard camera.worldWidth >= MapDetail.fullFrom, size.width > 0 else { return }
@@ -738,22 +798,44 @@ struct RouteMapView: View {
     /// are required — OpenStreetMap's by ODbL, openAIP's by CC BY-NC — and the other two are
     /// not, and are here because a map should say where it came from.
     private var credits: [String] {
-        var found = ["\(Coastline.attribution) · \(Coastline.licence)",
-                     "Natural Earth · lakes, borders, places"]
+        // Under Apple's imagery the drawn coast is there but invisible, and a credit for
+        // something nobody can see is clutter rather than honesty.
+        var found: [String] = []
+        if !showsAppleMaps {
+            found.append("\(Coastline.attribution) · \(Coastline.licence)")
+        }
+        found.append("Natural Earth · lakes, borders, places")
         if browser.showsAirspace, !geography.airspace.isEmpty,
            !browser.airspaceClasses.isEmpty, camera.worldWidth >= MapLayerRoom.airspaceFrom {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
         found.append("OurAirports · airports and runways")
+        if showsAppleMaps { found.append(BaseMap.attribution) }
         return found
+    }
+
+    /// True when Apple's map is chosen, close enough to be drawn, and has arrived.
+    private var showsAppleMaps: Bool {
+        browser.baseMap.isAppleMaps && degreesAcross <= BaseMap.widest && base.patch != nil
     }
 
     private var credit: some View {
         VStack(alignment: .trailing, spacing: 1) {
             ForEach(credits, id: \.self) { line in
-                Text(line)
+                // Apple's own mark for Apple's own maps: the logo is in SF Symbols, which
+                // is where a Mac app is meant to get it from.
+                if line == BaseMap.attribution {
+                    HStack(spacing: 3) {
+                        Image(systemName: "apple.logo").font(.system(size: 9))
+                        Text(line)
+                    }
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
+                } else {
+                    Text(line)
+                        .font(.ngSmall)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         // On something, like the rest of the furniture: over a stack of airspace these are
@@ -775,6 +857,8 @@ struct RouteMapView: View {
     /// so that the tier is something you can see rather than infer. An ellipsis while a finer
     /// one is still being read.
     private var readout: String {
+        // Which map you are looking at, which under imagery is not the coastline tier.
+        if showsAppleMaps { return "\(across) across · \(position) · \(browser.baseMap.name)" }
         var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
         if geography.isCatchingUp(to: camera.detail) {
             tier += " …"

@@ -271,6 +271,24 @@ first thing to stop.
 - **State borders** and **town and city names**, both Natural Earth. Names are asked for in
   rank order, so what there is room for goes to the places that matter.
 
+**A base map you can choose**
+
+- **Drawn, Topographic or Satellite**, in Layers. Drawn is what it always was and stays the
+  default: coastline, lakes and borders from the tables in the app, and the only one that
+  works with the network off.
+- The other two are **Apple Maps**, by way of `MKMapSnapshotter` — no key, no account, and
+  Apple carries the licensing of the imagery. Topographic is Apple's standard map with
+  realistic elevation; Satellite is its imagery.
+- **Reprojected, not stretched.** Apple's snapshots are Mercator and this map is a globe, so
+  every pixel of the sheet is traced back through the sphere to the snapshot. Stretching the
+  picture into place instead would be 2.8% out across a three-degree view at Alpine
+  latitudes — twenty-eight points on a thousand-point panel, which looks exactly like a map
+  that is wrong. The warp costs 9ms at Retina size and is redone only when the camera moves.
+- Drawn from about 30° across and closer, over the drawn map rather than instead of it: a
+  snapshot arrives a moment after the view moves, and a map that goes blank while it waits is
+  worse than one that sharpens. Apple does not permit an app to keep its own copy, so these
+  two need the network every time — with none, the drawn map is simply what you get.
+
 **The coastline is OpenStreetMap's**
 
 - The deepest level of detail draws land from OpenStreetMap rather than Natural Earth: 450

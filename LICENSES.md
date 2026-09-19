@@ -55,6 +55,20 @@ than to inherit with a download.
 **Attribution, where it is done:** "© openAIP contributors · CC BY-NC 4.0" appears on the map
 whenever openAIP airspace is being drawn, and beside the choice in the Layers panel.
 
+## Apple Maps — Apple's own terms
+
+**What:** the Topographic and Satellite base maps, which are `MKMapSnapshotter` images from
+Apple Maps, reprojected onto the globe. Nothing is bundled and nothing is stored: Apple does
+not permit an app to keep its own copy of map imagery, which is why these two need the
+network every time and the drawn map stays underneath them.
+
+**Terms:** MapKit's, as part of the Apple Developer Program agreement. No key or account is
+needed to use it in a Mac app. Apple asks that its maps be credited where they are shown and
+that the credit not be obscured — `MKMapView` draws that itself, and a snapshot does not, so
+the map draws it: the Apple logo and "Apple Maps" sit in the corner with the other credits
+whenever Apple's imagery is on the sheet, and the Layers panel links to Apple's own notices
+at [gspe21-ssl.ls.apple.com](https://gspe21-ssl.ls.apple.com/html/attribution.html).
+
 ## OurAirports — public domain
 
 `Resources/airports.txt`, `runways.txt` and `runway-ends.txt`, from

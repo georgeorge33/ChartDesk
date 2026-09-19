@@ -12,11 +12,40 @@ struct MapLayerPanel: View {
     @EnvironmentObject private var browser: BrowserState
     @ObservedObject private var coastline = CoastlineStore.shared
     @ObservedObject private var openAIP = OpenAIPStore.shared
+    @ObservedObject private var base = BaseMapStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Layers")
                 .font(.headline)
+
+            section("Base map") {
+                ForEach(BaseMap.allCases) { layer in
+                    baseChoice(layer)
+                }
+                if browser.baseMap.isAppleMaps {
+                    if let failure = base.failure {
+                        Text("Apple Maps did not answer: \(failure)")
+                            .font(.ngSmall)
+                            .foregroundStyle(Color.ngWarning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Drawn from about 30° across and closer. Apple does not permit "
+                             + "an app to keep its own copy, so this one needs the network "
+                             + "every time — the drawn map stays underneath for when there "
+                             + "is none.")
+                            .font(.ngSmall)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // Apple asks that its maps carry a link to who the data came from. The
+                    // map itself carries the logo; this is the other half of it.
+                    Link("Legal notices for Apple Maps", destination: BaseMap.legal)
+                        .font(.ngSmall)
+                }
+            }
+
+            Divider().overlay(Color.ngSeparator)
 
             section("Aeronautical") {
                 switchRow("Airspace", on: $browser.showsAirspace,
@@ -98,6 +127,38 @@ struct MapLayerPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.bottom, 2)
+    }
+
+    private func baseChoice(_ layer: BaseMap) -> some View {
+        let picked = browser.baseMap == layer
+
+        return Button {
+            browser.baseMap = layer
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: picked ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(picked ? Color.ngAccentText : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(layer.name)
+                            .font(.ngSmallMedium)
+                            .foregroundStyle(.primary)
+                        if layer.isAppleMaps {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Text(layer.detail)
+                        .font(.ngSmall)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Which classes are drawn, each chip in the colour that class is drawn in.

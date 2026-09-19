@@ -76,6 +76,11 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(showsAirspace, forKey: DefaultsKey.showsAirspace) }
     }
 
+    /// What the map draws underneath everything else.
+    @Published var baseMap: BaseMap {
+        didSet { UserDefaults.standard.set(baseMap.rawValue, forKey: DefaultsKey.baseMap) }
+    }
+
     /// Which classes of it are drawn. All of them until you say otherwise.
     @Published var airspaceSwitches: Set<AirspaceSwitch> {
         didSet {
@@ -106,6 +111,7 @@ final class BrowserState: ObservableObject {
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
         showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
+        baseMap = BaseMap(rawValue: defaults.string(forKey: DefaultsKey.baseMap) ?? "") ?? .vector
         // An absent preference means the default set; an empty one means none, which is a
         // thing you can ask for by turning all six off.
         if let saved = defaults.string(forKey: DefaultsKey.airspaceClasses) {
