@@ -1,7 +1,7 @@
 # Data in Chartdesk
 
-Chartdesk draws on several public datasets. Most are public domain; one is not, and that one
-comes with obligations rather than courtesies.
+Chartdesk draws on several public datasets. Most are public domain; two are not — the
+coastline and the airspace — and those two come with obligations rather than courtesies.
 
 ## OpenStreetMap — ODbL 1.0
 
@@ -34,22 +34,13 @@ all built by `Tools/make_mapdata.py`. [naturalearthdata.com](https://www.natural
 places these in the public domain, with no attribution required. It is credited anyway, in the
 headers of the tables and in the release notes.
 
-## FAA airspace — public domain
-
-`Resources/airspace.txt`: Class B, C and D with the ceiling and floor of every shelf, from the
-FAA's own airspace service, built by `Tools/make_airspace.py`. A work of the United States
-government and so not subject to copyright. The airspace layer's default source, and the only
-one that is bundled.
-
-Not United States only, as it turns out — the FAA publishes airspace for 1,579 airports
-worldwide, from CYVR to EGLL to YSSY — but it is thorough over the United States and thinner
-the further you go, so treat anything else as a courtesy rather than a guarantee.
-
 ## openAIP — CC BY-NC 4.0
 
-**What:** worldwide airspace — classes A to E, plus prohibited, restricted and danger areas —
-fetched from [openAIP](https://www.openaip.net/)'s API by `Tools/make_openaip.py`: 31,871
-airspaces read, 18,488 drawn, 19 MB. The alternative to the FAA's table, chosen in Layers.
+**What:** all the airspace this app draws — classes A to E, plus prohibited, restricted and
+danger areas — fetched from [openAIP](https://www.openaip.net/)'s API by
+`Tools/make_openaip.py`: 31,871 airspaces read, 18,488 drawn, 19 MB. There was a bundled FAA
+table alongside it for a while; it knew the United States and sketched everywhere else, and
+it is gone.
 
 **Licence:** [Attribution-NonCommercial 4.0 International](https://creativecommons.org/licenses/by-nc/4.0/),
 as stated on openAIP's own front page. Attribution, and no commercial use. No share-alike

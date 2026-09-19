@@ -1,69 +1,17 @@
 import Foundation
 
-/// Where the airspace layer gets its rings from.
+/// openAIP, which is where the airspace comes from.
 ///
-/// The FAA's own service is public domain and thorough over the United States. openAIP is a
-/// community database of the same thing for the rest of the world — the TMAs, CTRs, danger
-/// areas and restricted areas that a chart outside America is mostly made of, and which the
-/// FAA's worldwide coverage only sketches.
-///
-/// A choice rather than a merge. The two disagree about the same airspace often enough —
-/// different surveys, different update dates — that drawing both would put two rings a few
-/// hundred metres apart round every American airport and leave you guessing which to believe.
-enum AirspaceSource: String, CaseIterable, Identifiable {
+/// There was a choice of two for a while: the FAA's table, which is public domain and
+/// bundled, or this. The FAA's is gone. It knows the United States and sketches the rest of
+/// the world — 1,579 airports, no classes A or E, and none of the prohibited, restricted and
+/// danger areas that a chart outside America is mostly made of — so keeping it meant carrying
+/// fifteen megabytes and a radio button to offer people the worse half of the world.
+enum OpenAIP {
 
-    /// The FAA's Airspace feature service. Bundled with the app.
-    case faa
-    /// openAIP's worldwide database, fetched with your own key into Application Support.
-    case openAIP
-
-    var id: String { rawValue }
-
-    var name: String {
-        switch self {
-        case .faa: return "FAA"
-        case .openAIP: return "openAIP"
-        }
-    }
-
-    /// What picking it gets you, in the terms that decide it: where it is any good.
-    var detail: String {
-        switch self {
-        case .faa:
-            return "Class B, C and D, with every shelf's ceiling and floor. Thorough over "
-                 + "the United States, thinner elsewhere. Public domain."
-        case .openAIP:
-            return "Worldwide: classes A to E, plus prohibited, restricted and danger "
-                 + "areas. Community-maintained, so it is as good as its last contributor."
-        }
-    }
-
-    /// Shown on the map whenever this source is drawn. openAIP's licence asks for it.
-    var attribution: String? {
-        switch self {
-        case .faa: return nil
-        case .openAIP: return "© openAIP contributors"
-        }
-    }
-
-    /// The licence, where there is one to name.
-    var licence: String? {
-        switch self {
-        case .faa: return nil
-        case .openAIP: return "CC BY-NC 4.0"
-        }
-    }
-
-    /// True for the one whose table this app does not ship.
-    var needsTableOnDisk: Bool { self == .openAIP }
-
-    /// The file the table is read from, for the sources that keep one outside the bundle.
-    var fileURL: URL? {
-        switch self {
-        case .faa: return nil
-        case .openAIP: return OpenAIPFiles.airspace
-        }
-    }
+    /// Shown on the map whenever its airspace is drawn. The licence asks for it.
+    static let attribution = "© openAIP contributors"
+    static let licence = "CC BY-NC 4.0"
 }
 
 /// Where openAIP's tables live.

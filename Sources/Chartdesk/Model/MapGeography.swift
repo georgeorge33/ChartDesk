@@ -18,10 +18,9 @@ final class MapGeography: ObservableObject {
     @Published private(set) var tiers: [MapDetail: Geography] = [:]
     @Published private(set) var runways: [MapRunway] = []
     /// The layers the Layers button switches on, each read the first time it is wanted.
-    ///
-    /// Airspace is held by source. Switching between the FAA's table and openAIP's then
-    /// switching back is a dictionary lookup rather than fifteen megabytes read again.
-    @Published private(set) var airspaces: [AirspaceSource: [MapAirspace]] = [:]
+    @Published private(set) var airspace: [MapAirspace] = []
+    /// Told apart from `airspace` being empty, which is also what a missing table looks like.
+    @Published private(set) var readAirspace = false
     @Published private(set) var states: [MapShape] = []
     @Published private(set) var cities: [MapCity] = []
 
@@ -70,27 +69,26 @@ final class MapGeography: ObservableObject {
     /// One shape for all three because they are the same job: a table that is worth nothing
     /// until a switch is turned on, and should not be read at launch on the chance that it
     /// might be. Airspace alone is fifteen megabytes.
-    func requestAirspace(_ source: AirspaceSource) {
-        let key = "airspace-\(source.rawValue)"
-        guard airspaces[source] == nil, !reading.contains(key) else { return }
-        reading.insert(key)
+    func requestAirspace() {
+        guard !readAirspace, !reading.contains("airspace") else { return }
+        reading.insert("airspace")
         queue.async {
-            let read = WorldData.loadAirspace(from: source)
+            let read = WorldData.loadAirspace()
             Task { @MainActor in
-                // Held even when it read nothing, so a missing openAIP table is not asked
-                // for again on every frame — `refresh` is what notices one arriving.
-                self.airspaces[source] = read
-                self.reading.remove(key)
+                // Counted as read even when it read nothing, so a missing table is not asked
+                // for again on every frame. `forgetAirspace` is what notices one arriving.
+                self.airspace = read
+                self.readAirspace = true
+                self.reading.remove("airspace")
             }
         }
     }
 
-    /// Whichever airspace table is in hand for this source.
-    func airspace(from source: AirspaceSource) -> [MapAirspace] { airspaces[source] ?? [] }
-
-    /// Forgets a source's table, so the next ask reads it again. For when one is built while
-    /// the app is running.
-    func forgetAirspace(_ source: AirspaceSource) { airspaces[source] = nil }
+    /// Forgets the table, so the next ask reads it again — for one built while the app runs.
+    func forgetAirspace() {
+        airspace = []
+        readAirspace = false
+    }
 
     func requestStates() {
         guard states.isEmpty, !reading.contains("states") else { return }

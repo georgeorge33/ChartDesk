@@ -66,6 +66,8 @@ struct RouteMapView: View {
             // On its own, in the far corner: the layer switches are not map controls and
             // belong away from them.
             layers
+            // And in the opposite corner, where the data came from.
+            credit
         }
         .background(Color(nsColor: Theme.canvas))
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
@@ -109,7 +111,6 @@ struct RouteMapView: View {
             requestLayers()
         }
         .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
-        .onChange(of: browser.airspaceSource) { _, _ in requestLayers() }
         .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
         .onChange(of: browser.showsCityNames) { _, _ in requestLayers() }
         // Zooming past a threshold is the only thing that calls for another tier, and the
@@ -285,8 +286,9 @@ struct RouteMapView: View {
                           labels: inout [Label]) {
         guard browser.showsAirspace, camera.worldWidth >= MapLayerRoom.airspaceFrom
         else { return }
-        let rings = geography.airspace(from: airspaceSource)
-        guard !rings.isEmpty else { return }
+        let rings = geography.airspace
+        let kinds = browser.airspaceClasses
+        guard !rings.isEmpty, !kinds.isEmpty else { return }
 
         // The table arrives sorted quietest first, so one pass in order paints the busy
         // airspace over the quiet without filtering by kind eight times over.
@@ -295,9 +297,9 @@ struct RouteMapView: View {
         // four times the FAA's rings and most of them are aerodrome-sized, so at a wide view
         // they are a wash of colour with no legible figure anywhere in it.
         let least = MapLayerRoom.leastRadius
-        for space in rings where sheet.mayShow(space.cap)
+        for space in rings where kinds.contains(space.klass) && sheet.mayShow(space.cap)
             && space.cap.radius * sheet.projection.radius >= least {
-            let colour = Self.colour(of: space.klass)
+            let colour = Color(nsColor: Theme.airspace(space.klass))
             let path = sheet.path(ring: MapShape(directions: space.directions,
                                                  cap: space.cap))
             guard !path.isEmpty else { continue }
@@ -318,17 +320,6 @@ struct RouteMapView: View {
                                     .foregroundStyle(colour),
                                 ruleColour: colour,
                                 at: at, anchor: .center))
-        }
-    }
-
-    private static func colour(of klass: AirspaceClass) -> Color {
-        switch klass {
-        case .a: return Color(nsColor: Theme.airspaceA)
-        case .b: return Color(nsColor: Theme.airspaceB)
-        case .c: return Color(nsColor: Theme.airspaceC)
-        case .d: return Color(nsColor: Theme.airspaceD)
-        case .e: return Color(nsColor: Theme.airspaceE)
-        case .prohibited, .restricted, .danger: return Color(nsColor: Theme.airspaceDanger)
         }
     }
 
@@ -602,7 +593,7 @@ struct RouteMapView: View {
 
     /// Asks for whichever layer tables are switched on.
     private func requestLayers() {
-        if browser.showsAirspace { geography.requestAirspace(airspaceSource) }
+        if browser.showsAirspace { geography.requestAirspace() }
         if browser.showsStateBorders { geography.requestStates() }
         if browser.showsCityNames { geography.requestCities() }
     }
@@ -730,13 +721,6 @@ struct RouteMapView: View {
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
 
-            // Both licences ask for the credit wherever the data is drawn, so it goes on
-            // the map and not only in the panel where the choice was made.
-            ForEach(credits, id: \.self) { credit in
-                Text(credit)
-                    .font(.ngSmall)
-                    .foregroundStyle(.tertiary)
-            }
         }
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -747,29 +731,44 @@ struct RouteMapView: View {
         .padding(12)
     }
 
-    /// The airspace source actually being drawn.
-    ///
-    /// openAIP's table is one you build yourself, so it can be chosen and then deleted, or
-    /// carried over in a preference to a Mac that never had it. Falling back to the FAA's
-    /// draws the airspace there is rather than an empty layer, and the panel says so.
-    private var airspaceSource: AirspaceSource {
-        let wanted = browser.airspaceSource
-        return wanted.needsTableOnDisk && !openAIP.isInstalled ? .faa : wanted
-    }
-
-    /// Who to credit for what is actually on the sheet.
+    /// Who to credit for what is actually on the sheet, in the far corner.
     ///
     /// Only for what is drawn: a credit for a layer that is switched off is noise, and a
-    /// credit for one that is switched on but whose table is missing is a lie.
+    /// credit for one that is switched on but whose table is missing is a lie. Two of these
+    /// are required — OpenStreetMap's by ODbL, openAIP's by CC BY-NC — and the other two are
+    /// not, and are here because a map should say where it came from.
     private var credits: [String] {
-        var found: [String] = []
-        found.append(Coastline.attribution)
-        let source = airspaceSource
-        if browser.showsAirspace, let credit = source.attribution,
-           !geography.airspace(from: source).isEmpty {
-            found.append(source.licence.map { "\(credit) · \($0)" } ?? credit)
+        var found = ["\(Coastline.attribution) · \(Coastline.licence)",
+                     "Natural Earth · lakes, borders, places"]
+        if browser.showsAirspace, !geography.airspace.isEmpty,
+           !browser.airspaceClasses.isEmpty, camera.worldWidth >= MapLayerRoom.airspaceFrom {
+            found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
+        found.append("OurAirports · airports and runways")
         return found
+    }
+
+    private var credit: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            ForEach(credits, id: \.self) { line in
+                Text(line)
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        // On something, like the rest of the furniture: over a stack of airspace these are
+        // four lines of grey text on a field of magenta, and unreadable without it.
+        .padding(.vertical, 6)
+        .padding(.horizontal, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.ngSeparator)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        // The map is underneath and takes every click; this is four lines of text.
+        .allowsHitTesting(false)
     }
 
     /// Where the map is looking, how wide, and which of the three worlds it is drawing —

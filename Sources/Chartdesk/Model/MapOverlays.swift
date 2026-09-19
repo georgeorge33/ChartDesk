@@ -42,6 +42,56 @@ enum AirspaceClass: String, CaseIterable {
         [.e, .a, .d, .c, .b, .danger, .restricted, .prohibited]
 }
 
+/// What the Layers panel offers a switch for.
+///
+/// One per ICAO class, because which of them you want on the sheet depends on what you are
+/// doing — Class E over the United States is every transition area in the country and buries
+/// everything else; over Europe it is a handful of rings. The three kinds of area you keep
+/// out of share one switch: nobody wants danger areas drawn but not prohibited ones.
+enum AirspaceSwitch: String, CaseIterable, Identifiable {
+    case a = "A"
+    case b = "B"
+    case c = "C"
+    case d = "D"
+    case e = "E"
+    case areas = "PRD"
+
+    var id: String { rawValue }
+
+    /// What the chip says.
+    var label: String { self == .areas ? "P R D" : rawValue }
+
+    /// And what it means, for the tooltip.
+    var name: String {
+        self == .areas ? "Prohibited, restricted and danger areas" : "Class \(rawValue)"
+    }
+
+    var covers: [AirspaceClass] {
+        switch self {
+        case .a: return [.a]
+        case .b: return [.b]
+        case .c: return [.c]
+        case .d: return [.d]
+        case .e: return [.e]
+        case .areas: return [.prohibited, .restricted, .danger]
+        }
+    }
+
+    /// What is on until you say otherwise: everything except Class E.
+    ///
+    /// Not a preference about Class E so much as about the United States, where it is the
+    /// 3,893 transition areas that sit over the whole country from 700ft — every one of them
+    /// a ring labelled FL600 over 7 AGL, and together a wall of magenta with the Class B
+    /// somewhere behind it. Over Europe it is a few dozen rings and perfectly reasonable,
+    /// which is why it is a switch and not a deletion.
+    static let byDefault: Set<AirspaceSwitch> = [.a, .b, .c, .d, .areas]
+
+    /// The switch a ring answers to.
+    static func holding(_ klass: AirspaceClass) -> AirspaceSwitch {
+        klass.isSpecialUse ? .areas : (AirspaceSwitch(rawValue: klass.rawValue) ?? .areas)
+    }
+}
+
 /// How high a shelf reaches, and what the figure is measured from.
 ///
 /// The FAA's table is feet above the sea and nothing else, so this was an `Int` until openAIP
@@ -155,16 +205,12 @@ struct MapCity {
 
 extension WorldData {
 
-    /// Airspace, from whichever source the Layers panel is set to.
+    /// Airspace, from openAIP.
     ///
-    /// The FAA's table is bundled; openAIP's is a file you build yourself with
-    /// `Tools/make_openaip.py` and your own key, so it may simply not be there — in which
-    /// case this reads nothing and the panel says why.
-    nonisolated static func loadAirspace(from source: AirspaceSource = .faa) -> [MapAirspace] {
-        let url = source.fileURL
-            ?? Bundle.main.url(forResource: "airspace", withExtension: "txt")
-        guard let url = url,
-              let data = try? Data(contentsOf: url, options: [.mappedIfSafe])
+    /// A file you build yourself with `Tools/make_openaip.py` and your own key, so it may
+    /// simply not be there — in which case this reads nothing and the Layers panel says why.
+    nonisolated static func loadAirspace() -> [MapAirspace] {
+        guard let data = try? Data(contentsOf: OpenAIPFiles.airspace, options: [.mappedIfSafe])
         else { return [] }
         return inDrawingOrder(parseAirspace(data))
     }

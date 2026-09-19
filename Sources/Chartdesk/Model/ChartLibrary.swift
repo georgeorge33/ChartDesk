@@ -13,7 +13,7 @@ enum DefaultsKey {
     static let lastCategory = "lastCategory"
     static let canvasBackground = "canvasBackground"
     static let showsAirspace = "showsAirspace"
-    static let airspaceSource = "airspaceSource"
+    static let airspaceClasses = "airspaceClasses"
     static let showsStateBorders = "showsStateBorders"
     static let showsCityNames = "showsCityNames"
     static let zoomToFitOnOpen = "zoomToFitOnOpen"

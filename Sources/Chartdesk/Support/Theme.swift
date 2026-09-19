@@ -58,6 +58,19 @@ enum Theme {
     /// Prohibited, restricted and danger areas: red, because they are the one thing on this
     /// layer that is about staying out rather than talking to someone.
     static let airspaceDanger   = rgb(0xD9534F)
+    /// The colour a kind of airspace is drawn in, so the map and the Layers panel cannot
+    /// disagree about what a chip means.
+    static func airspace(_ klass: AirspaceClass) -> NSColor {
+        switch klass {
+        case .a: return airspaceA
+        case .b: return airspaceB
+        case .c: return airspaceC
+        case .d: return airspaceD
+        case .e: return airspaceE
+        case .prohibited, .restricted, .danger: return airspaceDanger
+        }
+    }
+
     /// Internal borders — states, provinces — fainter than a frontier between countries.
     static let stateBorder      = rgb(0x35506B)
     /// The names of towns.

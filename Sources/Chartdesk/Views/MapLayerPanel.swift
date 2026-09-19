@@ -21,11 +21,10 @@ struct MapLayerPanel: View {
             section("Aeronautical") {
                 switchRow("Airspace", on: $browser.showsAirspace,
                           detail: "Rings with their ceilings and floors, the way a chart "
-                                + "draws them. Drawn from about 15° across.")
+                                + "draws them, from openAIP. Drawn from about 15° across, "
+                                + "and only where a ring is big enough to read.")
                 if browser.showsAirspace {
-                    ForEach(AirspaceSource.allCases) { source in
-                        airspaceChoice(source)
-                    }
+                    classes
                 }
             }
 
@@ -70,8 +69,8 @@ struct MapLayerPanel: View {
             openAIP.refresh()
             // The read that found nothing is what would otherwise stick: without this,
             // building the table meant quitting the app to see it.
-            if openAIP.isInstalled, MapGeography.shared.airspace(from: .openAIP).isEmpty {
-                MapGeography.shared.forgetAirspace(.openAIP)
+            if openAIP.isInstalled, MapGeography.shared.airspace.isEmpty {
+                MapGeography.shared.forgetAirspace()
             }
         }
     }
@@ -101,58 +100,58 @@ struct MapLayerPanel: View {
         .padding(.bottom, 2)
     }
 
-    /// Where the airspace comes from. Shown only while the layer is on: a source for a
-    /// layer you have switched off is a setting for nothing.
-    private func airspaceChoice(_ source: AirspaceSource) -> some View {
-        let available = !source.needsTableOnDisk || openAIP.isInstalled
-        let picked = browser.airspaceSource == source
+    /// Which classes are drawn, each chip in the colour that class is drawn in.
+    ///
+    /// Six switches rather than six rows: they are one decision, and a row apiece would push
+    /// everything else off the bottom of the panel.
+    private var classes: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                ForEach(AirspaceSwitch.allCases) { kind in
+                    chip(kind)
+                }
+            }
+            if openAIP.isInstalled {
+                Text(openAIP.summary.map { "openAIP · " + $0 } ?? "openAIP")
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("No openAIP table on this Mac, so there is nothing to draw. Build one "
+                     + "with Tools/make_openaip.py and your own free key; it goes in "
+                     + "Application Support, not in the app.")
+                    .font(.ngSmall)
+                    .foregroundStyle(Color.ngWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    private func chip(_ kind: AirspaceSwitch) -> some View {
+        let on = browser.airspaceSwitches.contains(kind)
+        let colour = Color(nsColor: Theme.airspace(kind.covers[0]))
 
         return Button {
-            browser.airspaceSource = source
-        } label: {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: picked ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(picked ? Color.ngAccentText : .secondary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.name)
-                        .font(.ngSmallMedium)
-                        .foregroundStyle(.primary)
-                    Text(source.detail)
-                        .font(.ngSmall)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let credit = source.attribution {
-                        Text(credit + (source.licence.map { " · " + $0 } ?? ""))
-                            .font(.ngSmall)
-                            .foregroundStyle(.tertiary)
-                    }
-                    if source.needsTableOnDisk {
-                        if let summary = openAIP.summary {
-                            // Airspace goes stale, so how old the table is belongs next to
-                            // the choice rather than in a README no one opens.
-                            Text("On this Mac · " + summary)
-                                .font(.ngSmall)
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("Not on this Mac, so the FAA's table is being drawn "
-                                 + "instead. Build it with Tools/make_openaip.py and your "
-                                 + "own openAIP key; it goes in Application Support, not "
-                                 + "in the app.")
-                                .font(.ngSmall)
-                                .foregroundStyle(Color.ngWarning)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                Spacer(minLength: 0)
+            if on {
+                browser.airspaceSwitches.remove(kind)
+            } else {
+                browser.airspaceSwitches.insert(kind)
             }
-            .contentShape(Rectangle())
+        } label: {
+            Text(kind.label)
+                .font(.ngSmallMedium)
+                .foregroundStyle(on ? colour : Color.secondary)
+                .frame(minWidth: kind == .areas ? 44 : 24)
+                .padding(.vertical, 3)
+                .padding(.horizontal, 5)
+                .background(on ? colour.opacity(0.16) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .strokeBorder(on ? colour.opacity(0.6) : Color.ngSeparator)
+                }
         }
         .buttonStyle(.plain)
-        .disabled(!available)
-        .opacity(available ? 1 : 0.55)
-        .padding(.leading, 2)
+        .help(kind.name)
     }
 }

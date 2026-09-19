@@ -199,10 +199,10 @@ What this candidate adds to rc.1. Full release soon.
 
 **Bundled, not fetched**
 
-The geography is Natural Earth and OpenStreetMap, the airports and the runways are
-OurAirports, the airspace is the FAA's, and all of it is built by the scripts in `Tools/` into
-the bundle — 55 MB of tables. The rest of the app works with the network off, and a map that
-needed tiles would have been the first thing to stop.
+The geography is Natural Earth and OpenStreetMap and the airports and runways are
+OurAirports, all built by the scripts in `Tools/` into the bundle — 40 MB of tables. The
+rest of the app works with the network off, and a map that needed tiles would have been the
+first thing to stop.
 
 - **Four levels of detail, chosen by zoom.** Natural Earth publishes the same world at 1:110m,
   1:50m and 1:10m, each generalised by cartographers for the scale it is meant to be seen at,
@@ -242,17 +242,19 @@ needed tiles would have been the first thing to stop.
   what it holds are not map controls. Three things so far, each read the first time it is
   switched on and not at launch.
 - **Airspace**, drawn the way a chart draws it: Class B solid blue, C magenta, D blue and
-  dashed, each ring labelled with its ceiling over its floor in hundreds of feet. Boston's
-  Class B comes out as its four shelves — 70/SFC, 70/20, 70/30, 70/40 — with each figure out
-  in the ring it belongs to rather than four of them stacked over the runway. From the FAA,
-  which is public domain and thorough over the United States.
-- **Or from openAIP**, for the rest of the world: 18,488 rings against the FAA's 4,223, with
-  classes A and E as well as B, C and D, plus the prohibited, restricted and danger areas
-  that a chart outside America is mostly made of. Munich's CTR comes back Class D to 3,500ft
-  with its TMA in Class C shelves up to FL100, which is what the German AIP says. Not
-  bundled — openAIP's data is CC BY-NC and needs a key — so `Tools/make_openaip.py` builds it
-  on your own Mac with your own free key, into Application Support. Until it is there the
-  choice is greyed out and says so, and the FAA's table keeps drawing.
+  dashed, prohibited, restricted and danger areas red, each ring labelled with its ceiling
+  over its floor. Each figure sits out in the ring it belongs to rather than four of them
+  stacked over the runway, which is what a Class B's shelves would otherwise do.
+- **From openAIP**, worldwide: 18,488 rings, with classes A and E as well as B, C and D, and
+  the prohibited, restricted and danger areas that a chart outside America is mostly made
+  of. Munich's CTR comes back Class D to 3,500ft with its TMA in Class C shelves up to FL100,
+  which is what the German AIP says. Not bundled — openAIP's data is CC BY-NC and needs a
+  key — so `Tools/make_openaip.py` builds it on your own Mac with your own free key, into
+  Application Support, and the Layers panel says when it is not there.
+- **A switch per class**: A, B, C, D, E, and one for all three kinds of area you keep out of,
+  each chip in the colour that class is drawn in. Class E over the United States is every
+  transition area in the country and buries everything else; over Europe it is a handful of
+  rings. Which of them you want is not something an app can know.
 - **A ring too small to read is left out**, rather than drawn as a speck with two illegible
   figures on it. A zoom threshold was enough for 4,223 rings and is not enough for 18,488: at
   16° across — as wide as this layer ever draws — 1,872 rings are in view over Chicago and

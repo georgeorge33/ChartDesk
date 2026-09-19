@@ -278,7 +278,7 @@ fi
 for TABLE in land-110 lakes-110 borders-110 \
              land-50 lakes-50 borders-50 \
              land-10 lakes-10 borders-10 \
-             land-osm airspace states cities \
+             land-osm states cities \
              airports runway-ends; do
 	if [ -f "Resources/${TABLE}.txt" ]; then
 		cp "Resources/${TABLE}.txt" "${CONTENTS}/Resources/${TABLE}.txt"

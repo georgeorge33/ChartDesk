@@ -76,9 +76,12 @@ final class BrowserState: ObservableObject {
         didSet { UserDefaults.standard.set(showsAirspace, forKey: DefaultsKey.showsAirspace) }
     }
 
-    /// Where that airspace comes from: the FAA's own table, or openAIP's worldwide one.
-    @Published var airspaceSource: AirspaceSource {
-        didSet { UserDefaults.standard.set(airspaceSource.rawValue, forKey: DefaultsKey.airspaceSource) }
+    /// Which classes of it are drawn. All of them until you say otherwise.
+    @Published var airspaceSwitches: Set<AirspaceSwitch> {
+        didSet {
+            UserDefaults.standard.set(airspaceSwitches.map(\.rawValue).sorted().joined(separator: ","),
+                                      forKey: DefaultsKey.airspaceClasses)
+        }
     }
 
     /// State and province borders.
@@ -103,10 +106,21 @@ final class BrowserState: ObservableObject {
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
         showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
-        airspaceSource = AirspaceSource(rawValue: defaults.string(forKey: DefaultsKey.airspaceSource) ?? "")
-            ?? .faa
+        // An absent preference means the default set; an empty one means none, which is a
+        // thing you can ask for by turning all six off.
+        if let saved = defaults.string(forKey: DefaultsKey.airspaceClasses) {
+            airspaceSwitches = Set(saved.split(separator: ",")
+                                       .compactMap { AirspaceSwitch(rawValue: String($0)) })
+        } else {
+            airspaceSwitches = AirspaceSwitch.byDefault
+        }
         showsStateBorders = defaults.bool(forKey: DefaultsKey.showsStateBorders)
         showsCityNames = defaults.bool(forKey: DefaultsKey.showsCityNames)
+    }
+
+    /// The kinds of airspace to draw, which is what the switches come to.
+    var airspaceClasses: Set<AirspaceClass> {
+        Set(airspaceSwitches.flatMap(\.covers))
     }
 
     // MARK: - Derived
