@@ -58,6 +58,28 @@ out geom;
 """
 
 
+def pick(table, country=None, size=None):
+    """The airports to fetch, from the table the app already ships.
+
+    `--country US --size 0` is the ninety-five large American fields, which is what "all the
+    major airports" comes to and about thirty megabytes of answers.
+    """
+    chosen = []
+    with open(table, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 7:
+                continue
+            if country and fields[5].upper() != country.upper():
+                continue
+            if size is not None and fields[6] != str(size):
+                continue
+            chosen.append(fields[0])
+    return sorted(chosen)
+
+
 def where(icao, table):
     """The airport's position, from the table the app already ships."""
     wanted = icao.upper()
@@ -93,6 +115,14 @@ def fetch(icao, latitude, longitude, radius):
         except ValueError:
             last = "the answer was not JSON"
             continue
+        # Overpass reports its own failures in the body, with a perfectly good HTTP 200 and
+        # an empty element list. Read as "no aeroways here" that looks exactly like a field
+        # nobody has mapped — which is how Albuquerque came back as "nothing to draw".
+        remark = answer.get("remark")
+        if remark:
+            last = remark.strip()
+            print(f"    {urllib.parse.urlparse(endpoint).netloc}: {last}", file=sys.stderr)
+            continue
         return raw, answer, took
     raise RuntimeError(last)
 
@@ -108,7 +138,10 @@ def tally(answer):
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch airport ground layouts.")
-    parser.add_argument("icao", nargs="+", help="ICAO codes")
+    parser.add_argument("icao", nargs="*", help="ICAO codes, or none with --country")
+    parser.add_argument("--country", help="fetch every airport in this country instead")
+    parser.add_argument("--size", type=int, choices=[0, 1, 2],
+                        help="0 large, 1 medium, 2 small with a scheduled service")
     parser.add_argument("--radius", type=int, default=4000,
                         help="metres round the field, for airports with no boundary mapped")
     parser.add_argument("--table", default="Resources/airports.txt",
@@ -119,8 +152,19 @@ def main():
         "~/Library/Application Support/Chartdesk/layouts/v2"))
     arguments = parser.parse_args()
 
+    wanted = arguments.icao or pick(arguments.table, arguments.country, arguments.size)
+    if not wanted:
+        raise SystemExit("nothing to fetch: name some airports, or pass --country")
+
     os.makedirs(arguments.out, exist_ok=True)
-    for icao in arguments.icao:
+    # Already on disk is already done: this is meant to be run again and again as the list
+    # grows, and Overpass should not be asked twice for the same field.
+    done = {name[:-5] for name in os.listdir(arguments.out) if name.endswith(".json")}
+    wanted = [icao for icao in wanted if icao.upper() not in done]
+    print(f"{len(wanted)} to fetch, {len(done)} already on disk", file=sys.stderr)
+
+    missed = []
+    for icao in wanted:
         icao = icao.upper()
         position = where(icao, arguments.table)
         if position is None:
@@ -131,17 +175,28 @@ def main():
             raw, answer, took = fetch(icao, position[0], position[1], arguments.radius)
         except RuntimeError as problem:
             print(f"{icao}: {problem}", file=sys.stderr)
+            missed.append(icao)
             continue
 
         counts = tally(answer)
         if not counts:
-            print(f"{icao}: nothing to draw — is the aeroway mapped?", file=sys.stderr)
+            print(f"{icao}: no aeroways in the answer — either nobody has mapped this "
+                  f"field, or Overpass answered with nothing and said so quietly",
+                  file=sys.stderr)
+            missed.append(icao)
             continue
         path = os.path.join(arguments.out, f"{icao}.json")
         with open(path, "wb") as out:
             out.write(raw)
         parts = ", ".join(f"{count} {kind}" for kind, count in sorted(counts.items()))
         print(f"{icao}: {parts}  ({len(raw) / 1024:.0f} KB in {took:.0f}s)", file=sys.stderr)
+
+    if missed:
+        # Overpass being busy is the usual reason, and it is busy in bursts: the ones it
+        # turned down five minutes ago it will often hand over now. Run again for them.
+        print(f"\n{len(missed)} came back empty or refused: {' '.join(missed)}",
+              file=sys.stderr)
+        print("Run the same command again to have another go at those.", file=sys.stderr)
 
 
 if __name__ == "__main__":

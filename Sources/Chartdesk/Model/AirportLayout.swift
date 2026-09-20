@@ -328,7 +328,11 @@ final class AirportLayoutStore: ObservableObject {
                     continue
                 }
                 guard let layout = parse(data, icao: icao) else {
-                    last = "nothing in the answer to draw"
+                    // Overpass reports its own failures in the body, with a perfectly good
+                    // HTTP 200 and no elements. Read as "no aeroways here" that is
+                    // indistinguishable from a field nobody has mapped, and the panel ends
+                    // up blaming OpenStreetMap for a busy server.
+                    last = remark(in: data) ?? "no aeroways in the answer for \(icao)"
                     continue
                 }
                 try? FileManager.default.createDirectory(at: directory,
@@ -377,6 +381,14 @@ final class AirportLayoutStore: ObservableObject {
     }
 
     /// Overpass's own JSON, with the geometry asked for inline.
+    /// What Overpass says when it is refusing rather than answering.
+    nonisolated static func remark(in data: Data) -> String? {
+        guard let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let remark = top["remark"] as? String
+        else { return nil }
+        return "Overpass: " + remark.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     nonisolated static func parse(_ data: Data, icao: String) -> AirportLayout? {
         guard let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let elements = top["elements"] as? [[String: Any]]
