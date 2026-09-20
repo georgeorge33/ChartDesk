@@ -14,6 +14,18 @@ Not released yet.
   picture and painting grey over it hides the thing you chose that base map to see. Over the
   drawn map, the pavement is drawn too: aprons filled, every way in its own width, from the
   `width` tag where there is one and from what the way is where there is not.
+- **The runway looks like a runway**: dark asphalt against the lighter concrete beside it, a
+  white line down each side, the broken line down the middle, and the piano keys at both
+  thresholds — eight stripes over the middle four-fifths of the width, thirty metres long,
+  which is what the real paint is. It replaces the bundled runway strip wherever it has been
+  fetched: that one is a straight band between two thresholds, and this is the runway's own
+  outline. The bundled table still draws every other airport on earth, which is what it is
+  for.
+- **Taxiways are drawn as curves** through their points rather than a chain of straight bits
+  between them. A fillet is three or four nodes round the corner, and joining them with
+  straight lines drew the corner as a cut-off — which is what made the yellow lines look
+  faceted. Catmull-Rom, so the curve passes through every node it was given and only the
+  space between them changes.
 - **Stand numbers** at the closest zoom, **holding positions** as the magenta bar painted
   across the taxiway, and the runways with a white line down each side and their numbers at
   the ends they belong to. Madrid comes to 418 stands and 293 holding positions.

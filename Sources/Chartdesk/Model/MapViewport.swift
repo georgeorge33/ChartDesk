@@ -67,6 +67,39 @@ struct MapSheet {
     ///
     /// No clip and no closing: a line has no inside, so where it goes round the back of the
     /// globe the pen simply lifts and comes down again where it returns.
+    /// The same line, drawn as a curve through its points rather than a chain of straight
+    /// bits between them.
+    ///
+    /// A taxiway's fillet is mapped as three or four nodes round the corner, and joining
+    /// them with straight lines draws the corner as a cut-off — which is what made the
+    /// yellow lines look faceted. Catmull-Rom through the same points, so nothing moves: the
+    /// curve passes through every node it was given and only the space between them changes.
+    func path(curve directions: [SIMD3<Double>]) -> Path {
+        var points: [CGPoint] = []
+        points.reserveCapacity(directions.count)
+        for direction in directions where projection.faces(direction) {
+            points.append(projection.point(direction))
+        }
+        guard points.count > 2 else { return path(line: directions) }
+
+        var path = Path()
+        path.move(to: points[0])
+        for index in 0..<(points.count - 1) {
+            let before = points[max(index - 1, 0)]
+            let from = points[index]
+            let to = points[index + 1]
+            let after = points[min(index + 2, points.count - 1)]
+            // A sixth of the way along the neighbours' span, which is the usual tension: any
+            // more and a tight corner overshoots the pavement it is drawn on.
+            let first = CGPoint(x: from.x + (to.x - before.x) / 6,
+                                y: from.y + (to.y - before.y) / 6)
+            let second = CGPoint(x: to.x - (after.x - from.x) / 6,
+                                 y: to.y - (after.y - from.y) / 6)
+            path.addCurve(to: to, control1: first, control2: second)
+        }
+        return path
+    }
+
     func path(line directions: [SIMD3<Double>]) -> Path {
         var path = Path()
         var drawing = false

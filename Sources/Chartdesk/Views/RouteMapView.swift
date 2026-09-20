@@ -1,4 +1,5 @@
 import AppKit
+import simd
 import SwiftUI
 
 /// A map you can drag and zoom, with the loaded flight drawn on it.
@@ -314,9 +315,7 @@ struct RouteMapView: View {
     /// is a straight line somewhere off the edge.
     private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
                               labels: inout [Label]) {
-        guard browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFrom,
-              let layout = nearbyLayout
-        else { return }
+        guard drawsGroundLayout, let layout = nearbyLayout else { return }
 
         // Metres to points, which is what turns a width tag into a line you can see.
         let perMetre = Double(camera.worldWidth) / 40_075_017
@@ -334,7 +333,7 @@ struct RouteMapView: View {
             // Every surface wide first, so one taxiway's tarmac cannot paint over its
             // neighbour's centreline.
             for way in layout.taxiways where sheet.mayShow(way.cap) {
-                let line = sheet.path(line: way.directions)
+                let line = sheet.path(curve: way.directions)
                 guard !line.isEmpty else { continue }
                 context.stroke(line, with: .color(Color(nsColor: Theme.taxiway)),
                                style: StrokeStyle(lineWidth: max(way.width * perMetre, 1),
@@ -346,35 +345,46 @@ struct RouteMapView: View {
         // photograph of it, a white line down each edge, and the broken line down the middle.
         // The edges are drawn whatever the base map is — over imagery they are what tell you
         // where the pavement stops, which a photograph taken at dusk does not.
+        let marking = Color(nsColor: Theme.runwayMarking)
         for way in layout.runways where sheet.mayShow(way.cap) {
             let wide = max(way.width * perMetre, 2)
             let line = sheet.path(line: way.directions)
             guard !line.isEmpty else { continue }
             if !showsRaster {
-                context.stroke(line, with: .color(Color(nsColor: Theme.runway)),
+                context.stroke(line, with: .color(Color(nsColor: Theme.runwayAsphalt)),
                                style: StrokeStyle(lineWidth: wide, lineCap: .butt))
             }
             guard wide > 4 else { continue }        // too narrow to have sides yet
             for edge in AirportLayout.edges(of: way) {
                 let side = sheet.path(line: edge)
                 guard !side.isEmpty else { continue }
-                context.stroke(side, with: .color(.white.opacity(0.85)),
-                               style: StrokeStyle(lineWidth: min(max(wide * 0.06, 0.8), 2)))
+                context.stroke(side, with: .color(marking.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: min(max(wide * 0.05, 0.7), 1.6)))
+            }
+            // The piano keys, which are what say "runway" before any number is legible.
+            guard wide > 10 else { continue }
+            for bar in AirportLayout.thresholdBars(of: way) {
+                let stripe = sheet.path(line: bar)
+                guard !stripe.isEmpty else { continue }
+                context.stroke(stripe, with: .color(marking),
+                               style: StrokeStyle(lineWidth: max(2.5 * perMetre, 1),
+                                                  lineCap: .butt))
             }
         }
 
         // Then the markings.
         let centreline = max(1, min(2.5, 6 * perMetre))
         for way in layout.taxiways where sheet.mayShow(way.cap) {
-            let line = sheet.path(line: way.directions)
+            let line = sheet.path(curve: way.directions)
             guard !line.isEmpty else { continue }
             context.stroke(line, with: .color(Color(nsColor: Theme.taxiLine)),
-                           style: StrokeStyle(lineWidth: centreline, lineCap: .round))
+                           style: StrokeStyle(lineWidth: centreline, lineCap: .round,
+                                              lineJoin: .round))
         }
         for way in layout.runways where sheet.mayShow(way.cap) {
             let line = sheet.path(line: way.directions)
             guard !line.isEmpty else { continue }
-            context.stroke(line, with: .color(.white.opacity(0.9)),
+            context.stroke(line, with: .color(Color(nsColor: Theme.runwayMarking)),
                            style: StrokeStyle(lineWidth: centreline,
                                               dash: [centreline * 8, centreline * 6]))
         }
@@ -458,6 +468,11 @@ struct RouteMapView: View {
         guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
         else { return nil }
         return at
+    }
+
+    /// True when the ground layout is switched on and the view is close enough for it.
+    private var drawsGroundLayout: Bool {
+        browser.showsAirportLayout && camera.worldWidth >= MapLayerRoom.layoutFrom
     }
 
     /// The layout of whichever airport the view is over, when it has been fetched.
@@ -579,6 +594,12 @@ struct RouteMapView: View {
                          labels: inout [Label]) {
         guard camera.showsRunways else { return }
 
+        // Where the fetched layout covers this field, it draws the runways instead: it has
+        // their real outline, their markings and their width, against a straight band drawn
+        // between two thresholds. The bundled table still draws every other airport on
+        // earth, which is what it is for.
+        let drawnByLayout = drawsGroundLayout ? nearbyLayout?.cap : nil
+
         let colour = Color(nsColor: Theme.runway)
         let named = camera.worldWidth >= 500_000
         // Feet across, in points. The globe is drawn to one scale at the middle of the view,
@@ -587,6 +608,10 @@ struct RouteMapView: View {
         let perFoot = 0.3048 / 6_371_000 * camera.radius
 
         for runway in geography.runways where sheet.mayShow(runway.cap) {
+            if let covered = drawnByLayout,
+               simd_dot(covered.centre, runway.cap.centre) > cos(covered.radius) {
+                continue
+            }
             let low = sheet.point(runway.low)
             let high = sheet.point(runway.high)
             let across = max(1.2, Double(runway.widthFeet) * perFoot)

@@ -89,6 +89,37 @@ struct AirportLayout {
         return [left, right]
     }
 
+    /// The piano keys: the white bars painted across each threshold.
+    ///
+    /// The one marking that says "runway" at a glance, and the reason a ground chart's
+    /// runway is recognisable at any size. Eight stripes over the middle four-fifths of the
+    /// width, starting six metres in and running thirty — which is what the real paint is,
+    /// near enough for a map.
+    static func thresholdBars(of way: Way) -> [[SIMD3<Double>]] {
+        guard way.directions.count >= 2 else { return [] }
+        var bars: [[SIMD3<Double>]] = []
+
+        for (at, towards) in [(way.directions[0], way.directions[1]),
+                              (way.directions[way.directions.count - 1],
+                               way.directions[way.directions.count - 2])] {
+            let along = towards - at
+            guard simd_length(along) > 1e-12 else { continue }
+            let forward = simd_normalize(along)
+            let sideways = simd_cross(at, forward)
+            guard simd_length(sideways) > 1e-12 else { continue }
+            let side = simd_normalize(sideways)
+
+            let start = 6.0 / 6_371_000, run = 30.0 / 6_371_000
+            for stripe in 0..<8 {
+                let across = (Double(stripe) - 3.5) / 8 * way.width * 0.8 / 6_371_000
+                let from = simd_normalize(at + forward * start + side * across)
+                let to = simd_normalize(at + forward * (start + run) + side * across)
+                bars.append([from, to])
+            }
+        }
+        return bars
+    }
+
     /// A runway's two numbers, each at the end it is painted on.
     ///
     /// "14L/32R" is two ends, and which is which is not a matter of taste: the 14 is painted

@@ -60,9 +60,13 @@ enum Theme {
     static let airspaceDanger   = rgb(0xD9534F)
     /// The airport's own ground, at the closest zoom there is: tarmac, and the lines
     /// painted on it. Taxiway centrelines are yellow on every airfield on earth.
-    static let taxiway         = rgb(0x3E4A57)
+    static let taxiway         = rgb(0x5C6874)
+    /// Asphalt, and darker than the concrete beside it, which is what tells a runway from a
+    /// taxiway before you have read a single number.
+    static let runwayAsphalt   = rgb(0x22272E)
+    static let runwayMarking   = rgb(0xF2F4F7)
     static let taxiLine        = rgb(0xE8C33A)
-    static let apron           = rgb(0x333D48)
+    static let apron           = rgb(0x4A5561)
     /// The bar you hold short at, and the stand you park on. Magenta is what a ground chart
     /// paints a holding position in.
     static let holdShort       = rgb(0xE05AC8)
