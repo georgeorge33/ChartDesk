@@ -61,7 +61,10 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   holds, how much of its pavement is a drawn outline, how big it is and when it arrived. The
   layouts arrive one at a time from a service that is often busy and are kept forever once
   they do, and until now the only way to know which ones you had was to fly somewhere and
-  see whether the taxiways were drawn.
+  see whether the taxiways were drawn. It can also throw the lot away, for when the query
+  has changed and the cached answers predate it — behind a confirmation that says how many
+  airports and how many megabytes are about to go, because collecting them again is hours
+  of asking.
 - **The field is worked out on its own plane.** Everything derived from a layout — the
   white lines down a runway's sides, the piano keys, the bar across a holding position — is
   now worked out on an azimuthal equidistant projection centred on the airport, which is what

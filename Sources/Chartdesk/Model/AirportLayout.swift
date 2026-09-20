@@ -328,6 +328,34 @@ final class AirportLayoutStore: ObservableObject {
     /// The codes the map is holding, for the list to mark.
     var held: Set<String> { Set(layouts.keys) }
 
+    /// Throws away every layout, on disk and in hand.
+    ///
+    /// These take a minute or two each to fetch from a shared service that is often busy —
+    /// the whole of the United States is hours of asking — so nothing calls this on the
+    /// app's behalf. It is here for when a layout has been fetched wrong, or the query has
+    /// changed and the cached answers predate it, and the only fix is to ask again.
+    ///
+    /// Returns how many files went, so whatever asked can say so.
+    @discardableResult
+    func deleteAll() -> Int {
+        let manager = FileManager.default
+        let files = (try? manager.contentsOfDirectory(at: Self.directory,
+                                                      includingPropertiesForKeys: nil)) ?? []
+        var gone = 0
+        for file in files where file.pathExtension == "json" {
+            if (try? manager.removeItem(at: file)) != nil { gone += 1 }
+        }
+
+        // The map is holding some of them, and something refused earlier should be allowed
+        // to be asked for again — otherwise emptying the cache would leave the app behaving
+        // as though it were still full.
+        layouts.removeAll()
+        refused.removeAll()
+        queued.removeAll()
+        failure = nil
+        return gone
+    }
+
     /// True when this one was asked for and refused, so nothing keeps promising it.
     func hasRefused(_ icao: String) -> Bool { refused.contains(icao.uppercased()) }
 

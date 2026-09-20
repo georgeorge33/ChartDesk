@@ -14,6 +14,7 @@ struct AirportLayoutsView: View {
     @State private var airports: [AirportLayoutSummary] = []
     @State private var reading = true
     @State private var filter = ""
+    @State private var confirmingDelete = false
 
     private var shown: [AirportLayoutSummary] {
         let wanted = filter.trimmingCharacters(in: .whitespaces).uppercased()
@@ -114,18 +115,37 @@ struct AirportLayoutsView: View {
             }
             .help("Show the cache folder in the Finder")
             Button("Reread", action: read)
+            Button("Delete All…", role: .destructive) { confirmingDelete = true }
+                .disabled(airports.isEmpty)
+                .help("Throw away every layout on this Mac")
         }
         .controlSize(.small)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        // Hours of asking a shared service went into these, so the button says what it is
+        // about to cost before it does it rather than after.
+        .confirmationDialog("Delete every airport layout?",
+                            isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete \(airports.count) Layouts", role: .destructive) {
+                AirportLayoutStore.shared.deleteAll()
+                read()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("\(airports.count) airports and \(Self.bytes(totalBytes)) go from this Mac, "
+                 + "and the map stops drawing their taxiways. They are fetched again one at "
+                 + "a time as you zoom in on a field, which takes a minute or two each — "
+                 + "these took hours to collect.")
+        }
     }
+
+    private var totalBytes: Int { airports.reduce(0) { $0 + $1.bytes } }
 
     private var summary: String {
         guard !airports.isEmpty else { return "Airport layouts" }
         let taxiways = airports.reduce(0) { $0 + $1.taxiways }
-        let size = airports.reduce(0) { $0 + $1.bytes }
         let held = airports.filter(\.loaded).count
-        return "\(airports.count) airports · \(taxiways) taxiways · \(Self.bytes(size))"
+        return "\(airports.count) airports · \(taxiways) taxiways · \(Self.bytes(totalBytes))"
             + " · \(held) held by the map"
     }
 
