@@ -60,7 +60,7 @@ struct MapLayerPanel: View {
                 noteRow("Airport layout",
                         detail: "Runways, taxiways, stands and holding positions, from "
                               + "OpenStreetMap. Fetched from about 60km across and drawn "
-                              + "below 6km. Your flight's own airfields are fetched "
+                              + "below 20km. Your flight's own airfields are fetched "
                               + "whatever the map is showing.")
                 if let fetching = ground.fetching {
                     Text("Fetching \(fetching)'s layout"

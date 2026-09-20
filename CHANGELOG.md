@@ -87,6 +87,30 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   line and the nearest border is nowhere near — so there was nothing to choose between. The
   Layers panel still says where the layout comes from and how far out it is fetched.
 
+**The base map**
+
+- **Terrain replaces Topographic.** The old one was OpenTopoMap — a picture somebody else had
+  already drawn, in somebody else's colours, over a map of roads and villages this app has no
+  use for. The new one is not a picture at all: the tiles are a measurement, a height in
+  metres per pixel, and the hillshading, the colour by height and the coastline are all drawn
+  here. Which means it can be made to sit under a chart instead of competing with one.
+- **Lit from the north-west at 45°**, where relief maps have put the sun since they were
+  painted by hand, and shaded from the surface normal — the slope-and-aspect form of the same
+  arithmetic costs four transcendentals a pixel and reads no better. A tile takes 1.5 ms.
+- **The sea is flat.** Below sea level the hillshade is switched off: the tiles carry real
+  bathymetry, and shading it turns every ridge on the sea floor into a wave and every
+  coastline to mush.
+- The slope is worked out against the tile's **own latitude**, because Mercator shrinks
+  towards the poles and a pixel over Svalbard covers a third of what one over the equator
+  does. Shade the Arctic with the equator's figure and it comes out as a mountain range.
+- Elevation comes from a dozen national surveys by way of Tilezen, and **all of them want
+  crediting**. The map carries the short form, the Layers panel links to the full notice, and
+  LICENSES.md has all eleven in full.
+- Anyone who had Topographic chosen gets Terrain in its place rather than being dropped back
+  to Drawn. The old OpenTopoMap tiles on disk are left alone — they are the oldest thing in
+  the cache, so the 400 MB sweep takes them first.
+
+
 **Also**
 
 - **Water runways are gone.** A seaplane base's landing area is tagged as a runway and is a

@@ -14,8 +14,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
 
     /// Natural Earth and OpenStreetMap, drawn as shapes. Works on a plane.
     case vector
-    /// OpenTopoMap: OpenStreetMap with contours and hillshading over it.
-    case topographic
+    /// Shaded relief, rendered here from raw elevation.
+    case terrain
     /// Apple's imagery.
     case satellite
 
@@ -34,7 +34,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var source: Source {
         switch self {
         case .vector: return .drawn
-        case .topographic: return .web("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+        case .terrain:
+            return .web("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png")
         case .satellite: return .appleMaps
         }
     }
@@ -42,7 +43,7 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var name: String {
         switch self {
         case .vector: return "Drawn"
-        case .topographic: return "Topographic"
+        case .terrain: return "Terrain"
         case .satellite: return "Satellite"
         }
     }
@@ -52,10 +53,10 @@ enum BaseMap: String, CaseIterable, Identifiable {
         case .vector:
             return "Coastline, lakes and borders, drawn from the tables in the app. Always "
                  + "there, network or no network."
-        case .topographic:
-            return "OpenTopoMap: OpenStreetMap with contour lines, hillshading and peak "
-                 + "heights over it. Kept on this Mac once fetched, so anywhere you have "
-                 + "looked works offline."
+        case .terrain:
+            return "Shaded relief and height, drawn here from raw elevation rather than "
+                 + "fetched as a picture. Kept on this Mac once fetched, so anywhere you "
+                 + "have looked works offline."
         case .satellite:
             return "Apple Maps imagery. Needs the network every time — Apple does not "
                  + "permit an app to keep a copy."
@@ -87,8 +88,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
     ///
     /// Drawing a tile server's 256-pixel squares at 256 *points* is what a slippy map does
     /// on a screen with one pixel to the point, and on a Retina screen it magnifies every
-    /// tile twofold — which is what a blurry map looks like. OpenTopoMap publishes no Retina
-    /// set, so the answer is to fetch one level deeper and draw it at half the size: four
+    /// tile twofold — which is what a blurry map looks like. The terrain tiles are 256 square and there is no
+    /// Retina set, so the answer is to fetch one level deeper and draw at half the size: four
     /// times the tiles, and the difference between reading "Reichenau" and not.
     var tileScale: CGFloat { 2 }
 
@@ -97,11 +98,16 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var deepestZoom: Int {
         switch self {
         case .vector: return 0
-        // Measured: z18 returns the same 4,343-byte placeholder everywhere.
-        case .topographic: return 17
+        // Measured: z16 is a 404 everywhere. The elevation itself is coarser than that
+        // in most of the world anyway — 30 m from SRTM is about a z12 pixel.
+        case .terrain: return 15
         case .satellite: return 20
         }
     }
+
+    /// True for the one whose tiles are a measurement rather than a picture, and so have
+    /// to be rendered before they can be drawn.
+    var rendersElevation: Bool { self == .terrain }
 
     /// Tiles from a server may be kept; Apple's may not.
     var cachesOnDisk: Bool {
@@ -113,9 +119,12 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var attribution: [String] {
         switch self {
         case .vector: return []
-        case .topographic:
-            return ["© OpenStreetMap contributors · SRTM",
-                    "© OpenTopoMap · CC-BY-SA"]
+        case .terrain:
+            // The full list names eleven national surveys and is too long for a corner of
+            // a map, so the map carries the short form and the Layers panel carries the
+            // link. LICENSES.md has it in full.
+            return ["Terrain: USGS 3DEP, SRTM, GMTED2010,",
+                    "Copernicus EU-DEM and others · Tilezen"]
         case .satellite: return ["Apple Maps"]
         }
     }
@@ -130,7 +139,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var legal: URL? {
         switch self {
         case .vector: return nil
-        case .topographic: return URL(string: "https://opentopomap.org/about")
+        case .terrain:
+            return URL(string: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
         case .satellite: return URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")
         }
     }
@@ -347,7 +357,8 @@ final class BaseMapStore: ObservableObject {
         }
 
         Self.work.async {
-            if let data = try? Data(contentsOf: cached), let pixels = Self.read(data) {
+            if let data = try? Data(contentsOf: cached),
+               let pixels = Self.read(data, for: wanted, at: tile) {
                 Task { @MainActor in
                     self.loading.remove(tile)
                     defer { self.start() }
@@ -363,7 +374,8 @@ final class BaseMapStore: ObservableObject {
             request.setValue(Self.agent, forHTTPHeaderField: "User-Agent")
             URLSession.shared.dataTask(with: request) { data, response, error in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let pixels = (code == 200 && data != nil) ? Self.read(data!) : nil
+                let pixels = (code == 200 && data != nil)
+                    ? Self.read(data!, for: wanted, at: tile) : nil
                 if let data = data, pixels != nil {
                     try? FileManager.default.createDirectory(
                         at: cached.deletingLastPathComponent(),
@@ -431,10 +443,10 @@ final class BaseMapStore: ObservableObject {
         didSweep = true
         Self.work.async {
             let manager = FileManager.default
-            let root = Self.cacheURL(for: MapTile(z: 0, x: 0, y: 0), layer: .topographic)
-                .deletingLastPathComponent()      // …/topographic/0/0
-                .deletingLastPathComponent()      // …/topographic/0
-                .deletingLastPathComponent()      // …/topographic
+            let root = Self.cacheURL(for: MapTile(z: 0, x: 0, y: 0), layer: .terrain)
+                .deletingLastPathComponent()      // …/terrain/0/0
+                .deletingLastPathComponent()      // …/terrain/0
+                .deletingLastPathComponent()      // …/terrain
                 .deletingLastPathComponent()      // …/tiles
             guard let walk = manager.enumerator(
                 at: root, includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey])
@@ -476,6 +488,19 @@ final class BaseMapStore: ObservableObject {
     ///
     /// Not by way of `tiffRepresentation`, which is what this did first: encoding a snapshot
     /// to TIFF and parsing it back cost 247ms for a full-view image and buys nothing.
+    /// A tile, ready to draw.
+    ///
+    /// The terrain layer's tiles are heights rather than a picture, so they are painted on
+    /// the way past — here, once, rather than on every warp, and off the main thread with
+    /// the decode. What is written to the cache is the untouched bytes from the server, so
+    /// changing how terrain is drawn does not mean fetching it all again.
+    nonisolated private static func read(_ data: Data, for layer: BaseMap,
+                                         at tile: MapTile) -> TilePixels? {
+        guard let pixels = read(data) else { return nil }
+        if layer.rendersElevation { TerrainShading.paint(pixels, at: tile) }
+        return pixels
+    }
+
     nonisolated private static func read(_ data: Data) -> TilePixels? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
