@@ -25,6 +25,8 @@ struct RouteMapView: View {
     @ObservedObject private var openAIP = OpenAIPStore.shared
     /// Apple Maps, when the base map is one of its two.
     @ObservedObject private var base = BaseMapStore.shared
+    /// Airport ground layouts, fetched one airport at a time.
+    @ObservedObject private var ground = AirportLayoutStore.shared
 
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
@@ -132,6 +134,7 @@ struct RouteMapView: View {
         .onChange(of: camera) { _, _ in
             requestCells()
             requestBaseMap()
+            requestLayers()
         }
         // The first ask for a cell only starts the index reading — fifteen megabytes of it,
         // off the main thread — and returns. Without this the cells were not asked for again
@@ -163,14 +166,17 @@ struct RouteMapView: View {
         var under: Text?
         /// The rule's colour, so it matches the figures rather than the furniture.
         var ruleColour: Color?
+        /// Filled behind the text, the way a ground chart writes a taxiway's letter.
+        var box: Color?
         let at: CGPoint
         let anchor: UnitPoint
 
-        init(text: Text, under: Text? = nil, ruleColour: Color? = nil,
+        init(text: Text, under: Text? = nil, ruleColour: Color? = nil, box: Color? = nil,
              at: CGPoint, anchor: UnitPoint) {
             self.text = text
             self.under = under
             self.ruleColour = ruleColour
+            self.box = box
             self.at = at
             self.anchor = anchor
         }
@@ -271,6 +277,7 @@ struct RouteMapView: View {
                            lineWidth: 1)
         }
 
+        groundLayout(in: &context, sheet: sheet, labels: &labels)
         airspace(in: &context, sheet: sheet, labels: &labels)
         runways(in: &context, sheet: sheet, labels: &labels)
         places(in: &context, sheet: sheet, labels: &labels)
@@ -294,6 +301,105 @@ struct RouteMapView: View {
             guard width > 0 else { continue }
             context.stroke(path, with: .color(stroke), lineWidth: width)
         }
+    }
+
+    /// The airport's ground plan: aprons, taxiways and runways, the way a ground chart
+    /// draws them.
+    ///
+    /// Under the airspace and over everything else, because it is the closest thing on the
+    /// sheet: by the time this draws, the view is a few kilometres across and the coastline
+    /// is a straight line somewhere off the edge.
+    private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
+                              labels: inout [Label]) {
+        guard browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFrom,
+              let layout = nearbyLayout
+        else { return }
+
+        // Metres to points, which is what turns a width tag into a line you can see.
+        let perMetre = Double(camera.worldWidth) / 40_075_017
+
+        // The tarmac, but only where there is none underneath. Over imagery the pavement is
+        // already in the picture and painting grey over it hides the very thing you chose
+        // that base map to see — so there, only the markings are drawn.
+        if !showsRaster {
+            for apron in layout.aprons where sheet.mayShow(apron.cap) {
+                let path = sheet.path(ring: MapShape(directions: apron.directions,
+                                                     cap: apron.cap))
+                guard !path.isEmpty else { continue }
+                context.fill(path, with: .color(Color(nsColor: Theme.apron)))
+            }
+            // Every surface wide first, so one taxiway's tarmac cannot paint over its
+            // neighbour's centreline.
+            for way in layout.taxiways where sheet.mayShow(way.cap) {
+                let line = sheet.path(line: way.directions)
+                guard !line.isEmpty else { continue }
+                context.stroke(line, with: .color(Color(nsColor: Theme.taxiway)),
+                               style: StrokeStyle(lineWidth: max(way.width * perMetre, 1),
+                                                  lineCap: .round, lineJoin: .round))
+            }
+            for way in layout.runways where sheet.mayShow(way.cap) {
+                let line = sheet.path(line: way.directions)
+                guard !line.isEmpty else { continue }
+                context.stroke(line, with: .color(Color(nsColor: Theme.runway)),
+                               style: StrokeStyle(lineWidth: max(way.width * perMetre, 2),
+                                                  lineCap: .butt))
+            }
+        }
+
+        // Then the markings.
+        let centreline = max(1, min(2.5, 6 * perMetre))
+        for way in layout.taxiways where sheet.mayShow(way.cap) {
+            let line = sheet.path(line: way.directions)
+            guard !line.isEmpty else { continue }
+            context.stroke(line, with: .color(Color(nsColor: Theme.taxiLine)),
+                           style: StrokeStyle(lineWidth: centreline, lineCap: .round))
+        }
+        for way in layout.runways where sheet.mayShow(way.cap) {
+            let line = sheet.path(line: way.directions)
+            guard !line.isEmpty else { continue }
+            context.stroke(line, with: .color(.white.opacity(0.75)),
+                           style: StrokeStyle(lineWidth: centreline,
+                                              dash: [centreline * 8, centreline * 6]))
+        }
+
+        layoutLabels(layout, sheet: sheet, labels: &labels)
+    }
+
+    /// A designator on each named way, in the middle of it, in a yellow box like a chart's.
+    private func layoutLabels(_ layout: AirportLayout, sheet: MapSheet,
+                              labels: inout [Label]) {
+        for way in layout.taxiways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
+            guard let at = middle(of: way, sheet: sheet) else { continue }
+            labels.append(Label(text: Text(AirportLayout.designator(way.ref))
+                                    .font(.ngSmallBold)
+                                    .foregroundStyle(Color.black),
+                                box: Color(nsColor: Theme.taxiLine),
+                                at: at, anchor: .center))
+        }
+        for way in layout.runways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
+            guard let at = middle(of: way, sheet: sheet) else { continue }
+            labels.append(Label(text: Text(way.ref)
+                                    .font(.ngSmallBold)
+                                    .foregroundStyle(Color.white),
+                                at: at, anchor: .center))
+        }
+    }
+
+    /// The middle of a way, on the sheet, when it is on the sheet at all.
+    private func middle(of way: AirportLayout.Way, sheet: MapSheet) -> CGPoint? {
+        let direction = way.directions[way.directions.count / 2]
+        guard sheet.projection.faces(direction) else { return nil }
+        let at = sheet.projection.point(direction)
+        guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
+        else { return nil }
+        return at
+    }
+
+    /// The layout of whichever airport the view is over, when it has been fetched.
+    private var nearbyLayout: AirportLayout? {
+        guard let airport = WorldData.nearestAirport(to: camera.centre, within: 20_000)
+        else { return nil }
+        return ground.layout(for: airport.icao)
     }
 
     /// The tiled base map, reprojected onto the globe.
@@ -476,6 +582,10 @@ struct RouteMapView: View {
             else { continue }
 
             taken.append(padded)
+            if let box = label.box {
+                let around = frame.insetBy(dx: -2.5, dy: -1.5)
+                context.fill(Path(roundedRect: around, cornerRadius: 2), with: .color(box))
+            }
             guard let below = below else {
                 context.draw(resolved, at: label.at, anchor: label.anchor)
                 continue
@@ -632,6 +742,11 @@ struct RouteMapView: View {
         if browser.showsAirspace { geography.requestAirspace() }
         if browser.showsStateBorders { geography.requestStates() }
         if browser.showsCityNames { geography.requestCities() }
+        // The ground plan of whatever airport the view has come down over.
+        if browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFrom,
+           let airport = WorldData.nearestAirport(to: camera.centre, within: 20_000) {
+            ground.request(airport)
+        }
     }
 
     /// Asks Apple Maps for what the view is looking at.

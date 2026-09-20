@@ -13,6 +13,7 @@ struct MapLayerPanel: View {
     @ObservedObject private var coastline = CoastlineStore.shared
     @ObservedObject private var openAIP = OpenAIPStore.shared
     @ObservedObject private var base = BaseMapStore.shared
+    @ObservedObject private var ground = AirportLayoutStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -55,6 +56,22 @@ struct MapLayerPanel: View {
                                 + "and only where a ring is big enough to read.")
                 if browser.showsAirspace {
                     classes
+                }
+                switchRow("Airport layout", on: $browser.showsAirportLayout,
+                          detail: "Runways, taxiways and aprons with their designators, from "
+                                + "OpenStreetMap. Drawn below about 6km across, fetched once "
+                                + "per airport and kept.")
+                if let fetching = ground.fetching {
+                    Text("Fetching \(fetching)'s layout… Overpass is a shared service and "
+                         + "can take a minute or two.")
+                        .font(.ngSmall)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if browser.showsAirportLayout, let failure = ground.failure {
+                    Text("No layout: \(failure)")
+                        .font(.ngSmall)
+                        .foregroundStyle(Color.ngWarning)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

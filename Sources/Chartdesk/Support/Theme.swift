@@ -58,6 +58,12 @@ enum Theme {
     /// Prohibited, restricted and danger areas: red, because they are the one thing on this
     /// layer that is about staying out rather than talking to someone.
     static let airspaceDanger   = rgb(0xD9534F)
+    /// The airport's own ground, at the closest zoom there is: tarmac, and the lines
+    /// painted on it. Taxiway centrelines are yellow on every airfield on earth.
+    static let taxiway         = rgb(0x3E4A57)
+    static let taxiLine        = rgb(0xE8C33A)
+    static let apron           = rgb(0x333D48)
+
     /// The colour a kind of airspace is drawn in, so the map and the Layers panel cannot
     /// disagree about what a chip means.
     static func airspace(_ klass: AirspaceClass) -> NSColor {

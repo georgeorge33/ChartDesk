@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.2.0
+
+Not released yet.
+
+**The airport's own ground**
+
+- **Runways, taxiways and aprons** at the closest zooms, the way a ground chart draws them:
+  yellow centrelines, each taxiway's designator in a yellow box, the runways with their
+  numbers. From OpenStreetMap, which is the only source that has taxiways at all — the
+  bundled runway table knows where a runway is and nothing about what leads to it.
+- Over imagery **only the markings are drawn**, because the tarmac is already in the
+  picture and painting grey over it hides the thing you chose that base map to see. Over the
+  drawn map, the pavement is drawn too: aprons filled, every way in its own width, from the
+  `width` tag where there is one and from what the way is where there is not.
+- OpenStreetMap numbers a taxiway's segments — Madrid's ZW is ZW-1, ZW-2, ZW-3 — and the
+  chart paints ZW5, so a letter group, a hyphen and a number group become the designator.
+  Anything else keeps the name it was given: a north-south taxiway is not N followed by S.
+- Fetched one airport at a time from the Overpass API and **kept**. It is a free, shared
+  service and a slow one — the same query for Madrid took 48 seconds one minute and 152 the
+  next — so `Tools/make_layouts.py` will fetch the fields you actually fly ahead of time,
+  and the app never asks for the same airport twice.
+
+**Also**
+
+- The credits in the corner of the map are 5pt, in a size of their own.
+
 ## 1.1.0-rc.6
 
 What this candidate adds to rc.5. Full release soon.

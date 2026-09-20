@@ -12,6 +12,12 @@ courtesies.
 optional full coastline, built by the same script into Application Support, is from the same
 source.
 
+Also `~/Library/Application Support/Chartdesk/layouts/ICAO.json`: each airport's runways,
+taxiways and aprons, fetched from the [Overpass API](https://overpass-api.de/) the first time
+you zoom into that airport, or ahead of time by `Tools/make_layouts.py`. Overpass is a free,
+shared, community-run service, so the app asks it for one airport at a time, writes the
+answer to disk, and never asks twice.
+
 **Licence:** [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
 
 **What that requires of this app, and where it is done:**

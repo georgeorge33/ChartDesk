@@ -346,6 +346,10 @@ enum MapLayerRoom {
     /// Internal borders clutter a view of a continent and place a view of a state.
     static let statesFrom: CGFloat = 6_000
 
+    /// The airport's ground plan, which is worth drawing once a taxiway is wider than a
+    /// line: about six kilometres across a panel, where a runway is already most of it.
+    static let layoutFrom: CGFloat = 6_000_000
+
     /// The least important town worth naming, on Natural Earth's own scale of 0 to 10.
     ///
     /// Drawn in rank order and decluttered, so this is a floor on the work rather than on what
