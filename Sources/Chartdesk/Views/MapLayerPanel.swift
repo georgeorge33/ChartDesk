@@ -57,11 +57,11 @@ struct MapLayerPanel: View {
                 if browser.showsAirspace {
                     classes
                 }
-                switchRow("Airport layout", on: $browser.showsAirportLayout,
-                          detail: "Runways, taxiways, stands and holding positions, from "
-                                + "OpenStreetMap. Fetched from about 60km across and drawn "
-                                + "below 6km. Your flight's own airfields are fetched "
-                                + "whatever the map is showing.")
+                noteRow("Airport layout",
+                        detail: "Runways, taxiways, stands and holding positions, from "
+                              + "OpenStreetMap. Fetched from about 60km across and drawn "
+                              + "below 6km. Your flight's own airfields are fetched "
+                              + "whatever the map is showing.")
                 if let fetching = ground.fetching {
                     Text("Fetching \(fetching)'s layout"
                          + (ground.waiting > 0 ? ", \(ground.waiting) more to go" : "")
@@ -70,7 +70,7 @@ struct MapLayerPanel: View {
                         .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if browser.showsAirportLayout, let failure = ground.failure {
+                } else if let failure = ground.failure {
                     Text("No layout: \(failure)")
                         .font(.ngSmall)
                         .foregroundStyle(Color.ngWarning)
@@ -141,6 +141,19 @@ struct MapLayerPanel: View {
             Toggle(title, isOn: on)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
+                .font(.ngSmallMedium)
+            Text(detail)
+                .font(.ngSmall)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.bottom, 2)
+    }
+
+    /// A layer that is always drawn: the same row as a switch, without the switch.
+    private func noteRow(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
                 .font(.ngSmallMedium)
             Text(detail)
                 .font(.ngSmall)

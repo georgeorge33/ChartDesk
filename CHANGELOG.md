@@ -49,6 +49,9 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   service and a slow one — the same query for Madrid took 48 seconds one minute and 152 the
   next — so `Tools/make_layouts.py` will fetch the fields you actually fly ahead of time,
   and the app never asks for the same airport twice.
+- **No switch for it.** This far in the ground plan is the map — the coastline is a straight
+  line and the nearest border is nowhere near — so there was nothing to choose between. The
+  Layers panel still says where the layout comes from and how far out it is fetched.
 
 **Also**
 

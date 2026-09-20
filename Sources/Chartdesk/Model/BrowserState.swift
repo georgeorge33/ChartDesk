@@ -89,11 +89,6 @@ final class BrowserState: ObservableObject {
         }
     }
 
-    /// The airport ground plan at the closest zooms.
-    @Published var showsAirportLayout: Bool {
-        didSet { UserDefaults.standard.set(showsAirportLayout, forKey: DefaultsKey.showsAirportLayout) }
-    }
-
     /// State and province borders.
     @Published var showsStateBorders: Bool {
         didSet { UserDefaults.standard.set(showsStateBorders, forKey: DefaultsKey.showsStateBorders) }
@@ -107,7 +102,6 @@ final class BrowserState: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
-            DefaultsKey.showsAirportLayout: true,
             DefaultsKey.zoomToFitOnOpen: true,
             DefaultsKey.restoreLastChart: true,
         ])
@@ -117,7 +111,6 @@ final class BrowserState: ObservableObject {
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
         showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
-        showsAirportLayout = defaults.bool(forKey: DefaultsKey.showsAirportLayout)
         baseMap = BaseMap(rawValue: defaults.string(forKey: DefaultsKey.baseMap) ?? "") ?? .vector
         // An absent preference means the default set; an empty one means none, which is a
         // thing you can ask for by turning all six off.

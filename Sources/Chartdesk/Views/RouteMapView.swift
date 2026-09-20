@@ -478,9 +478,10 @@ struct RouteMapView: View {
         return at
     }
 
-    /// True when the ground layout is switched on and the view is close enough for it.
+    /// True when the view is close enough for the ground layout. Always drawn at that range:
+    /// this close in, the shape of the field is the map.
     private var drawsGroundLayout: Bool {
-        browser.showsAirportLayout && camera.worldWidth >= MapLayerRoom.layoutFrom
+        camera.worldWidth >= MapLayerRoom.layoutFrom
     }
 
     /// The layout of whichever airport the view is over, when it has been fetched.
@@ -847,7 +848,7 @@ struct RouteMapView: View {
         // The ground plans of the fields in view, biggest first, from ten times further out
         // than they are drawn — a layout takes a minute or two to arrive, and asking on the
         // way down means it is there when you get there.
-        if browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFetchFrom {
+        if camera.worldWidth >= MapLayerRoom.layoutFetchFrom {
             let across = degreesAcross * 111_000 / 2
             ground.want(WorldData.airports(within: max(across, 5_000), of: camera.centre))
         }
