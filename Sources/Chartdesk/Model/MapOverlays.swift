@@ -350,6 +350,14 @@ enum MapLayerRoom {
     /// line: about six kilometres across a panel, where a runway is already most of it.
     static let layoutFrom: CGFloat = 6_000_000
 
+    /// And worth *fetching* ten times sooner than that — about sixty kilometres across,
+    /// which is the point where it is clear which field you are coming down at.
+    ///
+    /// Overpass takes a minute or two, so asking at the zoom where the layout would be drawn
+    /// means watching an empty airport while it arrives. Asking on the way down means it is
+    /// there when you get there.
+    static let layoutFetchFrom: CGFloat = 600_000
+
     /// And the stands, which are hundreds of numbers at a big field: only once the view is
     /// about a kilometre across, where you would be looking for one.
     static let standsFrom: CGFloat = 30_000_000

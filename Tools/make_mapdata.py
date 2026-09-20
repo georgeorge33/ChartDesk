@@ -312,12 +312,19 @@ def build_tier(tier, source, report):
 
 
 def build_airports(source, report):
-    """The fields the map marks, and the runways it draws once you are close enough."""
+    """The fields the map marks, and the runways it draws once you are close enough.
+
+    Each carries how big OurAirports reckons it is — 0 large, 1 medium, 2 a small field with
+    a scheduled service. The map fetches ground layouts biggest-first as you come down, and
+    without this it would spend a shared, slow service on a grass strip while Heathrow waits.
+    """
     wanted = {"large_airport", "medium_airport"}
+    sizes = {"large_airport": 0, "medium_airport": 1}
     rows = 0
     with open("Resources/airports.txt", "w", encoding="utf-8") as out:
         out.write("# Airports from OurAirports (public domain): ident, lat, lon, name, town, "
-                  "country.\n# Rebuild with Tools/make_mapdata.py\n")
+                  "country, size.\n# Size is 0 large, 1 medium, 2 small with a scheduled "
+                  "service.\n# Rebuild with Tools/make_mapdata.py\n")
         for row in csv.DictReader(open(source("airports.csv"), newline="", encoding="utf-8")):
             kind = row["type"]
             if kind not in wanted and not (kind == "small_airport"
@@ -331,7 +338,8 @@ def build_airports(source, report):
                                  f"{float(row['longitude_deg']):.4f}",
                                  (row["name"] or "").replace("\t", " ").strip(),
                                  (row["municipality"] or "").replace("\t", " ").strip(),
-                                 row["iso_country"]]) + "\n")
+                                 row["iso_country"],
+                                 str(sizes.get(kind, 2))]) + "\n")
             rows += 1
     report("Resources/airports.txt", rows, rows, os.path.getsize("Resources/airports.txt"))
 

@@ -15,6 +15,9 @@ struct MapAirport: Identifiable, Equatable {
     let name: String
     let town: String
     let country: String
+    /// How big OurAirports reckons it is: 0 large, 1 medium, 2 a small field with a
+    /// scheduled service. What decides the order ground layouts are fetched in.
+    var size: Int = 2
 
     var id: String { icao }
 
@@ -136,6 +139,36 @@ enum WorldData {
             if dot > bestDot { bestDot = dot; best = airport }
         }
         return best
+    }
+
+    /// Every airport inside a circle, biggest first and nearest first among equals.
+    ///
+    /// The order is the whole point: ground layouts are fetched one at a time from a shared
+    /// service that takes a minute or two, so the field you are actually coming down at has
+    /// to be asked for before the grass strip beside it.
+    static func airports(within radius: Double, of where_: Coordinate,
+                         most: Int = 12) -> [MapAirport] {
+        inView(airports.values, within: radius, of: where_, most: most)
+    }
+
+    /// The same, over any list — which is what lets it be checked without a bundle.
+    static func inView(_ all: some Collection<MapAirport>, within radius: Double,
+                       of where_: Coordinate, most: Int) -> [MapAirport] {
+        let from = where_.direction
+        let cosLimit = cos(radius / 6_371_000)
+        var found: [(airport: MapAirport, dot: Double)] = []
+        for airport in all {
+            let dot = simd_dot(from, airport.coordinate.direction)
+            if dot > cosLimit { found.append((airport, dot)) }
+        }
+        return found
+            .sorted {
+                $0.airport.size == $1.airport.size
+                    ? $0.dot > $1.dot                       // nearer the middle of the view
+                    : $0.airport.size < $1.airport.size     // but a big field first
+            }
+            .prefix(most)
+            .map(\.airport)
     }
 
     static func airport(_ icao: String?) -> MapAirport? {
@@ -332,7 +365,8 @@ enum WorldData {
                                                             longitude: longitude),
                                      name: String(fields[3]),
                                      town: String(fields[4]),
-                                     country: String(fields[5]))
+                                     country: String(fields[5]),
+                                     size: fields.count > 6 ? (Int(fields[6]) ?? 2) : 2)
         }
         return table
     }
@@ -400,7 +434,7 @@ enum Spherical {
 struct MapCamera: Equatable {
 
     /// The place on the globe turned towards the viewer.
-    var centre = Coordinate(latitude: 25, longitude: -20)
+    var centre = Coordinate(latitude: 51.47, longitude: -0.45)
 
     /// How many points across the whole world would be drawn — the sphere's circumference on
     /// the sheet.
@@ -409,7 +443,7 @@ struct MapCamera: Equatable {
     /// the view cover" is the same arithmetic it was under Mercator: a panel shows
     /// `width × 360 / worldWidth` degrees either way. Which means the zooms at which each
     /// level of detail takes over did not have to be retuned for the globe.
-    var worldWidth: CGFloat = 2_600
+    var worldWidth: CGFloat = 800000
 
     /// How far in and out the map will go, as the sphere's circumference in points.
     ///

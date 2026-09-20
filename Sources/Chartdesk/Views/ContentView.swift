@@ -70,6 +70,11 @@ struct ContentView: View {
         }
         .onAppear {
             restoreSelection()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(2500))
+                browser.selectedChartID = nil
+                browser.sidebarSelection = .map
+            }
             updater.checkOnLaunchIfWanted()
             flight.refreshOnLaunchIfWanted()
             navdata.checkOnLaunchIfWanted()
@@ -139,6 +144,7 @@ struct ContentView: View {
         if let identifier = browser.selectedChartID, library.chart(id: identifier) == nil {
             browser.selectedChartID = nil
         }
+        browser.sidebarSelection = .map
     }
 }
 

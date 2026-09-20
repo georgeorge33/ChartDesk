@@ -200,6 +200,11 @@ final class AirportLayoutStore: ObservableObject {
     @Published private(set) var failure: String?
 
     private var refused: Set<String> = []
+    /// Waiting their turn, in the order to ask. One request at a time, always: Overpass is
+    /// free, shared and slow, and a dozen at once would be both rude and no faster.
+    private var queued: [MapAirport] = []
+    /// The flight's own fields, wanted whatever the map is showing.
+    private var pinned: [MapAirport] = []
 
     /// The mirrors, in order. The main instance is the busiest.
     private static let endpoints = [
@@ -223,15 +228,58 @@ final class AirportLayoutStore: ObservableObject {
 
     func layout(for icao: String) -> AirportLayout? { layouts[icao.uppercased()] }
 
-    /// Asks for an airport's layout: memory, then disk, then Overpass.
-    func request(_ airport: MapAirport) {
-        let icao = airport.icao.uppercased()
-        guard layouts[icao] == nil, fetching == nil, !refused.contains(icao) else { return }
+    /// True when this one was asked for and refused, so nothing keeps promising it.
+    func hasRefused(_ icao: String) -> Bool { refused.contains(icao.uppercased()) }
 
+    /// How many are still waiting their turn.
+    var waiting: Int { queued.count }
+
+    /// The fields the loaded flight uses. Fetched whatever the map is showing, and first.
+    ///
+    /// The one set of layouts you know you are going to want, because you are flying there.
+    /// Asking for them when the plan loads means they are on the disk by the time you are on
+    /// the ground, rather than a minute of waiting at the moment you most want the map.
+    func alwaysKeep(_ airports: [MapAirport]) {
+        pinned = airports
+        for airport in airports.reversed() where !isHeld(airport.icao) {
+            queued.removeAll { $0.icao.uppercased() == airport.icao.uppercased() }
+            queued.insert(airport, at: 0)
+        }
+        start()
+    }
+
+    /// The fields in view, biggest first.
+    ///
+    /// Replaces whatever was queued, because the view has moved and the old queue is
+    /// somewhere else — but the flight's own fields stay at the front of it.
+    func want(_ airports: [MapAirport]) {
+        let flight = Set(pinned.map { $0.icao.uppercased() })
+        queued = pinned.filter { !isHeld($0.icao) }
+            + airports.filter { !flight.contains($0.icao.uppercased()) && !isHeld($0.icao) }
+        start()
+    }
+
+    /// One airport, for when something asks about exactly one.
+    func request(_ airport: MapAirport) { want([airport]) }
+
+    /// In hand already, or asked and refused: either way there is nothing to do.
+    private func isHeld(_ icao: String) -> Bool {
+        let icao = icao.uppercased()
+        return layouts[icao] != nil || refused.contains(icao)
+    }
+
+    /// Takes the next one off the queue, unless one is already on its way.
+    private func start() {
+        guard fetching == nil, !queued.isEmpty else { return }
+        let airport = queued.removeFirst()
+        let icao = airport.icao.uppercased()
+        guard !isHeld(icao) else { return start() }
+
+        // Disk first: an airport fetched last week costs a file read, not a minute.
         if let onDisk = try? Data(contentsOf: Self.file(for: icao)),
            let layout = Self.parse(onDisk, icao: icao) {
             layouts[icao] = layout
-            return
+            return start()
         }
 
         fetching = icao
@@ -250,6 +298,7 @@ final class AirportLayoutStore: ObservableObject {
                     self.refused.insert(icao)
                     self.failure = problem
                 }
+                self.start()
             }
         }
     }

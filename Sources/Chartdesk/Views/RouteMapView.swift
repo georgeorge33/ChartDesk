@@ -36,9 +36,9 @@ struct RouteMapView: View {
     @State private var scrollMonitor: Any?
     /// Where the map sits in the window, so a scroll elsewhere is left alone.
     @State private var frame: CGRect = .zero
-    @State private var didFit = false
+    @State private var didFit = true
     /// Set once you drag or zoom, after which the map stops framing things for you.
-    @State private var userMoved = false
+    @State private var userMoved = true
     @State private var showsLayers = false
 
     private var plan: FlightPlan? { flight.plan }
@@ -104,6 +104,9 @@ struct RouteMapView: View {
             guard count > 1, !userMoved else { return }
             fitRoute()
         }
+        // The fields this flight uses are wanted whatever the map is showing: you are going
+        // to be on the ground at both ends of it.
+        .onChange(of: flight.plan?.airfields.map(\.icao) ?? []) { _, _ in keepFlightLayouts() }
         .onAppear {
             watchScroll()
             // The coarsest tier as well as the wanted one, so there is always something to
@@ -115,6 +118,7 @@ struct RouteMapView: View {
             requestBaseMap()
             openAIP.refresh()
             requestLayers()
+            keepFlightLayouts()
         }
         .onChange(of: browser.baseMap) { _, _ in
             // The old picture is the wrong map, not merely the wrong place.
@@ -840,10 +844,12 @@ struct RouteMapView: View {
         if browser.showsAirspace { geography.requestAirspace() }
         if browser.showsStateBorders { geography.requestStates() }
         if browser.showsCityNames { geography.requestCities() }
-        // The ground plan of whatever airport the view has come down over.
-        if browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFrom,
-           let airport = WorldData.nearestAirport(to: camera.centre, within: 20_000) {
-            ground.request(airport)
+        // The ground plans of the fields in view, biggest first, from ten times further out
+        // than they are drawn — a layout takes a minute or two to arrive, and asking on the
+        // way down means it is there when you get there.
+        if browser.showsAirportLayout, camera.worldWidth >= MapLayerRoom.layoutFetchFrom {
+            let across = degreesAcross * 111_000 / 2
+            ground.want(WorldData.airports(within: max(across, 5_000), of: camera.centre))
         }
     }
 
@@ -874,6 +880,13 @@ struct RouteMapView: View {
     private var baseMapZoom: Int {
         BaseMapWarp.zoom(for: browser.baseMap, worldWidth: camera.worldWidth,
                          latitude: camera.centre.latitude)
+    }
+
+    /// Holds on to the ground layouts for the flight's own airfields.
+    private func keepFlightLayouts() {
+        let fields = (plan?.airfields ?? []).compactMap { WorldData.airport($0.icao) }
+        guard !fields.isEmpty else { return }
+        ground.alwaysKeep(fields)
     }
 
     /// Asks for the cells of the full coastline the view covers.

@@ -38,6 +38,13 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 - OpenStreetMap numbers a taxiway's segments — Madrid's ZW is ZW-1, ZW-2, ZW-3 — and the
   chart paints ZW5, so a letter group, a hyphen and a number group become the designator.
   Anything else keeps the name it was given: a north-south taxiway is not N followed by S.
+- **Fetched on the way down**, from about 60km across — ten times further out than a layout
+  is drawn — because Overpass takes a minute or two and asking at the zoom where the layout
+  would appear means watching an empty airport while it arrives. The fields in view are
+  queued **biggest first**, so Heathrow is asked for before the grass strip under the
+  cursor, and one at a time, because a dozen at once would be both rude and no faster.
+- **Your flight's own airfields are fetched whatever the map is showing**, and first. They
+  are the one set of layouts you know you are going to want.
 - Fetched one airport at a time from the Overpass API and **kept**. It is a free, shared
   service and a slow one — the same query for Madrid took 48 seconds one minute and 152 the
   next — so `Tools/make_layouts.py` will fetch the fields you actually fly ahead of time,

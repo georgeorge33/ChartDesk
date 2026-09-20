@@ -58,12 +58,15 @@ struct MapLayerPanel: View {
                     classes
                 }
                 switchRow("Airport layout", on: $browser.showsAirportLayout,
-                          detail: "Runways, taxiways and aprons with their designators, from "
-                                + "OpenStreetMap. Drawn below about 6km across, fetched once "
-                                + "per airport and kept.")
+                          detail: "Runways, taxiways, stands and holding positions, from "
+                                + "OpenStreetMap. Fetched from about 60km across and drawn "
+                                + "below 6km. Your flight's own airfields are fetched "
+                                + "whatever the map is showing.")
                 if let fetching = ground.fetching {
-                    Text("Fetching \(fetching)'s layout… Overpass is a shared service and "
-                         + "can take a minute or two.")
+                    Text("Fetching \(fetching)'s layout"
+                         + (ground.waiting > 0 ? ", \(ground.waiting) more to go" : "")
+                         + "… Overpass is a shared service and takes a minute or two an "
+                         + "airport, so they are asked for one at a time, biggest first.")
                         .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
