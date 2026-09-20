@@ -29,6 +29,23 @@ struct AirportLayout {
         let cap: SphericalCap
     }
 
+    /// A stand, where an aeroplane parks.
+    struct Stand {
+        let ref: String
+        let direction: SIMD3<Double>
+    }
+
+    /// Where you stop and wait, and the bar painted across the taxiway to say so.
+    ///
+    /// The bar is worked out rather than mapped: OpenStreetMap puts a node on the taxiway
+    /// and says nothing about which way the taxiway runs there, so the nearest stretch of
+    /// pavement is found and the bar laid across it.
+    struct Hold {
+        let ref: String
+        let direction: SIMD3<Double>
+        let across: [SIMD3<Double>]
+    }
+
     /// What a chart calls the taxiway this way belongs to.
     ///
     /// OpenStreetMap numbers a taxiway's segments — Madrid's ZW is tagged ZW-1, ZW-2 and so
@@ -43,10 +60,66 @@ struct AirportLayout {
         return String(parts[0] + parts[1])
     }
 
+    /// The two white lines painted down the sides of a runway.
+    ///
+    /// Worked out from the centreline and the width, because that is all OpenStreetMap has.
+    /// Each point is pushed half a width square to the way's own direction there, which on a
+    /// sphere is a cross product and not an offset in degrees — at 60° north a degree of
+    /// longitude is half what it is at the equator, and a runway drawn that way would be a
+    /// wedge.
+    static func edges(of way: Way) -> [[SIMD3<Double>]] {
+        guard way.directions.count >= 2 else { return [] }
+        let half = way.width / 2 / 6_371_000
+        var left: [SIMD3<Double>] = [], right: [SIMD3<Double>] = []
+
+        for (index, at) in way.directions.enumerated() {
+            // The direction of travel here: forward at the start, back at the end, and the
+            // average of the two in between, so a bend does not pinch.
+            let before = index > 0 ? way.directions[index - 1] : at
+            let after = index < way.directions.count - 1 ? way.directions[index + 1] : at
+            let along = after - before
+            guard simd_length(along) > 1e-12 else { continue }
+            let sideways = simd_cross(at, simd_normalize(along))
+            guard simd_length(sideways) > 1e-12 else { continue }
+            let offset = simd_normalize(sideways) * half
+            left.append(simd_normalize(at - offset))
+            right.append(simd_normalize(at + offset))
+        }
+        guard left.count >= 2 else { return [] }
+        return [left, right]
+    }
+
+    /// A runway's two numbers, each at the end it is painted on.
+    ///
+    /// "14L/32R" is two ends, and which is which is not a matter of taste: the 14 is painted
+    /// where an aeroplane lines up to fly 140°, so it belongs at the end the way runs *from*
+    /// on that heading.
+    static func numbers(of way: Way) -> [(String, SIMD3<Double>)] {
+        let parts = way.ref.split(separator: "/").map(String.init)
+        guard parts.count == 2, let first = way.directions.first,
+              let last = way.directions.last
+        else { return [] }
+
+        let along = Spherical.bearing(from: first, to: last)
+        var out: [(String, SIMD3<Double>)] = []
+        for part in parts {
+            let digits = part.prefix(while: \.isNumber)
+            guard let number = Int(digits), number > 0, number <= 36 else { continue }
+            let heading = Double(number) * 10
+            // Within a right angle of the way's own direction means this number is the one
+            // you fly when you start at its first point.
+            let difference = abs((heading - along + 540).truncatingRemainder(dividingBy: 360) - 180)
+            out.append((part, difference < 90 ? first : last))
+        }
+        return out
+    }
+
     let icao: String
     let runways: [Way]
     let taxiways: [Way]
     let aprons: [Area]
+    let stands: [Stand]
+    let holds: [Hold]
     /// When it was fetched, so the panel can say how old it is.
     let fetched: Date
 
@@ -108,7 +181,9 @@ final class AirportLayoutStore: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
-        return support.appendingPathComponent("Chartdesk/layouts", isDirectory: true)
+        // Second version of the query — the first had no stands or holding positions in it,
+        // and an answer from it is not missing them, it simply never asked.
+        return support.appendingPathComponent("Chartdesk/layouts/v2", isDirectory: true)
     }
 
     nonisolated static func file(for icao: String) -> URL {
@@ -205,6 +280,15 @@ final class AirportLayoutStore: ObservableObject {
         (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
         );
         out geom;
+        (
+          node["aeroway"~"^(parking_position|holding_position)$"](area.apt);
+          way["aeroway"="parking_position"](area.apt);
+          node["aeroway"~"^(parking_position|holding_position)$"]\
+        (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
+          way["aeroway"="parking_position"]\
+        (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
+        );
+        out geom;
         """
     }
 
@@ -221,15 +305,48 @@ final class AirportLayoutStore: ObservableObject {
         var runways: [AirportLayout.Way] = []
         var taxiways: [AirportLayout.Way] = []
         var aprons: [AirportLayout.Area] = []
-        var seen = Set<Int>()
+        var stands: [AirportLayout.Stand] = []
+        var holdPoints: [(ref: String, direction: SIMD3<Double>)] = []
+        var seen = Set<String>()
 
         for element in elements {
             // The two halves of the query overlap wherever an aerodrome is mapped, and the
             // same way coming back twice would be drawn twice.
-            if let id = element["id"] as? Int, !seen.insert(id).inserted { continue }
+            let id = "\(element["type"] as? String ?? "?")\(element["id"] as? Int ?? 0)"
+            if !seen.insert(id).inserted { continue }
             guard let tags = element["tags"] as? [String: Any],
-                  let kind = tags["aeroway"] as? String,
-                  let surface = AirportSurface(rawValue: kind),
+                  let kind = tags["aeroway"] as? String
+            else { continue }
+
+            let ref = ((tags["ref"] as? String) ?? (tags["name"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespaces)
+
+            // A stand or a holding position is a point: a node has its own, and a way — a
+            // stand drawn as the line an aeroplane parks along — is taken at its middle.
+            if kind == "parking_position" || kind == "holding_position" {
+                var at: SIMD3<Double>?
+                if let latitude = element["lat"] as? Double,
+                   let longitude = element["lon"] as? Double {
+                    at = Coordinate(latitude: latitude, longitude: longitude).direction
+                } else if let geometry = element["geometry"] as? [[String: Any]],
+                          !geometry.isEmpty {
+                    let middle = geometry[geometry.count / 2]
+                    if let latitude = middle["lat"] as? Double,
+                       let longitude = middle["lon"] as? Double {
+                        at = Coordinate(latitude: latitude, longitude: longitude).direction
+                    }
+                }
+                guard let at = at else { continue }
+                if kind == "parking_position" {
+                    guard !ref.isEmpty else { continue }   // an unnamed stand says nothing
+                    stands.append(AirportLayout.Stand(ref: ref, direction: at))
+                } else {
+                    holdPoints.append((ref, at))
+                }
+                continue
+            }
+
+            guard let surface = AirportSurface(rawValue: kind),
                   let geometry = element["geometry"] as? [[String: Any]]
             else { continue }
 
@@ -250,8 +367,6 @@ final class AirportLayoutStore: ObservableObject {
                 continue
             }
 
-            let ref = ((tags["ref"] as? String) ?? (tags["name"] as? String) ?? "")
-                .trimmingCharacters(in: .whitespaces)
             let width = (tags["width"] as? String).flatMap(metres) ?? surface.width
             let way = AirportLayout.Way(ref: ref, width: width,
                                         directions: directions, cap: cap)
@@ -259,8 +374,46 @@ final class AirportLayoutStore: ObservableObject {
         }
 
         guard !(runways.isEmpty && taxiways.isEmpty && aprons.isEmpty) else { return nil }
+        let holds = bars(for: holdPoints, along: taxiways + runways)
         return AirportLayout(icao: icao, runways: runways, taxiways: taxiways,
-                             aprons: aprons, fetched: Date())
+                             aprons: aprons, stands: stands, holds: holds, fetched: Date())
+    }
+
+    /// Lays a bar across the pavement at each holding position.
+    ///
+    /// OpenStreetMap marks the spot and says nothing about which way the taxiway runs
+    /// through it, so the nearest stretch of pavement is found and the bar drawn square to
+    /// it — which is where the paint is on the ground.
+    nonisolated static func bars(for points: [(ref: String, direction: SIMD3<Double>)],
+                                 along ways: [AirportLayout.Way]) -> [AirportLayout.Hold] {
+        var holds: [AirportLayout.Hold] = []
+        for point in points {
+            var best: (from: SIMD3<Double>, to: SIMD3<Double>, width: Double, dot: Double)?
+            for way in ways {
+                // Nowhere near it: a cap test before walking every segment.
+                guard simd_dot(way.cap.centre, point.direction)
+                        > cos(way.cap.radius + 0.0002) else { continue }
+                for index in 0..<(way.directions.count - 1) {
+                    let dot = max(simd_dot(way.directions[index], point.direction),
+                                  simd_dot(way.directions[index + 1], point.direction))
+                    if dot > (best?.dot ?? -1) {
+                        best = (way.directions[index], way.directions[index + 1],
+                                way.width, dot)
+                    }
+                }
+            }
+            guard let found = best else { continue }
+
+            // Square to the pavement, and as wide as it is.
+            let along = simd_normalize(found.to - found.from)
+            let sideways = simd_normalize(simd_cross(point.direction, along))
+            let half = found.width / 2 / 6_371_000
+            let left = simd_normalize(point.direction - sideways * half)
+            let right = simd_normalize(point.direction + sideways * half)
+            holds.append(AirportLayout.Hold(ref: point.ref, direction: point.direction,
+                                            across: [left, right]))
+        }
+        return holds
     }
 
     /// "45", "45 m", "150 ft" — OpenStreetMap's width tag, as metres.

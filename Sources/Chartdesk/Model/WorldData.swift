@@ -342,6 +342,24 @@ enum WorldData {
 
 enum Spherical {
 
+    /// Which way you set off, in degrees from north, going from one direction to another.
+    ///
+    /// Used to work out which end of a runway a number is painted on, where being wrong puts
+    /// 14L at the 32R end and the map contradicts the tarmac.
+    static func bearing(from start: SIMD3<Double>, to end: SIMD3<Double>) -> Double {
+        let up = SIMD3<Double>(0, 0, 1)
+        var east = simd_cross(up, start)
+        // Straight over a pole there is no east; anything will do, and nothing is there.
+        east = simd_length(east) < 1e-12 ? SIMD3<Double>(0, 1, 0) : simd_normalize(east)
+        let north = simd_cross(start, east)
+
+        let along = end - start * simd_dot(start, end)
+        guard simd_length(along) > 1e-12 else { return 0 }
+        let travel = simd_normalize(along)
+        let degrees = atan2(simd_dot(travel, east), simd_dot(travel, north)) * 180 / .pi
+        return degrees < 0 ? degrees + 360 : degrees
+    }
+
     /// Directions along the great circle between two coordinates.
     ///
     /// On a globe this is simply what a leg *is* — the shortest way between two places — so

@@ -63,6 +63,10 @@ enum Theme {
     static let taxiway         = rgb(0x3E4A57)
     static let taxiLine        = rgb(0xE8C33A)
     static let apron           = rgb(0x333D48)
+    /// The bar you hold short at, and the stand you park on. Magenta is what a ground chart
+    /// paints a holding position in.
+    static let holdShort       = rgb(0xE05AC8)
+    static let stand           = rgb(0xBFD0E0)
 
     /// The colour a kind of airspace is drawn in, so the map and the Layers panel cannot
     /// disagree about what a chip means.

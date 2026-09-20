@@ -168,15 +168,18 @@ struct RouteMapView: View {
         var ruleColour: Color?
         /// Filled behind the text, the way a ground chart writes a taxiway's letter.
         var box: Color?
+        /// And drawn round it.
+        var border: Color?
         let at: CGPoint
         let anchor: UnitPoint
 
         init(text: Text, under: Text? = nil, ruleColour: Color? = nil, box: Color? = nil,
-             at: CGPoint, anchor: UnitPoint) {
+             border: Color? = nil, at: CGPoint, anchor: UnitPoint) {
             self.text = text
             self.under = under
             self.ruleColour = ruleColour
             self.box = box
+            self.border = border
             self.at = at
             self.anchor = anchor
         }
@@ -337,12 +340,26 @@ struct RouteMapView: View {
                                style: StrokeStyle(lineWidth: max(way.width * perMetre, 1),
                                                   lineCap: .round, lineJoin: .round))
             }
-            for way in layout.runways where sheet.mayShow(way.cap) {
-                let line = sheet.path(line: way.directions)
-                guard !line.isEmpty else { continue }
+        }
+
+        // The runway, the way a ground chart draws one: the paved strip where there is no
+        // photograph of it, a white line down each edge, and the broken line down the middle.
+        // The edges are drawn whatever the base map is — over imagery they are what tell you
+        // where the pavement stops, which a photograph taken at dusk does not.
+        for way in layout.runways where sheet.mayShow(way.cap) {
+            let wide = max(way.width * perMetre, 2)
+            let line = sheet.path(line: way.directions)
+            guard !line.isEmpty else { continue }
+            if !showsRaster {
                 context.stroke(line, with: .color(Color(nsColor: Theme.runway)),
-                               style: StrokeStyle(lineWidth: max(way.width * perMetre, 2),
-                                                  lineCap: .butt))
+                               style: StrokeStyle(lineWidth: wide, lineCap: .butt))
+            }
+            guard wide > 4 else { continue }        // too narrow to have sides yet
+            for edge in AirportLayout.edges(of: way) {
+                let side = sheet.path(line: edge)
+                guard !side.isEmpty else { continue }
+                context.stroke(side, with: .color(.white.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: min(max(wide * 0.06, 0.8), 2)))
             }
         }
 
@@ -357,30 +374,78 @@ struct RouteMapView: View {
         for way in layout.runways where sheet.mayShow(way.cap) {
             let line = sheet.path(line: way.directions)
             guard !line.isEmpty else { continue }
-            context.stroke(line, with: .color(.white.opacity(0.75)),
+            context.stroke(line, with: .color(.white.opacity(0.9)),
                            style: StrokeStyle(lineWidth: centreline,
                                               dash: [centreline * 8, centreline * 6]))
+        }
+
+        // Where you stop and wait: the bar painted across the taxiway, square to it.
+        for hold in layout.holds where hold.across.count == 2 {
+            guard sheet.projection.faces(hold.direction) else { continue }
+            let bar = sheet.path(line: hold.across)
+            guard !bar.isEmpty else { continue }
+            context.stroke(bar, with: .color(Color(nsColor: Theme.holdShort)),
+                           style: StrokeStyle(lineWidth: max(centreline * 1.6, 1.5),
+                                              lineCap: .butt))
         }
 
         layoutLabels(layout, sheet: sheet, labels: &labels)
     }
 
-    /// A designator on each named way, in the middle of it, in a yellow box like a chart's.
+    /// The writing on the ground: taxiway designators, runway numbers at the ends they
+    /// belong to, the holding positions and, closest in, the stands.
     private func layoutLabels(_ layout: AirportLayout, sheet: MapSheet,
                               labels: inout [Label]) {
+        let yellow = Color(nsColor: Theme.taxiLine)
+
         for way in layout.taxiways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
             guard let at = middle(of: way, sheet: sheet) else { continue }
             labels.append(Label(text: Text(AirportLayout.designator(way.ref))
                                     .font(.ngSmallBold)
-                                    .foregroundStyle(Color.black),
-                                box: Color(nsColor: Theme.taxiLine),
+                                    .foregroundStyle(yellow),
+                                box: .black, border: yellow,
                                 at: at, anchor: .center))
         }
+
+        // A runway's number goes at the end you would be looking at it from, which is the
+        // end whose bearing matches it: 14L is painted where you line up to fly 140°.
         for way in layout.runways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
-            guard let at = middle(of: way, sheet: sheet) else { continue }
-            labels.append(Label(text: Text(way.ref)
+            for (number, at) in AirportLayout.numbers(of: way) {
+                guard sheet.projection.faces(at) else { continue }
+                let point = sheet.projection.point(at)
+                guard point.x > 0, point.x < sheet.size.width,
+                      point.y > 0, point.y < sheet.size.height else { continue }
+                labels.append(Label(text: Text(number)
+                                        .font(.ngSmallBold)
+                                        .foregroundStyle(Color.white),
+                                    box: .black.opacity(0.55),
+                                    at: point, anchor: .center))
+            }
+        }
+
+        for hold in layout.holds where !hold.ref.isEmpty {
+            guard sheet.projection.faces(hold.direction) else { continue }
+            let at = sheet.projection.point(hold.direction)
+            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
+            else { continue }
+            labels.append(Label(text: Text(hold.ref)
                                     .font(.ngSmallBold)
-                                    .foregroundStyle(Color.white),
+                                    .foregroundStyle(Color(nsColor: Theme.holdShort)),
+                                box: .black, border: Color(nsColor: Theme.holdShort),
+                                at: at, anchor: .center))
+        }
+
+        // Stands only at the very closest zooms: there are hundreds of them at a big field
+        // and they are the last thing worth the space.
+        guard camera.worldWidth >= MapLayerRoom.standsFrom else { return }
+        for stand in layout.stands {
+            guard sheet.projection.faces(stand.direction) else { continue }
+            let at = sheet.projection.point(stand.direction)
+            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
+            else { continue }
+            labels.append(Label(text: Text(stand.ref)
+                                    .font(.ngSmall)
+                                    .foregroundStyle(Color(nsColor: Theme.stand)),
                                 at: at, anchor: .center))
         }
     }
@@ -584,7 +649,11 @@ struct RouteMapView: View {
             taken.append(padded)
             if let box = label.box {
                 let around = frame.insetBy(dx: -2.5, dy: -1.5)
-                context.fill(Path(roundedRect: around, cornerRadius: 2), with: .color(box))
+                let shape = Path(roundedRect: around, cornerRadius: 2)
+                context.fill(shape, with: .color(box))
+                if let border = label.border {
+                    context.stroke(shape, with: .color(border), lineWidth: 0.8)
+                }
             }
             guard let below = below else {
                 context.draw(resolved, at: label.at, anchor: label.anchor)

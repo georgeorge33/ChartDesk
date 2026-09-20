@@ -350,6 +350,10 @@ enum MapLayerRoom {
     /// line: about six kilometres across a panel, where a runway is already most of it.
     static let layoutFrom: CGFloat = 6_000_000
 
+    /// And the stands, which are hundreds of numbers at a big field: only once the view is
+    /// about a kilometre across, where you would be looking for one.
+    static let standsFrom: CGFloat = 30_000_000
+
     /// The least important town worth naming, on Natural Earth's own scale of 0 to 10.
     ///
     /// Drawn in rank order and decluttered, so this is a floor on the work rather than on what

@@ -48,6 +48,13 @@ map_to_area->.apt;
   way["aeroway"~"^(runway|taxiway|taxilane|apron)$"](around:{radius},{lat},{lon});
 );
 out geom;
+(
+  node["aeroway"~"^(parking_position|holding_position)$"](area.apt);
+  way["aeroway"="parking_position"](area.apt);
+  node["aeroway"~"^(parking_position|holding_position)$"](around:{radius},{lat},{lon});
+  way["aeroway"="parking_position"](around:{radius},{lat},{lon});
+);
+out geom;
 """
 
 
@@ -106,8 +113,10 @@ def main():
                         help="metres round the field, for airports with no boundary mapped")
     parser.add_argument("--table", default="Resources/airports.txt",
                         help="where to look the airports' positions up")
+    # v2 is the query with stands and holding positions in it; an answer from the first
+    # version is not missing them, it simply never asked.
     parser.add_argument("--out", default=os.path.expanduser(
-        "~/Library/Application Support/Chartdesk/layouts"))
+        "~/Library/Application Support/Chartdesk/layouts/v2"))
     arguments = parser.parse_args()
 
     os.makedirs(arguments.out, exist_ok=True)

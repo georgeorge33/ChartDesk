@@ -14,6 +14,15 @@ Not released yet.
   picture and painting grey over it hides the thing you chose that base map to see. Over the
   drawn map, the pavement is drawn too: aprons filled, every way in its own width, from the
   `width` tag where there is one and from what the way is where there is not.
+- **Stand numbers** at the closest zoom, **holding positions** as the magenta bar painted
+  across the taxiway, and the runways with a white line down each side and their numbers at
+  the ends they belong to. Madrid comes to 418 stands and 293 holding positions.
+- Which end a runway number goes on is not a matter of taste: 14L is painted where you line
+  up to fly 140°, so the bearing of the way decides it. The bar across a holding position is
+  worked out too — OpenStreetMap marks the spot and says nothing about which way the taxiway
+  runs through it, so the nearest stretch of pavement is found and the bar laid square to it.
+- Taxiway designators are yellow on black with a yellow border, the way a ground chart paints
+  them.
 - OpenStreetMap numbers a taxiway's segments — Madrid's ZW is ZW-1, ZW-2, ZW-3 — and the
   chart paints ZW5, so a letter group, a hyphen and a number group become the designator.
   Anything else keeps the name it was given: a north-south taxiway is not N followed by S.
