@@ -36,9 +36,9 @@ struct RouteMapView: View {
     @State private var scrollMonitor: Any?
     /// Where the map sits in the window, so a scroll elsewhere is left alone.
     @State private var frame: CGRect = .zero
-    @State private var didFit = true
+    @State private var didFit = false
     /// Set once you drag or zoom, after which the map stops framing things for you.
-    @State private var userMoved = true
+    @State private var userMoved = false
     @State private var showsLayers = false
 
     private var plan: FlightPlan? { flight.plan }

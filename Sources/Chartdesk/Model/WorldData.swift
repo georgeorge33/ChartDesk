@@ -434,7 +434,7 @@ enum Spherical {
 struct MapCamera: Equatable {
 
     /// The place on the globe turned towards the viewer.
-    var centre = Coordinate(latitude: 51.47, longitude: -0.45)
+    var centre = Coordinate(latitude: 25, longitude: -20)
 
     /// How many points across the whole world would be drawn — the sphere's circumference on
     /// the sheet.
@@ -443,7 +443,7 @@ struct MapCamera: Equatable {
     /// the view cover" is the same arithmetic it was under Mercator: a panel shows
     /// `width × 360 / worldWidth` degrees either way. Which means the zooms at which each
     /// level of detail takes over did not have to be retuned for the globe.
-    var worldWidth: CGFloat = 800000
+    var worldWidth: CGFloat = 2_600
 
     /// How far in and out the map will go, as the sphere's circumference in points.
     ///
