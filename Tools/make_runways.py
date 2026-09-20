@@ -35,11 +35,17 @@ def sort_key(name):
     return (int(match.group(1)), match.group(2))
 
 
+def is_water(surface):
+    """A seaplane base's landing area is a stretch of water, not a runway. OurAirports
+    spells it WATER, WAT, WATER-E, WATER-G and "SUMMER WATER.", so the word is enough."""
+    return "WAT" in (surface or "").strip().upper()
+
+
 def main():
     airports = {}
     with open(sys.argv[1], newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
-            if row["closed"] == "1":
+            if row["closed"] == "1" or is_water(row.get("surface")):
                 continue
             ident = (row["airport_ident"] or "").strip().upper()
             if not ident:

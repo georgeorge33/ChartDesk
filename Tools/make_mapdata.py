@@ -342,13 +342,17 @@ def build_runways(source, report):
     Five decimals, about a metre: this is the one table drawn at a scale where the ends of a
     runway are hundreds of points apart, and a rounded threshold would sit off the tarmac.
     Only runways OurAirports gives both ends for, and only the ones still open.
+
+    Water is left out. A seaplane base's landing area is tagged as a runway and is a stretch
+    of a lake — 865 of them — and drawn as tarmac it puts a grey strip down the middle of
+    Lake Hood and a dozen Norwegian fjords.
     """
     rows = 0
     with open("Resources/runway-ends.txt", "w", encoding="utf-8") as out:
         out.write("# Runway ends from OurAirports (public domain): airport, ident, lat, lon, "
                   "lat, lon, width in feet.\n# Rebuild with Tools/make_mapdata.py\n")
         for row in csv.DictReader(open(source("runways.csv"), newline="", encoding="utf-8")):
-            if row.get("closed") == "1":
+            if row.get("closed") == "1" or is_water(row.get("surface")):
                 continue
             try:
                 ends = [float(row[field]) for field in ("le_latitude_deg", "le_longitude_deg",
@@ -368,6 +372,15 @@ def build_runways(source, report):
                                 + [str(width)]) + "\n")
             rows += 1
     report("Resources/runway-ends.txt", rows, rows, os.path.getsize("Resources/runway-ends.txt"))
+
+
+def is_water(surface):
+    """True for a landing area that is a stretch of water rather than a surface.
+
+    OurAirports spells it half a dozen ways — WATER, WAT, WATER-E, WATER-G, "SUMMER WATER."
+    — so this asks whether the word is in there at all.
+    """
+    return "WAT" in (surface or "").strip().upper()
 
 
 def build_states(source, report):

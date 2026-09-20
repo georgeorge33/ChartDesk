@@ -348,7 +348,7 @@ struct RouteMapView: View {
         let marking = Color(nsColor: Theme.runwayMarking)
         for way in layout.runways where sheet.mayShow(way.cap) {
             let wide = max(way.width * perMetre, 2)
-            let line = sheet.path(line: way.directions)
+            let line = sheet.path(straight: way.directions)
             guard !line.isEmpty else { continue }
             if !showsRaster {
                 context.stroke(line, with: .color(Color(nsColor: Theme.runwayAsphalt)),
@@ -356,7 +356,7 @@ struct RouteMapView: View {
             }
             guard wide > 4 else { continue }        // too narrow to have sides yet
             for edge in AirportLayout.edges(of: way) {
-                let side = sheet.path(line: edge)
+                let side = sheet.path(straight: edge)
                 guard !side.isEmpty else { continue }
                 context.stroke(side, with: .color(marking.opacity(0.85)),
                                style: StrokeStyle(lineWidth: min(max(wide * 0.05, 0.7), 1.6)))
@@ -364,7 +364,7 @@ struct RouteMapView: View {
             // The piano keys, which are what say "runway" before any number is legible.
             guard wide > 10 else { continue }
             for bar in AirportLayout.thresholdBars(of: way) {
-                let stripe = sheet.path(line: bar)
+                let stripe = sheet.path(straight: bar)
                 guard !stripe.isEmpty else { continue }
                 context.stroke(stripe, with: .color(marking),
                                style: StrokeStyle(lineWidth: max(2.5 * perMetre, 1),
@@ -382,11 +382,15 @@ struct RouteMapView: View {
                                               lineJoin: .round))
         }
         for way in layout.runways where sheet.mayShow(way.cap) {
-            let line = sheet.path(line: way.directions)
+            let line = sheet.path(straight: way.directions)
             guard !line.isEmpty else { continue }
+            // Thirty metres of paint and twenty of gap, which is what is on the ground —
+            // and measured in metres rather than in points, so a dash stays on the same
+            // piece of tarmac as you zoom instead of sliding along the runway.
             context.stroke(line, with: .color(Color(nsColor: Theme.runwayMarking)),
                            style: StrokeStyle(lineWidth: centreline,
-                                              dash: [centreline * 8, centreline * 6]))
+                                              dash: [max(30 * perMetre, 2),
+                                                     max(20 * perMetre, 1.5)]))
         }
 
         // Where you stop and wait: the bar painted across the taxiway, square to it.

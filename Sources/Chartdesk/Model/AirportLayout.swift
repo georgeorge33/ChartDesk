@@ -381,6 +381,10 @@ final class AirportLayoutStore: ObservableObject {
                   let geometry = element["geometry"] as? [[String: Any]]
             else { continue }
 
+            // A seaplane base's landing area is tagged as a runway and is a stretch of
+            // water; drawn as tarmac it puts a grey strip down the middle of a lake.
+            if isWater(tags["surface"] as? String) { continue }
+
             var directions: [SIMD3<Double>] = []
             directions.reserveCapacity(geometry.count)
             for point in geometry {
@@ -445,6 +449,15 @@ final class AirportLayoutStore: ObservableObject {
                                             across: [left, right]))
         }
         return holds
+    }
+
+    /// True for a landing area that is water rather than a surface.
+    ///
+    /// OpenStreetMap writes `surface=water`, and the table this app bundles is built from
+    /// OurAirports, which spells the same thing WATER, WAT, WATER-E, WATER-G and "SUMMER
+    /// WATER." — so both ask whether the word is in there at all.
+    nonisolated static func isWater(_ surface: String?) -> Bool {
+        (surface ?? "").uppercased().contains("WAT")
     }
 
     /// "45", "45 m", "150 ft" — OpenStreetMap's width tag, as metres.

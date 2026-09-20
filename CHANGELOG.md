@@ -45,6 +45,14 @@ Not released yet.
 
 **Also**
 
+- **Water runways are gone.** A seaplane base's landing area is tagged as a runway and is a
+  stretch of lake — 865 of them in OurAirports, 47 with both ends mapped — and drawn as
+  tarmac it put a grey strip down the middle of Lake Hood. Left out of both bundled tables
+  and of the fetched layouts, where OpenStreetMap tags the same thing `surface=water`.
+- **The runway centreline stays where the paint is.** Its dashes were measured in points on
+  the screen and drawn in however many pieces the runway was clipped into, so zooming slid
+  them along the tarmac. Thirty metres of paint and twenty of gap now, measured on the
+  ground, in one unbroken path.
 - The credits in the corner of the map are 5pt, in a size of their own.
 
 ## 1.1.0-rc.6

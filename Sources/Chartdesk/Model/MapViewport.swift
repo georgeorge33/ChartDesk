@@ -100,6 +100,28 @@ struct MapSheet {
         return path
     }
 
+    /// The whole line, in one piece, with no pen lifted.
+    ///
+    /// For the short things: a runway is two points a couple of kilometres apart, and the
+    /// pen-lifting in `path(line:)` exists for a meridian that runs off the sheet. It also
+    /// breaks a dashed line into pieces, and a dash pattern starts again at every piece —
+    /// so zooming in, where more of the runway falls outside the panel, slid the markings
+    /// along the tarmac. One path, one phase, and the dashes stay where the paint is.
+    func path(straight directions: [SIMD3<Double>]) -> Path {
+        var path = Path()
+        var started = false
+        for direction in directions where projection.faces(direction) {
+            let here = projection.point(direction)
+            if started {
+                path.addLine(to: here)
+            } else {
+                path.move(to: here)
+                started = true
+            }
+        }
+        return path
+    }
+
     func path(line directions: [SIMD3<Double>]) -> Path {
         var path = Path()
         var drawing = false
