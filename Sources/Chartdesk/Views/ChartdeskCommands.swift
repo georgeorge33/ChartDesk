@@ -179,23 +179,7 @@ struct ChartdeskCommands: Commands {
             .keyboardShortcut("w", modifiers: [.command, .shift])
         }
 
-        // Window
-        //
-        // Both of these are for looking at the app rather than at a chart, which is what
-        // makes them a submenu of their own rather than four more lines of the View menu.
-        CommandGroup(after: .windowArrangement) {
-            Menu("Debug") {
-                Button("Performance…") {
-                    NotificationCenter.default.post(name: .showPerformance, object: nil)
-                }
-                .keyboardShortcut("p", modifiers: [.command, .option])
-
-                Button("Airport Layouts…") {
-                    NotificationCenter.default.post(name: .showAirportLayouts, object: nil)
-                }
-                .keyboardShortcut("l", modifiers: [.command, .option])
-            }
-        }
+        WindowCommands()
 
         // Chart
         CommandMenu("Chart") {
@@ -276,7 +260,6 @@ struct ChartdeskCommands: Commands {
             .disabled(!marks.hasMarks(for: browser.selectedChartID))
         }
 
-        CommandGroup(replacing: .help) { }
     }
 
     // MARK: - Helpers
@@ -303,5 +286,35 @@ struct ChartdeskCommands: Commands {
         let target = index + delta
         guard target >= 0, target < list.count else { return }
         browser.selectedChartID = list[target].id
+    }
+}
+
+
+/// The Window menu's own additions, and the Help menu's removal.
+///
+/// Their own type rather than two more entries in `ChartdeskCommands`, which had eleven and
+/// is allowed ten: a commands builder has the same arity limit a view builder does, and the
+/// same fix. Nothing here needs any of the app's state — the Debug items post a
+/// notification and the window opens itself — so this costs nothing to lift out.
+private struct WindowCommands: Commands {
+
+    var body: some Commands {
+        // Both of these are for looking at the app rather than at a chart, which is what
+        // makes them a submenu of their own rather than four more lines of the View menu.
+        CommandGroup(after: .windowArrangement) {
+            Menu("Debug") {
+                Button("Performance…") {
+                    NotificationCenter.default.post(name: .showPerformance, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+
+                Button("Airport Layouts…") {
+                    NotificationCenter.default.post(name: .showAirportLayouts, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            }
+        }
+
+        CommandGroup(replacing: .help) { }
     }
 }
