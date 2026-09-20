@@ -334,9 +334,16 @@ struct RouteMapView: View {
                 guard !path.isEmpty else { continue }
                 context.fill(path, with: .color(Color(nsColor: Theme.apron)))
             }
+            // Where somebody has drawn the outline of the tarmac, that is the tarmac.
+            // Taxiway outlines go down here with the rest of the taxiway surface; the
+            // runway's own wait for the runway, which is drawn over everything that
+            // crosses it.
+            pavement(.taxiway, of: layout, in: &context, sheet: sheet)
             // Every surface wide first, so one taxiway's tarmac cannot paint over its
-            // neighbour's centreline.
-            for way in layout.taxiways where sheet.mayShow(way.cap) {
+            // neighbour's centreline. Skipped where the outline above is the real thing:
+            // inflating the line by its width tag would only put a fatter, wronger shape
+            // on top of a measured one.
+            for way in layout.taxiways where !way.paved && sheet.mayShow(way.cap) {
                 let line = sheet.path(curve: way.directions)
                 guard !line.isEmpty else { continue }
                 context.stroke(line, with: .color(Color(nsColor: Theme.taxiway)),
@@ -350,16 +357,17 @@ struct RouteMapView: View {
         // The edges are drawn whatever the base map is — over imagery they are what tell you
         // where the pavement stops, which a photograph taken at dusk does not.
         let marking = Color(nsColor: Theme.runwayMarking)
+        if !showsRaster { pavement(.runway, of: layout, in: &context, sheet: sheet) }
         for way in layout.runways where sheet.mayShow(way.cap) {
             let wide = max(way.width * perMetre, 2)
             let line = sheet.path(straight: way.directions)
             guard !line.isEmpty else { continue }
-            if !showsRaster {
+            if !showsRaster && !way.paved {
                 context.stroke(line, with: .color(Color(nsColor: Theme.runwayAsphalt)),
                                style: StrokeStyle(lineWidth: wide, lineCap: .butt))
             }
             guard wide > 4 else { continue }        // too narrow to have sides yet
-            for edge in AirportLayout.edges(of: way) {
+            for edge in way.edges {
                 let side = sheet.path(straight: edge)
                 guard !side.isEmpty else { continue }
                 context.stroke(side, with: .color(marking.opacity(0.85)),
@@ -367,7 +375,7 @@ struct RouteMapView: View {
             }
             // The piano keys, which are what say "runway" before any number is legible.
             guard wide > 10 else { continue }
-            for bar in AirportLayout.thresholdBars(of: way) {
+            for bar in way.keys {
                 let stripe = sheet.path(straight: bar)
                 guard !stripe.isEmpty else { continue }
                 context.stroke(stripe, with: .color(marking),
@@ -408,6 +416,22 @@ struct RouteMapView: View {
         }
 
         layoutLabels(layout, sheet: sheet, labels: &labels)
+    }
+
+    /// Fills the pavement of one kind that OpenStreetMap has the outline of.
+    ///
+    /// Drawn in two passes rather than one so the layering survives: a runway is painted
+    /// over every taxiway that meets it, which is both what a ground chart does and what
+    /// the inflated centrelines this replaces already did.
+    private func pavement(_ surface: AirportSurface, of layout: AirportLayout,
+                          in context: inout GraphicsContext, sheet: MapSheet) {
+        let colour = Color(nsColor: surface == .runway ? Theme.runwayAsphalt : Theme.taxiway)
+        for slab in layout.pavement
+        where (slab.surface == .runway) == (surface == .runway) && sheet.mayShow(slab.cap) {
+            let path = sheet.path(ring: MapShape(directions: slab.directions, cap: slab.cap))
+            guard !path.isEmpty else { continue }
+            context.fill(path, with: .color(colour))
+        }
     }
 
     /// The writing on the ground: taxiway designators, runway numbers at the ends they

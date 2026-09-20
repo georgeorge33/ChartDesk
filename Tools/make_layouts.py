@@ -46,6 +46,8 @@ map_to_area->.apt;
 (
   way["aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
   way["aeroway"~"^(runway|taxiway|taxilane|apron)$"](around:{radius},{lat},{lon});
+  way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
+  way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"](around:{radius},{lat},{lon});
 );
 out geom;
 (
@@ -130,7 +132,12 @@ def fetch(icao, latitude, longitude, radius):
 def tally(answer):
     counts = {}
     for element in answer.get("elements", []):
-        kind = (element.get("tags") or {}).get("aeroway")
+        tags = element.get("tags") or {}
+        # An outline is counted as what it is, so the line says how much of a field is
+        # drawn pavement rather than a centreline with a width tag.
+        kind = tags.get("aeroway")
+        if tags.get("area:aeroway"):
+            kind = "area:" + tags["area:aeroway"]
         if kind:
             counts[kind] = counts.get(kind, 0) + 1
     return counts

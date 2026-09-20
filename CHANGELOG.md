@@ -49,6 +49,24 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   service and a slow one — the same query for Madrid took 48 seconds one minute and 152 the
   next — so `Tools/make_layouts.py` will fetch the fields you actually fly ahead of time,
   and the app never asks for the same airport twice.
+- **The field is worked out on its own plane.** Everything derived from a layout — the
+  white lines down a runway's sides, the piano keys, the bar across a holding position — is
+  now worked out on an azimuthal equidistant projection centred on the airport, which is what
+  Navigraph's AMDB API offers alongside plain latitude and longitude and for the same
+  reason. An airport is four kilometres across and on that much ground a sphere is a plane,
+  so "half a width square to the centreline" becomes the two lines of arithmetic it sounds
+  like instead of a cross product against a unit sphere. The shapes come out within a
+  micron of the spherical ones they replace, at the equator and at 78° north alike, and
+  they are worked out once when the layout is read rather than again on every frame.
+- **Pavement that is drawn rather than guessed.** Where OpenStreetMap has the outline of
+  the tarmac — `area:aeroway`, or the older `area=yes` on a closed ring — that outline is
+  the pavement, and the centreline running through it is no longer inflated by its width
+  tag to stand in for one. This is the distinction an AMDB is built on: there a taxiway is
+  a polygon and the yellow line down it is a separate feature. The runway keeps its paint
+  either way, because the markings are not the pavement. Be warned that the tag is rare —
+  about one taxiway in a hundred worldwide, and none at all at Frankfurt — so most fields
+  look exactly as they did. At Maastricht, which has thirteen of them, the drawn outlines
+  differ from the width tag they replace by a median of 58%.
 - **No switch for it.** This far in the ground plan is the map — the coastline is a straight
   line and the nearest border is nowhere near — so there was nothing to choose between. The
   Layers panel still says where the layout comes from and how far out it is fetched.

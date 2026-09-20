@@ -21,6 +21,40 @@ struct AirportLayout {
         let width: Double
         let directions: [SIMD3<Double>]
         let cap: SphericalCap
+        /// True where the pavement under this line is mapped as its own outline, so the
+        /// width tag does not have to stand in for it and nothing should be drawn from it.
+        let paved: Bool
+        /// The white lines down the sides and the piano keys across the thresholds.
+        ///
+        /// Runways only, and worked out once on the field's own plane rather than on every
+        /// frame: they depend on the runway and not on where the camera is.
+        let edges: [[SIMD3<Double>]]
+        let keys: [[SIMD3<Double>]]
+
+        init(ref: String, width: Double, directions: [SIMD3<Double>], cap: SphericalCap,
+             paved: Bool = false, edges: [[SIMD3<Double>]] = [],
+             keys: [[SIMD3<Double>]] = []) {
+            self.ref = ref
+            self.width = width
+            self.directions = directions
+            self.cap = cap
+            self.paved = paved
+            self.edges = edges
+            self.keys = keys
+        }
+    }
+
+    /// Pavement mapped as its own outline rather than as a line with a width tag.
+    ///
+    /// The distinction an AMDB is built on: there, a taxiway is a polygon and the yellow
+    /// line down it is a separate feature. OpenStreetMap mostly has only the line, and
+    /// inflating it by its width is a guess at where the tarmac stops — but at the fields
+    /// where somebody has drawn the outline, `area:aeroway` is the real edge and is used
+    /// in place of the guess.
+    struct Pavement {
+        let surface: AirportSurface
+        let directions: [SIMD3<Double>]
+        let cap: SphericalCap
     }
 
     /// Concrete you park on rather than drive along.
@@ -63,30 +97,30 @@ struct AirportLayout {
     /// The two white lines painted down the sides of a runway.
     ///
     /// Worked out from the centreline and the width, because that is all OpenStreetMap has.
-    /// Each point is pushed half a width square to the way's own direction there, which on a
-    /// sphere is a cross product and not an offset in degrees — at 60° north a degree of
-    /// longitude is half what it is at the equator, and a runway drawn that way would be a
-    /// wedge.
-    static func edges(of way: Way) -> [[SIMD3<Double>]] {
-        guard way.directions.count >= 2 else { return [] }
-        let half = way.width / 2 / 6_371_000
-        var left: [SIMD3<Double>] = [], right: [SIMD3<Double>] = []
+    /// On the field's own plane this is what it sounds like: step half a width square to
+    /// the way's direction. Against the globe it was a cross product per point, to keep a
+    /// runway at 60° north from being drawn as a wedge — the plane has no such problem to
+    /// solve, because a metre is a metre in both directions on it.
+    static func edges(of way: Way, in frame: AirportFrame) -> [[SIMD3<Double>]] {
+        let line = way.directions.map(frame.plane)
+        guard line.count >= 2 else { return [] }
+        let half = way.width / 2
+        var left: [SIMD2<Double>] = [], right: [SIMD2<Double>] = []
 
-        for (index, at) in way.directions.enumerated() {
+        for (index, at) in line.enumerated() {
             // The direction of travel here: forward at the start, back at the end, and the
             // average of the two in between, so a bend does not pinch.
-            let before = index > 0 ? way.directions[index - 1] : at
-            let after = index < way.directions.count - 1 ? way.directions[index + 1] : at
+            let before = index > 0 ? line[index - 1] : at
+            let after = index < line.count - 1 ? line[index + 1] : at
             let along = after - before
-            guard simd_length(along) > 1e-12 else { continue }
-            let sideways = simd_cross(at, simd_normalize(along))
-            guard simd_length(sideways) > 1e-12 else { continue }
-            let offset = simd_normalize(sideways) * half
-            left.append(simd_normalize(at - offset))
-            right.append(simd_normalize(at + offset))
+            guard simd_length(along) > 1e-9 else { continue }
+            let forward = simd_normalize(along)
+            let sideways = SIMD2(-forward.y, forward.x) * half
+            left.append(at - sideways)
+            right.append(at + sideways)
         }
         guard left.count >= 2 else { return [] }
-        return [left, right]
+        return [left.map(frame.globe), right.map(frame.globe)]
     }
 
     /// The piano keys: the white bars painted across each threshold.
@@ -94,27 +128,24 @@ struct AirportLayout {
     /// The one marking that says "runway" at a glance, and the reason a ground chart's
     /// runway is recognisable at any size. Eight stripes over the middle four-fifths of the
     /// width, starting six metres in and running thirty — which is what the real paint is,
-    /// near enough for a map.
-    static func thresholdBars(of way: Way) -> [[SIMD3<Double>]] {
-        guard way.directions.count >= 2 else { return [] }
+    /// near enough for a map. In metres, on the plane, because that is what those figures
+    /// already are.
+    static func thresholdBars(of way: Way, in frame: AirportFrame) -> [[SIMD3<Double>]] {
+        let line = way.directions.map(frame.plane)
+        guard line.count >= 2 else { return [] }
         var bars: [[SIMD3<Double>]] = []
 
-        for (at, towards) in [(way.directions[0], way.directions[1]),
-                              (way.directions[way.directions.count - 1],
-                               way.directions[way.directions.count - 2])] {
+        for (at, towards) in [(line[0], line[1]),
+                              (line[line.count - 1], line[line.count - 2])] {
             let along = towards - at
-            guard simd_length(along) > 1e-12 else { continue }
+            guard simd_length(along) > 1e-9 else { continue }
             let forward = simd_normalize(along)
-            let sideways = simd_cross(at, forward)
-            guard simd_length(sideways) > 1e-12 else { continue }
-            let side = simd_normalize(sideways)
+            let side = SIMD2(-forward.y, forward.x)
 
-            let start = 6.0 / 6_371_000, run = 30.0 / 6_371_000
             for stripe in 0..<8 {
-                let across = (Double(stripe) - 3.5) / 8 * way.width * 0.8 / 6_371_000
-                let from = simd_normalize(at + forward * start + side * across)
-                let to = simd_normalize(at + forward * (start + run) + side * across)
-                bars.append([from, to])
+                let across = (Double(stripe) - 3.5) / 8 * way.width * 0.8
+                bars.append([frame.globe(at + forward * 6 + side * across),
+                             frame.globe(at + forward * 36 + side * across)])
             }
         }
         return bars
@@ -149,8 +180,12 @@ struct AirportLayout {
     let runways: [Way]
     let taxiways: [Way]
     let aprons: [Area]
+    /// Runway and taxiway pavement that is drawn rather than inferred.
+    let pavement: [Pavement]
     let stands: [Stand]
     let holds: [Hold]
+    /// The field's own plane, kept so anything worked out later is worked out on it.
+    let frame: AirportFrame
     /// When it was fetched, so the panel can say how old it is.
     let fetched: Date
 
@@ -219,6 +254,12 @@ final class AirportLayoutStore: ObservableObject {
             ?? URL(fileURLWithPath: NSHomeDirectory())
         // Second version of the query — the first had no stands or holding positions in it,
         // and an answer from it is not missing them, it simply never asked.
+        //
+        // The pavement outlines were added without a third version, which is a judgement
+        // rather than an oversight. `area:aeroway` is on about one taxiway in a hundred
+        // worldwide and on none at all at most large fields — Frankfurt has none, Heathrow
+        // has one — so throwing away a cache that takes hours to rebuild would cost far
+        // more than it returns. Delete the directory to refetch with the outlines.
         return support.appendingPathComponent("Chartdesk/layouts/v2", isDirectory: true)
     }
 
@@ -362,6 +403,9 @@ final class AirportLayoutStore: ObservableObject {
           way["aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
           way["aeroway"~"^(runway|taxiway|taxilane|apron)$"]\
         (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
+          way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
+          way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"]\
+        (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
         );
         out geom;
         (
@@ -397,6 +441,7 @@ final class AirportLayoutStore: ObservableObject {
         var runways: [AirportLayout.Way] = []
         var taxiways: [AirportLayout.Way] = []
         var aprons: [AirportLayout.Area] = []
+        var pavement: [AirportLayout.Pavement] = []
         var stands: [AirportLayout.Stand] = []
         var holdPoints: [(ref: String, direction: SIMD3<Double>)] = []
         var seen = Set<String>()
@@ -406,9 +451,16 @@ final class AirportLayoutStore: ObservableObject {
             // same way coming back twice would be drawn twice.
             let id = "\(element["type"] as? String ?? "?")\(element["id"] as? Int ?? 0)"
             if !seen.insert(id).inserted { continue }
-            guard let tags = element["tags"] as? [String: Any],
-                  let kind = tags["aeroway"] as? String
-            else { continue }
+            guard let tags = element["tags"] as? [String: Any] else { continue }
+
+            // An outline rather than a line down the middle. `area:aeroway` is the tag for
+            // it; the older way of saying the same thing is the ordinary aeroway tag with
+            // area=yes on a closed ring, and both mean "this is the tarmac itself".
+            var outline = tags["area:aeroway"] as? String
+            if outline == nil, (tags["area"] as? String) == "yes" {
+                outline = tags["aeroway"] as? String
+            }
+            guard let kind = outline ?? (tags["aeroway"] as? String) else { continue }
 
             let ref = ((tags["ref"] as? String) ?? (tags["name"] as? String) ?? "")
                 .trimmingCharacters(in: .whitespaces)
@@ -457,6 +509,17 @@ final class AirportLayoutStore: ObservableObject {
             guard directions.count >= 2 else { continue }
             let cap = SphericalCap(directions)
 
+            if outline != nil {
+                guard directions.count >= 4 else { continue }
+                if surface == .apron {
+                    aprons.append(AirportLayout.Area(directions: directions, cap: cap))
+                } else {
+                    pavement.append(AirportLayout.Pavement(surface: surface,
+                                                           directions: directions, cap: cap))
+                }
+                continue
+            }
+
             if surface == .apron {
                 guard directions.count >= 4 else { continue }
                 aprons.append(AirportLayout.Area(directions: directions, cap: cap))
@@ -470,9 +533,46 @@ final class AirportLayoutStore: ObservableObject {
         }
 
         guard !(runways.isEmpty && taxiways.isEmpty && aprons.isEmpty) else { return nil }
-        let holds = bars(for: holdPoints, along: taxiways + runways)
-        return AirportLayout(icao: icao, runways: runways, taxiways: taxiways,
-                             aprons: aprons, stands: stands, holds: holds, fetched: Date())
+
+        // Everything after this point is worked out on the field's own plane, so the plane
+        // comes first — from what is mapped, which is the field.
+        let frame = AirportFrame(covering: runways.flatMap(\.directions)
+                                    + taxiways.flatMap(\.directions))
+
+        // The outlines in metres, once. Asking whether a centreline has its pavement drawn
+        // is then a ray cast rather than a reprojection per test.
+        let rings = pavement.map { (isRunway: $0.surface == .runway, cap: $0.cap,
+                                    ring: $0.directions.map(frame.plane)) }
+        func covered(_ way: AirportLayout.Way, runway: Bool) -> Bool {
+            guard !rings.isEmpty else { return false }
+            let at = way.directions[way.directions.count / 2]
+            let middle = frame.plane(at)
+            for entry in rings where entry.isRunway == runway {
+                // Nowhere near it: a cap test before walking the ring.
+                guard simd_dot(entry.cap.centre, at) >= entry.cap.cosRadius else { continue }
+                if AirportFrame.encloses(entry.ring, middle) { return true }
+            }
+            return false
+        }
+
+        // The runway keeps its paint whether or not its tarmac is drawn: an outline is the
+        // pavement, and the white lines and piano keys on top of it are a separate thing —
+        // which is exactly how an AMDB separates a runway element from a runway marking.
+        let paved = runways.map { way in
+            AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
+                              cap: way.cap, paved: covered(way, runway: true),
+                              edges: AirportLayout.edges(of: way, in: frame),
+                              keys: AirportLayout.thresholdBars(of: way, in: frame))
+        }
+        let taxied = taxiways.map { way in
+            AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
+                              cap: way.cap, paved: covered(way, runway: false))
+        }
+
+        let holds = bars(for: holdPoints, along: taxied + paved, in: frame)
+        return AirportLayout(icao: icao, runways: paved, taxiways: taxied,
+                             aprons: aprons, pavement: pavement, stands: stands,
+                             holds: holds, frame: frame, fetched: Date())
     }
 
     /// Lays a bar across the pavement at each holding position.
@@ -481,7 +581,8 @@ final class AirportLayoutStore: ObservableObject {
     /// through it, so the nearest stretch of pavement is found and the bar drawn square to
     /// it — which is where the paint is on the ground.
     nonisolated static func bars(for points: [(ref: String, direction: SIMD3<Double>)],
-                                 along ways: [AirportLayout.Way]) -> [AirportLayout.Hold] {
+                                 along ways: [AirportLayout.Way],
+                                 in frame: AirportFrame) -> [AirportLayout.Hold] {
         var holds: [AirportLayout.Hold] = []
         for point in points {
             var best: (from: SIMD3<Double>, to: SIMD3<Double>, width: Double, dot: Double)?
@@ -500,12 +601,13 @@ final class AirportLayoutStore: ObservableObject {
             }
             guard let found = best else { continue }
 
-            // Square to the pavement, and as wide as it is.
-            let along = simd_normalize(found.to - found.from)
-            let sideways = simd_normalize(simd_cross(point.direction, along))
-            let half = found.width / 2 / 6_371_000
-            let left = simd_normalize(point.direction - sideways * half)
-            let right = simd_normalize(point.direction + sideways * half)
+            // Square to the pavement, and as wide as it is — on the plane, where "half a
+            // width square to it" is the two words it sounds like.
+            let along = simd_normalize(frame.plane(found.to) - frame.plane(found.from))
+            let at = frame.plane(point.direction)
+            let sideways = SIMD2(-along.y, along.x) * (found.width / 2)
+            let left = frame.globe(at - sideways)
+            let right = frame.globe(at + sideways)
             holds.append(AirportLayout.Hold(ref: point.ref, direction: point.direction,
                                             across: [left, right]))
         }
