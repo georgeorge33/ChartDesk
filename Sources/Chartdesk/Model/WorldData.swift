@@ -125,22 +125,6 @@ enum WorldData {
     /// the zoom, so this one is not deferred.
     static let airports: [String: MapAirport] = loadAirports()
 
-    /// The nearest airport to a point, within so many metres, or nothing.
-    ///
-    /// Walked rather than indexed: there are 11,362 of them and this is asked once when the
-    /// camera stops, not once a frame.
-    static func nearestAirport(to where_: Coordinate, within metres: Double) -> MapAirport? {
-        let from = where_.direction
-        let cosLimit = cos(metres / 6_371_000)
-        var best: MapAirport?
-        var bestDot = cosLimit
-        for airport in airports.values {
-            let dot = simd_dot(from, airport.coordinate.direction)
-            if dot > bestDot { bestDot = dot; best = airport }
-        }
-        return best
-    }
-
     /// Every airport inside a circle, biggest first and nearest first among equals.
     ///
     /// The order is the whole point: ground layouts are fetched one at a time from a shared
