@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.2.0
+## 1.2.0-rc.1
 
-Not released yet.
+What this candidate adds to 1.1.0. Full release when it has been flown.
 
 **The airport's own ground**
 
