@@ -90,6 +90,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showPerformance)) { _ in
             openWindow(id: "performance")
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showAirportLayouts)) { _ in
+            openWindow(id: "airportLayouts")
+        }
         .alert("Software Update", isPresented: $updater.showMessage) {
             Button("OK", role: .cancel) { }
         } message: {

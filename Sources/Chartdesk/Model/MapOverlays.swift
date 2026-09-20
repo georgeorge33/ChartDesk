@@ -346,17 +346,22 @@ enum MapLayerRoom {
     /// Internal borders clutter a view of a continent and place a view of a state.
     static let statesFrom: CGFloat = 6_000
 
-    /// The airport's ground plan, which is worth drawing once a taxiway is wider than a
-    /// line: about six kilometres across a panel, where a runway is already most of it.
-    static let layoutFrom: CGFloat = 6_000_000
+    /// The airport's ground plan: metres across the view, rather than the zoom figures the
+    /// layers above use.
+    ///
+    /// Twenty kilometres, and measured as a real distance because at this range that is the
+    /// question being asked — "is the field big enough on the screen yet" depends on the
+    /// window as well as the zoom, and a threshold in zoom alone means a wide window starts
+    /// drawing sooner than a narrow one.
+    static let layoutWithin: Double = 20_000
 
-    /// And worth *fetching* ten times sooner than that — about sixty kilometres across,
-    /// which is the point where it is clear which field you are coming down at.
+    /// And worth *fetching* three times sooner than that — sixty kilometres across, which
+    /// is the point where it is clear which field you are coming down at.
     ///
     /// Overpass takes a minute or two, so asking at the zoom where the layout would be drawn
     /// means watching an empty airport while it arrives. Asking on the way down means it is
     /// there when you get there.
-    static let layoutFetchFrom: CGFloat = 600_000
+    static let layoutFetchWithin: Double = 60_000
 
     /// And the stands, which are hundreds of numbers at a big field: only once the view is
     /// about a kilometre across, where you would be looking for one.

@@ -217,6 +217,26 @@ enum AirportSurface: String {
     }
 }
 
+/// One airport's layout, counted up, for the list of what is on this Mac.
+struct AirportLayoutSummary: Identifiable {
+    let icao: String
+    /// From the bundled table, when it knows the field. Blank for one it does not.
+    let name: String
+    let runways: Int
+    let taxiways: Int
+    let aprons: Int
+    /// How much of the pavement is a drawn outline rather than an inflated centreline.
+    let outlines: Int
+    let stands: Int
+    let holds: Int
+    let bytes: Int
+    let fetched: Date
+    /// True when the map has it in hand, rather than only on disk.
+    let loaded: Bool
+
+    var id: String { icao }
+}
+
 /// Fetches airport layouts and keeps them.
 ///
 /// Overpass is a free, shared, community-run service, so this asks it for one airport at a
@@ -268,6 +288,45 @@ final class AirportLayoutStore: ObservableObject {
     }
 
     func layout(for icao: String) -> AirportLayout? { layouts[icao.uppercased()] }
+
+    /// Every layout on this Mac, counted.
+    ///
+    /// Reads and parses the lot, which is a few milliseconds an airport — fine for a window
+    /// somebody opened to look at the list, and not something to do on a frame. The set on
+    /// disk is the honest answer to "what have I got": the map holds only what it has been
+    /// close to since launch, and everything else is waiting in the cache.
+    nonisolated static func inventory(loaded: Set<String>) -> [AirportLayoutSummary] {
+        let manager = FileManager.default
+        let files = (try? manager.contentsOfDirectory(at: directory,
+                                                      includingPropertiesForKeys: [.fileSizeKey,
+                                                                                   .contentModificationDateKey]))
+            ?? []
+        var found: [AirportLayoutSummary] = []
+        for file in files where file.pathExtension == "json" {
+            let icao = file.deletingPathExtension().lastPathComponent.uppercased()
+            guard let data = try? Data(contentsOf: file),
+                  let layout = parse(data, icao: icao)
+            else { continue }
+            let about = try? file.resourceValues(forKeys: [.fileSizeKey,
+                                                           .contentModificationDateKey])
+            found.append(AirportLayoutSummary(
+                icao: icao,
+                name: WorldData.airport(icao)?.name ?? "",
+                runways: layout.runways.count,
+                taxiways: layout.taxiways.count,
+                aprons: layout.aprons.count,
+                outlines: layout.pavement.count,
+                stands: layout.stands.count,
+                holds: layout.holds.count,
+                bytes: about?.fileSize ?? data.count,
+                fetched: about?.contentModificationDate ?? Date(),
+                loaded: loaded.contains(icao)))
+        }
+        return found.sorted { $0.taxiways > $1.taxiways }
+    }
+
+    /// The codes the map is holding, for the list to mark.
+    var held: Set<String> { Set(layouts.keys) }
 
     /// True when this one was asked for and refused, so nothing keeps promising it.
     func hasRefused(_ icao: String) -> Bool { refused.contains(icao.uppercased()) }

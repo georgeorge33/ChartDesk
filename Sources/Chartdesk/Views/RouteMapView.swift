@@ -319,8 +319,18 @@ struct RouteMapView: View {
     /// is a straight line somewhere off the edge.
     private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
                               labels: inout [Label]) {
-        guard drawsGroundLayout, let layout = nearbyLayout else { return }
+        guard drawsGroundLayout else { return }
+        // Every field on the sheet, not only the one nearest the middle. At twenty
+        // kilometres across a city's two airports are often both in view, and drawing one
+        // of them as a ground plan and the other as a bare strip at the same zoom looks
+        // like the map has broken rather than like a decision.
+        for layout in nearbyLayouts(sheet) {
+            groundLayout(layout, in: &context, sheet: sheet, labels: &labels)
+        }
+    }
 
+    private func groundLayout(_ layout: AirportLayout, in context: inout GraphicsContext,
+                              sheet: MapSheet, labels: inout [Label]) {
         // Metres to points, which is what turns a width tag into a line you can see.
         let perMetre = Double(camera.worldWidth) / 40_075_017
 
@@ -505,14 +515,23 @@ struct RouteMapView: View {
     /// True when the view is close enough for the ground layout. Always drawn at that range:
     /// this close in, the shape of the field is the map.
     private var drawsGroundLayout: Bool {
-        camera.worldWidth >= MapLayerRoom.layoutFrom
+        metresAcross <= MapLayerRoom.layoutWithin
     }
 
-    /// The layout of whichever airport the view is over, when it has been fetched.
-    private var nearbyLayout: AirportLayout? {
-        guard let airport = WorldData.nearestAirport(to: camera.centre, within: 20_000)
-        else { return nil }
-        return ground.layout(for: airport.icao)
+    /// The layouts on the sheet, of those that have been fetched.
+    ///
+    /// Asked of the layouts rather than of the airport table, which is the cheap way round.
+    /// There are at most a few dozen layouts in hand and each already knows the circle it
+    /// covers, so this is a few dozen cap tests; going the other way meant a dot product
+    /// against all seventy-odd thousand airports on earth to find the handful that might
+    /// have one, twice a frame, at about six milliseconds a time.
+    ///
+    /// It is also the more truthful question. The old one asked which airport was nearest
+    /// the middle of the view; this asks which ground plans are actually on the screen.
+    private func nearbyLayouts(_ sheet: MapSheet) -> [AirportLayout] {
+        ground.layouts.values
+            .filter { sheet.mayShow($0.cap) }
+            .sorted { $0.icao < $1.icao }
     }
 
     /// The tiled base map, reprojected onto the globe.
@@ -631,7 +650,7 @@ struct RouteMapView: View {
         // their real outline, their markings and their width, against a straight band drawn
         // between two thresholds. The bundled table still draws every other airport on
         // earth, which is what it is for.
-        let drawnByLayout = drawsGroundLayout ? nearbyLayout?.cap : nil
+        let drawnByLayout = drawsGroundLayout ? nearbyLayouts(sheet).map(\.cap) : []
 
         let colour = Color(nsColor: Theme.runway)
         let named = camera.worldWidth >= 500_000
@@ -641,8 +660,9 @@ struct RouteMapView: View {
         let perFoot = 0.3048 / 6_371_000 * camera.radius
 
         for runway in geography.runways where sheet.mayShow(runway.cap) {
-            if let covered = drawnByLayout,
-               simd_dot(covered.centre, runway.cap.centre) > cos(covered.radius) {
+            if drawnByLayout.contains(where: {
+                simd_dot($0.centre, runway.cap.centre) > cos($0.radius)
+            }) {
                 continue
             }
             let low = sheet.point(runway.low)
@@ -872,9 +892,9 @@ struct RouteMapView: View {
         // The ground plans of the fields in view, biggest first, from ten times further out
         // than they are drawn — a layout takes a minute or two to arrive, and asking on the
         // way down means it is there when you get there.
-        if camera.worldWidth >= MapLayerRoom.layoutFetchFrom {
-            let across = degreesAcross * 111_000 / 2
-            ground.want(WorldData.airports(within: max(across, 5_000), of: camera.centre))
+        if metresAcross <= MapLayerRoom.layoutFetchWithin {
+            ground.want(WorldData.airports(within: max(metresAcross / 2, 5_000),
+                                           of: camera.centre))
         }
     }
 
@@ -923,6 +943,10 @@ struct RouteMapView: View {
     // MARK: - Camera
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }
+
+    /// How much ground the view spans, near enough. What the ground layout's thresholds are
+    /// written in, because a kilometre is a kilometre whatever size the window is.
+    private var metresAcross: Double { degreesAcross * 111_000 }
 
     private func zoom(by factor: CGFloat, around point: CGPoint?) {
         userMoved = true

@@ -177,11 +177,24 @@ struct ChartdeskCommands: Commands {
                 weather.isExpanded.toggle()
             }
             .keyboardShortcut("w", modifiers: [.command, .shift])
+        }
 
-            Button("Performance…") {
-                NotificationCenter.default.post(name: .showPerformance, object: nil)
+        // Window
+        //
+        // Both of these are for looking at the app rather than at a chart, which is what
+        // makes them a submenu of their own rather than four more lines of the View menu.
+        CommandGroup(after: .windowArrangement) {
+            Menu("Debug") {
+                Button("Performance…") {
+                    NotificationCenter.default.post(name: .showPerformance, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+
+                Button("Airport Layouts…") {
+                    NotificationCenter.default.post(name: .showAirportLayouts, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
             }
-            .keyboardShortcut("p", modifiers: [.command, .option])
         }
 
         // Chart

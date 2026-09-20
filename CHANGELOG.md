@@ -49,6 +49,19 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   service and a slow one — the same query for Madrid took 48 seconds one minute and 152 the
   next — so `Tools/make_layouts.py` will fetch the fields you actually fly ahead of time,
   and the app never asks for the same airport twice.
+- **Drawn from twenty kilometres across** rather than six, and every field on the sheet
+  rather than only the one nearest the middle of it. Two airports that share a city are
+  often closer together than the view is wide — Kennedy and La Guardia are seventeen
+  kilometres apart — and drawing one of them as a ground plan while the other stayed a bare
+  strip looked like a fault rather than a decision. The threshold is now a real distance
+  instead of a zoom figure, so it means the same thing whatever size the window is.
+- **A Debug submenu**, in the Window menu. Performance has moved into it from the View menu,
+  where it never belonged, and it has been joined by **Airport Layouts** — a list of every
+  ground plan on this Mac, with the taxiways, runways, stands and holding positions each one
+  holds, how much of its pavement is a drawn outline, how big it is and when it arrived. The
+  layouts arrive one at a time from a service that is often busy and are kept forever once
+  they do, and until now the only way to know which ones you had was to fly somewhere and
+  see whether the taxiways were drawn.
 - **The field is worked out on its own plane.** Everything derived from a layout — the
   white lines down a runway's sides, the piano keys, the bar across a holding position — is
   now worked out on an azimuthal equidistant projection centred on the airport, which is what

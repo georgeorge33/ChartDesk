@@ -53,6 +53,15 @@ struct ChartdeskApp: App {
                 .tint(.ngAccent)
         }
         .defaultSize(width: 400, height: 700)
+        .commandsRemoved()
+
+        Window("Airport Layouts", id: "airportLayouts") {
+            AirportLayoutsView()
+                .preferredColorScheme(.dark)
+                .tint(.ngAccent)
+        }
+        .defaultSize(width: 860, height: 560)
+        .commandsRemoved()
 
         Settings {
             SettingsView()
