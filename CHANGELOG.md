@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0-rc.5
+## 1.2.0-rc.6
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
 
