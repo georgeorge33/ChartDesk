@@ -4,7 +4,7 @@
 #
 #   ./file-charts.sh              move whatever is waiting
 #   ./file-charts.sh --dry-run    say what would move, touch nothing
-#   ./file-charts.sh --force      replace charts already in the library
+#   ./file-charts.sh --force      replace even a chart that matches byte for byte
 #
 # Two shapes are recognised, being the two the userscript can produce:
 #
@@ -20,8 +20,15 @@
 # script that files your downloads into your chart library should not be guessing. The
 # userscript always writes the code in capitals, so nothing it saves is affected.
 #
-# Nothing in the library is ever overwritten or deleted without --force, because that folder
-# is the one thing here that is not replaceable.
+# A chart already in the library is compared rather than trusted. Identical to the download,
+# it stays as it is and the download is dropped — nothing can be lost by discarding a copy
+# that matches byte for byte, and leaving it behind only means deciding about it again next
+# run. Different, and the download is the newer issue, because charts are redrawn every AIRAC
+# cycle and the planner serves the current one; it replaces what is there.
+#
+# So the library is still never overwritten by something that is not a chart, and never
+# rewritten with the same bytes, which would churn a synced folder for nothing. --force
+# replaces even a match, which is only of use for repairing a file that has gone bad.
 #
 # Override the two locations with CHART_DOWNLOADS and CHART_LIBRARY.
 
@@ -37,7 +44,7 @@ for argument in "$@"; do
 	-n | --dry-run) DRY_RUN=yes ;;
 	-f | --force) FORCE=yes ;;
 	-h | --help)
-		sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -51,6 +58,7 @@ done
 [ -d "$LIBRARY" ] || { echo "No chart library at $LIBRARY" >&2; exit 1; }
 
 moved=0
+replaced=0
 skipped=0
 # Destinations this run has already spoken for. Two downloads can name the same chart — a
 # flat "KBOS AGC.png" and a "KBOS/AGC.png" beside it — and without this the dry run would
@@ -64,7 +72,12 @@ is_icao() {
 }
 
 file_chart() {
-	local source="$1" icao="$2" name="$3" destination
+	local source="$1" icao="$2" name="$3" destination verb past
+	# Firefox does not overwrite a repeated download, it numbers it: a second sweep of an
+	# airport arrives as AGC(1).png, which would be filed as a chart of its own and sit
+	# beside the one it was meant to replace. Only a bare number in brackets at the very end
+	# goes; a chart really called "RNAV (GPS) 01" keeps its brackets.
+	name="$(printf '%s' "$name" | sed -E 's/ *\(([0-9]+)\)(\.[Pp][Nn][Gg])$/\2/')"
 	destination="$LIBRARY/$icao/$name"
 
 	if printf '%s' "$claimed" | grep -Fqx "$icao/$name"; then
@@ -74,25 +87,40 @@ file_chart() {
 		return 0
 	fi
 
-	if [ -e "$destination" ] && [ "$FORCE" = no ]; then
-		printf '  keep   %s/%s — already in the library\n' "$icao" "$name"
-		skipped=$((skipped + 1))
-		return 0
+	verb=file
+	past=filed
+	if [ -e "$destination" ]; then
+		if [ "$FORCE" = no ] && cmp -s "$source" "$destination"; then
+			skipped=$((skipped + 1))
+			# Safe to drop: it matches what is filed exactly, so there is nothing in it
+			# that the library does not already hold.
+			if [ "$DRY_RUN" = yes ]; then
+				printf '  same   %s/%s — matches byte for byte, download would be dropped\n' \
+					"$icao" "$name"
+			else
+				rm -f "$source"
+				printf '  same   %s/%s — matches byte for byte, download dropped\n' \
+					"$icao" "$name"
+			fi
+			return 0
+		fi
+		verb=replace
+		past=replaced
 	fi
 
 	claimed="${claimed}${icao}/${name}
 "
 
 	if [ "$DRY_RUN" = yes ]; then
-		printf '  would move %s → %s/%s\n' "${source#"$DOWNLOADS"/}" "$icao" "$name"
-		moved=$((moved + 1))
+		printf '  would %s %s → %s/%s\n' "$verb" "${source#"$DOWNLOADS"/}" "$icao" "$name"
+		if [ "$verb" = replace ]; then replaced=$((replaced + 1)); else moved=$((moved + 1)); fi
 		return 0
 	fi
 
 	mkdir -p "$LIBRARY/$icao"
 	mv -f "$source" "$destination"
-	printf '  moved  %s/%s\n' "$icao" "$name"
-	moved=$((moved + 1))
+	printf '  %-8s %s/%s\n' "$past" "$icao" "$name"
+	if [ "$verb" = replace ]; then replaced=$((replaced + 1)); else moved=$((moved + 1)); fi
 }
 
 echo "From $DOWNLOADS"
@@ -122,10 +150,9 @@ if [ "$DRY_RUN" = no ]; then
 	done < <(find "$DOWNLOADS" -mindepth 1 -maxdepth 1 -type d -print0)
 fi
 
-if [ "$moved" -eq 0 ] && [ "$skipped" -eq 0 ]; then
+if [ "$moved" -eq 0 ] && [ "$replaced" -eq 0 ] && [ "$skipped" -eq 0 ]; then
 	echo "Nothing to file."
 else
-	printf 'Filed %d, kept %d.\n' "$moved" "$skipped"
-	[ "$skipped" -gt 0 ] && echo "Run again with --force to replace the ones already there."
+	printf 'Filed %d, replaced %d, already had %d.\n' "$moved" "$replaced" "$skipped"
 fi
 exit 0
