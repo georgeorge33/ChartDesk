@@ -21,6 +21,10 @@ struct AirportLayout {
         let width: Double
         let directions: [SIMD3<Double>]
         let cap: SphericalCap
+        /// What it is. A taxiway is movement area and carries a painted centreline and a
+        /// designator; a taxilane is the lead into a stand on the apron, which is pavement
+        /// and nothing else.
+        let surface: AirportSurface
         /// True where the pavement under this line is mapped as its own outline, so the
         /// width tag does not have to stand in for it and nothing should be drawn from it.
         let paved: Bool
@@ -31,13 +35,17 @@ struct AirportLayout {
         let edges: [[SIMD3<Double>]]
         let keys: [[SIMD3<Double>]]
 
+        /// True for the movement area: what a clearance names and a chart letters.
+        var isMovementArea: Bool { surface == .runway || surface == .taxiway }
+
         init(ref: String, width: Double, directions: [SIMD3<Double>], cap: SphericalCap,
-             paved: Bool = false, edges: [[SIMD3<Double>]] = [],
-             keys: [[SIMD3<Double>]] = []) {
+             surface: AirportSurface, paved: Bool = false,
+             edges: [[SIMD3<Double>]] = [], keys: [[SIMD3<Double>]] = []) {
             self.ref = ref
             self.width = width
             self.directions = directions
             self.cap = cap
+            self.surface = surface
             self.paved = paved
             self.edges = edges
             self.keys = keys
@@ -614,8 +622,8 @@ final class AirportLayoutStore: ObservableObject {
             }
 
             let width = (tags["width"] as? String).flatMap(metres) ?? surface.width
-            let way = AirportLayout.Way(ref: ref, width: width,
-                                        directions: directions, cap: cap)
+            let way = AirportLayout.Way(ref: ref, width: width, directions: directions,
+                                        cap: cap, surface: surface)
             if surface == .runway { runways.append(way) } else { taxiways.append(way) }
         }
 
@@ -647,13 +655,15 @@ final class AirportLayoutStore: ObservableObject {
         // which is exactly how an AMDB separates a runway element from a runway marking.
         let paved = runways.map { way in
             AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
-                              cap: way.cap, paved: covered(way, runway: true),
+                              cap: way.cap, surface: way.surface,
+                              paved: covered(way, runway: true),
                               edges: AirportLayout.edges(of: way, in: frame),
                               keys: AirportLayout.thresholdBars(of: way, in: frame))
         }
         let taxied = taxiways.map { way in
             AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
-                              cap: way.cap, paved: covered(way, runway: false))
+                              cap: way.cap, surface: way.surface,
+                              paved: covered(way, runway: false))
         }
 
         let holds = bars(for: holdPoints, along: taxied + paved, in: frame)

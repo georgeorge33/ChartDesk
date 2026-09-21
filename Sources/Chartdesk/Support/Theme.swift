@@ -96,6 +96,11 @@ enum Theme {
     /// terrain layer that arrangement inverts — the ground is the pale thing now — and the
     /// same lines drawn in the same colours wash out entirely. These are their opposites:
     /// the hue kept, the value flipped, so a border still reads as a border.
+    /// A taxi route, and the two ends picked for it. Green because nothing else on the
+    /// ground plan is: the yellow is the paint, the magenta is where you stop, and a route
+    /// is neither of those and must not be mistaken for either.
+    static let taxiRoute        = rgb(0x2FD16B)
+
     /// Contour lines. The sepia every paper chart prints them in — brown enough to be
     /// clearly not a road or a river, quiet enough to lie under everything aeronautical.
     static let contour          = rgb(0x6B5836)

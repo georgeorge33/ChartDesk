@@ -40,6 +40,7 @@ struct RouteMapView: View {
     /// Set once you drag or zoom, after which the map stops framing things for you.
     @State private var userMoved = false
     @State private var showsLayers = false
+    @ObservedObject private var taxi = TaxiRouteStore.shared
 
     private var plan: FlightPlan? { flight.plan }
     private var waypoints: [FlightPlan.Waypoint] { plan?.waypoints ?? [] }
@@ -100,6 +101,19 @@ struct RouteMapView: View {
         // The flight is fetched after the window opens, so the first layout often has no route
         // to frame. Framing it when it lands is the difference between opening on your flight
         // and opening on the whole world.
+        // A click picks the two ends of a taxi route, and only then: the map is dragged and
+        // scrolled far more often than it is asked a question, so this stays behind its own
+        // button rather than making every stray click mean something.
+        .onTapGesture(coordinateSpace: .local) { at in
+            guard taxi.isPicking, drawsGroundLayout, size.width > 0 else { return }
+            let sheet = MapSheet(camera: camera, size: size)
+            guard let direction = sheet.projection.direction(at: at),
+                  let layout = nearbyLayouts(sheet).first(where: {
+                      simd_dot($0.cap.centre, direction) >= $0.cap.cosRadius
+                  })
+            else { return }
+            taxi.pick(direction, on: layout)
+        }
         .onChange(of: waypoints.count) { _, count in
             guard count > 1, !userMoved else { return }
             fitRoute()
@@ -290,6 +304,7 @@ struct RouteMapView: View {
         }
 
         groundLayout(in: &context, sheet: sheet, labels: &labels)
+        taxiRoute(in: &context, sheet: sheet, labels: &labels)
         airspace(in: &context, sheet: sheet, labels: &labels)
         runways(in: &context, sheet: sheet, labels: &labels)
         places(in: &context, sheet: sheet, labels: &labels)
@@ -399,8 +414,12 @@ struct RouteMapView: View {
         }
 
         // Then the markings.
+        //
+        // Only on the movement area. A taxilane is the lead into a stand on the apron, and
+        // the yellow line down it is not the line a clearance is read from — painting it
+        // the same as a taxiway makes the ramp look like somewhere you would be told to go.
         let centreline = max(1, min(2.5, 6 * perMetre))
-        for way in layout.taxiways where sheet.mayShow(way.cap) {
+        for way in layout.taxiways where way.isMovementArea && sheet.mayShow(way.cap) {
             let line = sheet.path(curve: way.directions)
             guard !line.isEmpty else { continue }
             context.stroke(line, with: .color(Color(nsColor: Theme.taxiLine)),
@@ -432,6 +451,39 @@ struct RouteMapView: View {
         layoutLabels(layout, sheet: sheet, labels: &labels)
     }
 
+    /// The picked taxi route, over the layout it was found on.
+    ///
+    /// Drawn over the ground plan and under the airspace: it is a thing about the ground,
+    /// and it has to be plainly on top of the taxiways it follows or it reads as one more
+    /// of them.
+    private func taxiRoute(in context: inout GraphicsContext, sheet: MapSheet,
+                           labels: inout [Label]) {
+        guard drawsGroundLayout else { return }
+        let green = Color(nsColor: Theme.taxiRoute)
+
+        if let route = taxi.route, route.directions.count >= 2 {
+            let line = sheet.path(curve: route.directions)
+            if !line.isEmpty {
+                // A dark casing under it, because the route crosses pale concrete, dark
+                // asphalt and grass in the space of one clearance and has to read on all
+                // three.
+                context.stroke(line, with: .color(.black.opacity(0.45)),
+                               style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                context.stroke(line, with: .color(green),
+                               style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
+            }
+        }
+
+        // The ends, so a half-made route still shows where it starts.
+        for end in [taxi.from, taxi.to].compactMap({ $0 }) {
+            guard sheet.projection.faces(end) else { continue }
+            let at = sheet.point(Coordinate(end))
+            let ring = CGRect(x: at.x - 5, y: at.y - 5, width: 10, height: 10)
+            context.fill(Path(ellipseIn: ring), with: .color(.black.opacity(0.5)))
+            context.fill(Path(ellipseIn: ring.insetBy(dx: 2, dy: 2)), with: .color(green))
+        }
+    }
+
     /// Fills the pavement of one kind that OpenStreetMap has the outline of.
     ///
     /// Drawn in two passes rather than one so the layering survives: a runway is painted
@@ -454,7 +506,8 @@ struct RouteMapView: View {
                               labels: inout [Label]) {
         let yellow = Color(nsColor: Theme.taxiLine)
 
-        for way in layout.taxiways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
+        for way in layout.taxiways
+        where !way.ref.isEmpty && way.isMovementArea && sheet.mayShow(way.cap) {
             guard let at = middle(of: way, sheet: sheet) else { continue }
             labels.append(Label(text: Text(AirportLayout.designator(way.ref))
                                     .font(.ngSmallBold)
@@ -1037,27 +1090,98 @@ struct RouteMapView: View {
 
     // MARK: - Controls
 
-    /// The Layers button, top right.
+    /// The Layers button, and the taxi one under it, top right.
     private var layers: some View {
-        Button {
-            showsLayers.toggle()
-        } label: {
-            Image(systemName: "square.3.layers.3d")
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 30, height: 30)
-        }
-        .buttonStyle(.plain)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.ngSeparator)
-        }
-        .help("Layers")
-        .popover(isPresented: $showsLayers, arrowEdge: .bottom) {
-            MapLayerPanel()
+        VStack(spacing: 8) {
+            Button {
+                showsLayers.toggle()
+            } label: {
+                Image(systemName: "square.3.layers.3d")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.ngSeparator)
+            }
+            .help("Layers")
+            .popover(isPresented: $showsLayers, arrowEdge: .bottom) {
+                MapLayerPanel()
+            }
+
+            // Only where there is a ground plan to route across. Out of the way rather than
+            // disabled: a button that is never usable from most of the map is clutter.
+            if drawsGroundLayout {
+                Button {
+                    taxi.isPicking.toggle()
+                    if !taxi.isPicking { taxi.reset() }
+                } label: {
+                    Image(systemName: "arrow.trianglehead.turn.up.right.diamond")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 30, height: 30)
+                        .foregroundStyle(taxi.isPicking ? Color(nsColor: Theme.taxiRoute)
+                                                        : Color.primary)
+                }
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(taxi.isPicking ? Color(nsColor: Theme.taxiRoute)
+                                                     : Color.ngSeparator)
+                }
+                .help("Taxi route — click where you are, then where you are going")
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    }
+
+    /// What the route came out as, under the flight's own details.
+    @ViewBuilder private var clearance: some View {
+        if taxi.isPicking {
+            VStack(alignment: .leading, spacing: 3) {
+                if let route = taxi.route {
+                    Text(route.legs.isEmpty ? "Across the apron" : route.legs.joined(separator: " · "))
+                        .font(.ngSmallMedium)
+                        .foregroundStyle(Color(nsColor: Theme.taxiRoute))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(distance(route.metres)
+                         + (route.holds.isEmpty ? ""
+                            : " · hold short at " + route.holds.joined(separator: ", ")))
+                        .font(.ngSmall)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let problem = taxi.failure {
+                    Text(problem)
+                        .font(.ngSmall)
+                        .foregroundStyle(Color.ngWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if taxi.from != nil {
+                    Text("Now click where you are going.")
+                        .font(.ngSmall)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Click where you are on the field.")
+                        .font(.ngSmall)
+                        .foregroundStyle(.secondary)
+                }
+                if let doubt = taxi.doubt {
+                    Text(doubt)
+                        .font(.ngSmall)
+                        .foregroundStyle(Color.ngWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: 300, alignment: .leading)
+        }
+    }
+
+    /// Metres on the ground, as a pilot would say it.
+    private func distance(_ metres: Double) -> String {
+        metres < 1000 ? "\(Int(metres.rounded())) m"
+                      : String(format: "%.1f km · %.1f NM", metres / 1000, metres / 1852)
     }
 
     private var overlay: some View {
@@ -1100,6 +1224,7 @@ struct RouteMapView: View {
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
 
+            clearance
         }
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
