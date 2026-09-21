@@ -92,6 +92,13 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 
 **Also**
 
+- **A flight category beside the METAR**: a coloured dot and the letters, so you can tell
+  whether a field is flyable from across the room before reading a single group. Green VFR,
+  blue MVFR, red IFR, magenta LIFR — not a palette anyone gets to choose, since that is what
+  every briefing map has meant by them for decades. The worse of ceiling and visibility
+  decides it, few and scattered are not a ceiling, and everything after `RMK` is thrown away
+  first, because remarks are a different grammar and reading them as the body is how a
+  decoder invents a ceiling.
 - **An ATIS now comes with it decoded.** Under the report, the eight figures you tuned in
   for, set down in a column: information letter, time, wind, visibility, cloud, temperature,
   dew point and altimeter. Read from whichever form the field uses — the METAR-coded run an

@@ -96,6 +96,23 @@ enum Theme {
     /// terrain layer that arrangement inverts — the ground is the pale thing now — and the
     /// same lines drawn in the same colours wash out entirely. These are their opposites:
     /// the hue kept, the value flipped, so a border still reads as a border.
+    /// The four flight categories. Not a palette anyone gets to choose: green, blue, red and
+    /// magenta are what every briefing map has meant by them for decades, and a chart using
+    /// its own would be worse than one using none.
+    static let categoryVFR      = rgb(0x3FBF57)
+    static let categoryMVFR     = rgb(0x4A9BE8)
+    static let categoryIFR      = rgb(0xE04A4A)
+    static let categoryLIFR     = rgb(0xD44ED4)
+
+    static func flight(_ category: FlightCategory) -> NSColor {
+        switch category {
+        case .vfr: return categoryVFR
+        case .mvfr: return categoryMVFR
+        case .ifr: return categoryIFR
+        case .lifr: return categoryLIFR
+        }
+    }
+
     /// Contour lines. The sepia every paper chart prints them in — brown enough to be
     /// clearly not a road or a river, quiet enough to lie under everything aeronautical.
     static let contour          = rgb(0x6B5836)

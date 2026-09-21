@@ -181,7 +181,10 @@ struct WeatherPanel: View {
                 } else if let report = resolved.report {
                     // METAR and TAF above ATIS: a full ATIS runs to ten lines of hold-short
                     // and crane advisories and would push them out of view.
-                    if let metar = report.metar { reportBlock("METAR", metar, mono: true) }
+                    if let metar = report.metar {
+                        reportBlock("METAR", metar, mono: true,
+                                    category: FlightCategory.read(metar))
+                    }
                     if let taf = report.taf { reportBlock("TAF", taf, mono: true) }
                     ForEach(report.realAtis) {
                         reportBlock($0.label, $0.text, mono: false, showsAge: true)
@@ -325,12 +328,14 @@ struct WeatherPanel: View {
                              _ text: String,
                              accent: Color = Color.ngAccentText,
                              mono: Bool,
-                             showsAge: Bool = false) -> some View {
+                             showsAge: Bool = false,
+                             category: FlightCategory? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Text(title)
                     .font(.ngSmallBold)
                     .foregroundStyle(accent)
+                if let category { CategoryBadge(category: category) }
                 if showsAge { AtisAge(text: text) }
             }
             Text(WeatherPanel.marked(text))
@@ -369,6 +374,41 @@ struct WeatherPanel: View {
         }
         plain(text[cursor...])
         return result
+    }
+}
+
+// MARK: - Flight category
+
+/// The dot and the letters beside METAR.
+///
+/// The colours are the ones every briefing map has used for these four for decades, so this
+/// is not decoration: a green dot means the field is VFR at a glance, from across the room,
+/// before you have read a single group.
+private struct CategoryBadge: View {
+
+    let category: FlightCategory
+
+    var body: some View {
+        let colour = Color(nsColor: Theme.flight(category))
+        HStack(spacing: 3) {
+            Circle()
+                .fill(colour)
+                .frame(width: 7, height: 7)
+            Text(category.rawValue)
+                .font(.ngSmallBold)
+                .foregroundStyle(colour)
+        }
+        .help(help)
+    }
+
+    /// The rule, because four thresholds in two units is more than anyone holds in their head.
+    private var help: String {
+        switch category {
+        case .vfr: return "VFR — ceiling above 3,000 ft and visibility over 5 SM."
+        case .mvfr: return "Marginal VFR — ceiling 1,000 to 3,000 ft, or visibility 3 to 5 SM."
+        case .ifr: return "IFR — ceiling 500 to below 1,000 ft, or visibility 1 to below 3 SM."
+        case .lifr: return "Low IFR — ceiling below 500 ft, or visibility below 1 SM."
+        }
     }
 }
 
