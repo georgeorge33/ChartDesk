@@ -308,82 +308,11 @@ struct RouteMapView: View {
     private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
                               labels: inout [Label]) {
         guard drawsGroundLayout else { return }
-        // The ground itself is MapKit's to draw now — it is registered to a photograph and
-        // has to move with it. What is left here is the writing on it, which is not: a
-        // place name a frame behind is a place name.
-        for layout in nearbyLayouts(sheet) {
-            layoutLabels(layout, sheet: sheet, labels: &labels)
-        }
+        // Nothing here: the ground and its writing are both MapKit's now. A designator
+        // that lags the taxiway it names is a label pointing at the wrong concrete, so it
+        // went in with the tarmac rather than staying up here.
     }
 
-    /// The writing on the ground: taxiway designators, runway numbers at the ends they
-    /// belong to, the holding positions and, closest in, the stands.
-    private func layoutLabels(_ layout: AirportLayout, sheet: MapSheet,
-                              labels: inout [Label]) {
-        let yellow = Color(nsColor: Theme.taxiLine)
-
-        for way in layout.taxiways
-        where !way.ref.isEmpty && way.isMovementArea && sheet.mayShow(way.cap) {
-            guard let at = middle(of: way, sheet: sheet) else { continue }
-            labels.append(Label(text: Text(AirportLayout.designator(way.ref))
-                                    .font(.ngSmallBold)
-                                    .foregroundStyle(yellow),
-                                box: .black, border: yellow,
-                                at: at, anchor: .center))
-        }
-
-        // A runway's number goes at the end you would be looking at it from, which is the
-        // end whose bearing matches it: 14L is painted where you line up to fly 140°.
-        for way in layout.runways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
-            for (number, at) in AirportLayout.numbers(of: way) {
-                guard sheet.projection.faces(at) else { continue }
-                let point = sheet.projection.point(at)
-                guard point.x > 0, point.x < sheet.size.width,
-                      point.y > 0, point.y < sheet.size.height else { continue }
-                labels.append(Label(text: Text(number)
-                                        .font(.ngSmallBold)
-                                        .foregroundStyle(Color.white),
-                                    box: .black.opacity(0.55),
-                                    at: point, anchor: .center))
-            }
-        }
-
-        for hold in layout.holds where !hold.ref.isEmpty {
-            guard sheet.projection.faces(hold.direction) else { continue }
-            let at = sheet.projection.point(hold.direction)
-            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
-            else { continue }
-            labels.append(Label(text: Text(hold.ref)
-                                    .font(.ngSmallBold)
-                                    .foregroundStyle(Color(nsColor: Theme.holdShort)),
-                                box: .black, border: Color(nsColor: Theme.holdShort),
-                                at: at, anchor: .center))
-        }
-
-        // Stands only at the very closest zooms: there are hundreds of them at a big field
-        // and they are the last thing worth the space.
-        guard camera.worldWidth >= MapLayerRoom.standsFrom else { return }
-        for stand in layout.stands {
-            guard sheet.projection.faces(stand.direction) else { continue }
-            let at = sheet.projection.point(stand.direction)
-            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
-            else { continue }
-            labels.append(Label(text: Text(stand.ref)
-                                    .font(.ngSmall)
-                                    .foregroundStyle(Color(nsColor: Theme.stand)),
-                                at: at, anchor: .center))
-        }
-    }
-
-    /// The middle of a way, on the sheet, when it is on the sheet at all.
-    private func middle(of way: AirportLayout.Way, sheet: MapSheet) -> CGPoint? {
-        let direction = way.directions[way.directions.count / 2]
-        guard sheet.projection.faces(direction) else { return nil }
-        let at = sheet.projection.point(direction)
-        guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
-        else { return nil }
-        return at
-    }
 
     /// True when the view is close enough for the ground layout. Always drawn at that range:
     /// this close in, the shape of the field is the map.
@@ -916,7 +845,8 @@ struct RouteMapView: View {
     private var chartFrame: ChartFrame {
         ChartFrame(layouts: drawsGroundLayout ? held : [],
                    showsGroundLayout: drawsGroundLayout,
-                   overAppleMap: showsAppleMap)
+                   overAppleMap: showsAppleMap,
+                   showsStands: camera.worldWidth >= MapLayerRoom.standsFrom)
     }
 
     /// Every layout in hand. The renderer culls them itself against whatever rectangle

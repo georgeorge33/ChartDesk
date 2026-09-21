@@ -33,11 +33,15 @@ struct ChartFrame {
     var showsGroundLayout = false
     /// True over Apple's own map, where the tarmac is already in the picture.
     var overAppleMap = false
+    /// Stands are hundreds of numbers at a big field, and only worth the room at the very
+    /// closest zooms.
+    var showsStands = false
 
     /// What would make the drawing different. Compared instead of the layouts themselves,
     /// which are thousands of points each and are only ever swapped whole.
     var stamp: String {
-        "\(showsGroundLayout)\(overAppleMap)" + layouts.map(\.icao).joined(separator: ",")
+        "\(showsGroundLayout)\(overAppleMap)\(showsStands)"
+            + layouts.map(\.icao).joined(separator: ",")
     }
 }
 
@@ -57,9 +61,64 @@ final class ChartRenderer: MKOverlayRenderer {
         let chart = ChartContext(cg: context, mapPointsPerScreenPoint: scale)
         let sheet = MapSheet(mapRect: mapRect, padding: 64 * scale)
 
+        var writing: [ChartContext.Label] = []
         for layout in frame.layouts where sheet.mayShow(layout.cap) {
             ground(layout, in: chart, sheet: sheet)
+            self.writing(layout, in: chart, sheet: sheet, into: &writing)
         }
+
+        // Decluttered and drawn last, over every airport's tarmac rather than each field's
+        // writing being buried by the next field's concrete.
+        var taken: [CGRect] = []
+        let air = 2 * scale
+        for label in writing {
+            let room = chart.bounds(of: label).insetBy(dx: -air, dy: -air)
+            guard sheet.panel.intersects(room),
+                  !taken.contains(where: { $0.intersects(room) }) else { continue }
+            taken.append(room)
+            chart.draw(label)
+        }
+    }
+
+    /// The writing on the ground: taxiway designators, runway numbers at the ends they
+    /// belong to, the holding positions, and the stands closest in.
+    ///
+    /// In here with the tarmac rather than on the canvas above it, because a designator
+    /// that lags the taxiway it names is worse than no designator — it is a label pointing
+    /// at the wrong piece of concrete.
+    private func writing(_ layout: AirportLayout, in chart: ChartContext, sheet: MapSheet,
+                         into found: inout [ChartContext.Label]) {
+        for way in layout.taxiways
+        where !way.ref.isEmpty && way.isMovementArea && sheet.mayShow(way.cap) {
+            guard let at = middle(of: way, sheet: sheet) else { continue }
+            found.append(ChartContext.Label(text: AirportLayout.designator(way.ref),
+                                            colour: Theme.taxiLine, box: .black,
+                                            border: Theme.taxiLine, at: at))
+        }
+        for way in layout.runways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
+            for (number, at) in AirportLayout.numbers(of: way) {
+                found.append(ChartContext.Label(text: number, colour: .white,
+                                                box: NSColor.black.withAlphaComponent(0.55),
+                                                at: sheet.projection.point(at)))
+            }
+        }
+        for hold in layout.holds where !hold.ref.isEmpty {
+            found.append(ChartContext.Label(text: hold.ref, colour: Theme.holdShort,
+                                            box: .black, border: Theme.holdShort,
+                                            at: sheet.projection.point(hold.direction)))
+        }
+        guard frame.showsStands else { return }
+        for stand in layout.stands where !stand.ref.isEmpty {
+            found.append(ChartContext.Label(text: stand.ref, size: 8, bold: false,
+                                            colour: Theme.stand,
+                                            at: sheet.projection.point(stand.direction)))
+        }
+    }
+
+    /// The middle of a way, where its letter goes.
+    private func middle(of way: AirportLayout.Way, sheet: MapSheet) -> CGPoint? {
+        guard !way.directions.isEmpty else { return nil }
+        return sheet.projection.point(way.directions[way.directions.count / 2])
     }
 
     /// The airport's own ground, in map points.
@@ -95,7 +154,7 @@ final class ChartRenderer: MKOverlayRenderer {
             }
             for edge in way.edges {
                 chart.stroke(sheet.path(straight: edge), Theme.runwayMarking.withAlphaComponent(0.85),
-                             width: chart.screen(1))
+                             width: chart.screen(1.4))
             }
             for bar in way.keys {
                 chart.stroke(sheet.path(straight: bar), Theme.runwayMarking, width: wide(2.5),
@@ -103,7 +162,7 @@ final class ChartRenderer: MKOverlayRenderer {
             }
         }
 
-        let line = chart.screen(1.6)
+        let line = chart.screen(2.2)
         for way in layout.taxiways where way.isMovementArea && sheet.mayShow(way.cap) {
             chart.stroke(sheet.path(curve: way.directions), Theme.taxiLine,
                          width: line, cap: .round, join: .round)
