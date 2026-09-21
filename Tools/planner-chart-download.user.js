@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.0
+// @version      4.2
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @connect      foxtrotatlasprod.blob.core.windows.net
@@ -444,16 +444,25 @@
         return found ? (found.textContent || '').replace(/\s+/g, ' ').trim() : '';
     }
 
+    /** What a tab is called: one word, as DEPARTURE and MISC are. */
+    const TAB_LABEL = /^[A-Za-z]{3,12}$/;
+
     /**
      * The category strip: DEPARTURE, ARRIVAL, APPROACH, AIRPORT, MISC. Every one of them
      * carries the underline that marks the selected tab, which is what tells them apart from
      * the runway filter alongside — the same size and shape, but with neither underline nor
      * text of its own.
+     *
+     * The label has to read like a label as well. An element wrapping the whole strip answers
+     * for the text of everything inside it — KDCADEPARTUREARRIVALAPPROACHAIRPORTMISC — and if
+     * one of those ever carries the underline class it would otherwise be taken for a tab,
+     * put that run of letters in front of every chart as it was swept, and be clicked as
+     * though it were a tab of its own.
      */
     function categoryTabs() {
         return [...document.querySelectorAll('button')].filter((button) =>
             /border-b-(msfs|transparent)\b/.test(String(button.className || ''))
-            && (button.textContent || '').trim().length > 0);
+            && TAB_LABEL.test((button.textContent || '').trim()));
     }
 
     const isSelected = (tab) => /border-b-msfs\b/.test(String(tab.className || ''));
@@ -481,10 +490,18 @@
         return place === -1 ? CHIP_ORDER.length : place;
     }
 
-    // A SID and its procedure-text twin describe one procedure and so carry the same chip.
-    // Without this the second would be filed over the first — or, since file-charts.sh will
-    // not overwrite, not filed at all.
-    const withPart = (name, badge) => (/PT$/i.test(badge || '') ? name + ' PT' : name);
+    // Types whose designator says nothing about what kind of chart it is. AMEEE1 is a SID and
+    // CAPSS4 is a STAR, and both are five letters and a digit — so the library's parser has no
+    // way to tell a departure from an arrival unless the name says. Left to itself it files
+    // every one of them under REF, or worse: SKILS5 contains ILS, and a STAR that matches on a
+    // substring lands among the approaches looking entirely plausible.
+    //
+    // Carrying the badge also separates a procedure from its own text page, SIDPT against SID,
+    // which is what stopped the two overwriting each other before.
+    const TYPED_BADGES = /^(SID|SIDPT|STAR|STARPT|EOSID)$/i;
+
+    const withType = (name, badge) =>
+        (TYPED_BADGES.test(badge || '') ? name + ' ' + badge.toUpperCase() : name);
 
     /**
      * What a row should be called, in the shape the library already uses: AGC, ILS 01, RNAV 15.
@@ -501,12 +518,12 @@
             .map((chip) => String(chip).replace(/\s+/g, ' ').trim())
             .filter((chip) => chip && !/^NONE\b/i.test(chip))
             .sort((a, b) => chipRank(a) - chipRank(b));
-        if (usable.length) return withPart(usable[0], badge);
+        if (usable.length) return withType(usable[0], badge);
 
         if (badge && title.toUpperCase().endsWith(badge.toUpperCase())) {
-            return withPart(badge, badge);
+            return withType(badge, badge);
         }
-        return withPart(title || badge, badge);
+        return withType(title || badge, badge);
     }
 
     /** The rule above, over a row as the page holds it. */
