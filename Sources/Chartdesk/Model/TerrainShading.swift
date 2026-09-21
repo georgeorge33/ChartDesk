@@ -39,8 +39,9 @@ enum TerrainShading {
     ///
     /// Honest relief is nearly flat at the scales a map is looked at: a 10° hillside is a
     /// 10° hillside, and 10° of shading is nothing. Every relief map exaggerates, and the
-    /// only question is how much before it turns into crumpled foil.
-    private static let steepen = 2.2
+    /// only question is how much before it turns into crumpled foil. A chart shades
+    /// gently, so this is gentler than a relief poster would want.
+    private static let steepen = 1.6
 
     /// Paints one tile, in place.
     ///
@@ -100,7 +101,7 @@ enum TerrainShading {
                     let facing = (east * sunEast + north * sunNorth + sunUp) / length
                     // Nothing on a map is truly unlit: a face turned away from the sun still
                     // has the sky on it, and painted black it swallows what is drawn over it.
-                    light = 0.35 + 0.65 * max(facing, 0)
+                    light = 0.62 + 0.38 * max(facing, 0)
                 }
 
                 let (red, green, blue) = colour(at: above)
@@ -119,23 +120,32 @@ enum TerrainShading {
 
     /// Height to colour.
     ///
-    /// Sea floor through to snow, in the muted end of each hue: this is drawn under the
-    /// chart and then dimmed by a third, so a saturated ramp of the kind an atlas uses would
-    /// come through as mud and still shout over the airspace.
+    /// Sampled off a Navigraph VFR chart rather than invented: pale cream on the valley
+    /// floors, sage green over the slopes, olive and then tan as the ground gets up, and
+    /// rock and snow above that. Water is the pale cyan those charts use for a river, going
+    /// deeper only where the sea does.
+    ///
+    /// Pale low and green above it is the opposite way round to an atlas, and it is not a
+    /// mistake. On their chart the green is land cover — forest against field — which
+    /// elevation tiles do not carry. But in mountains the two line up: the farmed floor is
+    /// the low ground and the forest is on the slopes, so a ramp in this order reproduces
+    /// what their map looks like from the only thing this layer knows.
     private static let ramp: [(metres: Double, red: Double, green: Double, blue: Double)] = [
-        (-9000,  8,  18,  34),
-        (-2000, 14,  32,  56),
-        ( -200, 22,  48,  78),
-        (   -1, 30,  62,  96),
-        (    0, 48,  74,  52),
-        (  250, 62,  86,  50),
-        (  700, 92, 100,  56),
-        ( 1400, 118, 104,  66),
-        ( 2200, 122,  96,  76),
-        ( 3000, 124, 114, 106),
-        ( 4000, 158, 156, 154),
-        ( 5500, 196, 198, 200),
-        ( 8900, 226, 230, 234),
+        (-9000,  92, 158, 186),
+        (-2000, 142, 196, 218),
+        ( -200, 180, 224, 238),
+        (   -1, 205, 242, 250),
+        (    0, 234, 240, 212),
+        (  350, 214, 226, 190),
+        (  800, 152, 184, 152),
+        ( 1500, 136, 168, 136),
+        ( 2000, 160, 168, 132),
+        ( 2500, 168, 152, 120),
+        ( 3000, 200, 168, 152),
+        ( 3500, 223, 201, 158),
+        ( 4200, 226, 218, 204),
+        ( 5200, 242, 242, 242),
+        ( 8900, 252, 252, 252),
     ]
 
     static func colour(at metres: Double) -> (Double, Double, Double) {

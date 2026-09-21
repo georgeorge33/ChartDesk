@@ -89,6 +89,20 @@ enum Theme {
     static let stateBorder      = rgb(0x35506B)
     /// The names of towns.
     static let place            = rgb(0x9FB3C8)
+
+    /// The same ink, for a base map that is pale rather than dark.
+    ///
+    /// Every colour above is navy chosen to glow a little against near-black. Over the
+    /// terrain layer that arrangement inverts — the ground is the pale thing now — and the
+    /// same lines drawn in the same colours wash out entirely. These are their opposites:
+    /// the hue kept, the value flipped, so a border still reads as a border.
+    enum OnLight {
+        static let coast        = rgb(0x5A6B7B)
+        static let border       = rgb(0x5B6A78)
+        static let stateBorder  = rgb(0x78868F)
+        static let place        = rgb(0x33414D)
+        static let runway       = rgb(0x3E4B58)
+    }
     /// The "not for real-world navigation" red. Brighter than the system red, which goes
     /// muddy at caption sizes against this navy.
     static let warning          = rgb(0xFF5A5A)

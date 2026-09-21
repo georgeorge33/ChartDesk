@@ -97,6 +97,20 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 - **Lit from the north-west at 45°**, where relief maps have put the sun since they were
   painted by hand, and shaded from the surface normal — the slope-and-aspect form of the same
   arithmetic costs four transcendentals a pixel and reads no better. A tile takes 1.5 ms.
+- **Coloured like a VFR chart**, because the colours were taken off one: pale cream on the
+  valley floors, sage green over the slopes, olive and tan as the ground gets up, rock and
+  snow above. Pale low and green above it is the opposite way round to an atlas and it is
+  deliberate — on a chart that green is forest against field, which elevation tiles do not
+  carry, but in mountains the two line up, so the same order reproduces the look from the
+  only thing this layer knows.
+- **It is a light map now**, and the ink over it follows: borders, state lines, runway
+  strips and town names all switch to a dark set while the tiles are showing, because navy
+  chosen to glow against near-black disappears entirely against pale ground. The drawn map
+  underneath is unchanged — zoom out past the tiles and it is the dark one it always was.
+- Dimming is **per layer** rather than one figure. Imagery still loses a third, because
+  airspace over a bright aerial photo is two things competing. Terrain loses almost nothing:
+  it is drawn here, in chart colours, already quiet, and taking a third off only turned a
+  chart the colour of a chart into khaki.
 - **The sea is flat.** Below sea level the hillshade is switched off: the tiles carry real
   bathymetry, and shading it turns every ridge on the sea floor into a wave and every
   coastline to mush.

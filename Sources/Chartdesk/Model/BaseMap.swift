@@ -150,12 +150,23 @@ enum BaseMap: String, CaseIterable, Identifiable {
     /// it in the corner with the others.
     static let appleAttribution = "Apple Maps"
 
+    /// True for a base that is pale, so what goes over it has to be dark to be read.
+    var isLight: Bool { self == .terrain }
+
     /// How much to take off a base map before the overlays go over it.
     ///
-    /// Both of these are made to be looked at on their own, and airspace over bright
-    /// hillshading is two things competing. A third off puts the map behind the chart
-    /// without turning it into a silhouette.
-    static let dimming: Double = 0.32
+    /// Imagery is made to be looked at on its own, and airspace over a bright aerial photo
+    /// is two things competing; a third off puts it behind the chart without turning it
+    /// into a silhouette. The terrain layer needs almost none of that — it is drawn here,
+    /// in chart colours, already quiet — and dimming it only turns a chart the colour of a
+    /// chart into khaki.
+    var dimming: Double {
+        switch self {
+        case .vector: return 0
+        case .terrain: return 0.06
+        case .satellite: return 0.32
+        }
+    }
 
     /// Beyond this the raster base is not drawn at all.
     ///

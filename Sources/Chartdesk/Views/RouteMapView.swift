@@ -255,7 +255,8 @@ struct RouteMapView: View {
         if let world = geography.best(for: camera.detail) {
             for shape in world.borders where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
-                               with: .color(Color(nsColor: Theme.border)),
+                               with: .color(Color(nsColor: onLightBase ? Theme.OnLight.border
+                                                                          : Theme.border)),
                                style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
             }
         }
@@ -265,7 +266,8 @@ struct RouteMapView: View {
         if browser.showsStateBorders, camera.worldWidth >= MapLayerRoom.statesFrom {
             for shape in geography.states where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
-                               with: .color(Color(nsColor: Theme.stateBorder)),
+                               with: .color(Color(nsColor: onLightBase ? Theme.OnLight.stateBorder
+                                                                          : Theme.stateBorder)),
                                lineWidth: 0.6)
             }
         }
@@ -518,6 +520,12 @@ struct RouteMapView: View {
         metresAcross <= MapLayerRoom.layoutWithin
     }
 
+    /// True when the base under everything is pale, so the ink over it has to be dark.
+    ///
+    /// Only where the tiles have actually arrived: with no base map, or before one loads,
+    /// the drawn map underneath is the dark one it has always been.
+    private var onLightBase: Bool { showsRaster && browser.baseMap.isLight }
+
     /// The layouts on the sheet, of those that have been fetched.
     ///
     /// Asked of the layouts rather than of the airport table, which is the cheap way round.
@@ -542,10 +550,13 @@ struct RouteMapView: View {
         else { return }
         context.draw(Image(decorative: image, scale: 2),
                      in: CGRect(origin: .zero, size: sheet.size))
-        // Taken down a third, so what goes over it reads. Over the whole sheet rather than
-        // over the tiles, so a half-loaded view dims evenly.
-        context.fill(Path(CGRect(origin: .zero, size: sheet.size)),
-                     with: .color(.black.opacity(BaseMap.dimming)))
+        // Taken down, so what goes over it reads. Over the whole sheet rather than over the
+        // tiles, so a half-loaded view dims evenly.
+        let dimming = browser.baseMap.dimming
+        if dimming > 0 {
+            context.fill(Path(CGRect(origin: .zero, size: sheet.size)),
+                         with: .color(.black.opacity(dimming)))
+        }
     }
 
     /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
@@ -621,7 +632,7 @@ struct RouteMapView: View {
                         labels: inout [Label]) {
         guard browser.showsCityNames, !geography.cities.isEmpty else { return }
         let deepest = MapLayerRoom.cityRank(degreesAcross: degreesAcross)
-        let colour = Color(nsColor: Theme.place)
+        let colour = Color(nsColor: onLightBase ? Theme.OnLight.place : Theme.place)
 
         for city in geography.cities where city.rank <= deepest {
             guard sheet.projection.faces(city.direction) else { continue }
@@ -652,7 +663,7 @@ struct RouteMapView: View {
         // earth, which is what it is for.
         let drawnByLayout = drawsGroundLayout ? nearbyLayouts(sheet).map(\.cap) : []
 
-        let colour = Color(nsColor: Theme.runway)
+        let colour = Color(nsColor: onLightBase ? Theme.OnLight.runway : Theme.runway)
         let named = camera.worldWidth >= 500_000
         // Feet across, in points. The globe is drawn to one scale at the middle of the view,
         // so this is the same arithmetic wherever on Earth the runway is — which under
