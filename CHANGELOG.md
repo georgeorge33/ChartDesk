@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.2.0-rc.8
+
+What this candidate adds to 1.1.0. Full release when it has been flown.
+
+**Apple's map underneath**
+
+- **The base map is Apple's own**, drawn by MapKit in a map view under the chart, in place
+  of the shaded topographic tiles. Roads, place names and relief, and it pans and zooms the
+  way the Maps app does because it is the same thing doing the panning. It needs the
+  network every time: Apple does not permit an app to keep a copy of what it draws. Drawn
+  geography is still there and still the one that works with the network off.
+- **The scroll wheel zooms** on the map again, about the pointer rather than the middle, so
+  the thing under the cursor stays under the cursor.
+- **The flight plan is magenta**, which is the colour a chart gives the route.
+- **D-ATIS Unavailable** and **No VATSIM online** said plainly where there was a blank.
+
+**The chart is drawn by MapKit, not over it**
+
+- **Runways, taxiways and their writing no longer lag the map.** A canvas laid over a map
+  view can only ever follow it — MapKit draws, the delegate reports the new rectangle,
+  SwiftUI schedules a redraw, and the chart arrives a frame later, which at a kilometre
+  across is the taxiway sitting off the tarmac for as long as your hand is moving. The
+  ground layout is an overlay renderer now: handed the same transform the base is drawn
+  with, in the same pass, so the two cannot come apart.
+- **The designators travel with the concrete they name.** They were the last thing still
+  drawn on the canvas, so a zoom pulled the writing off the taxiway even after the taxiway
+  itself had stopped moving.
+- **One decision about what to leave out, not twelve.** MapKit draws an overlay in tiles,
+  and the decluttering started afresh in each of them: a designator that lost its space in
+  one tile and won it in the next came out as half a designator. It is settled once for the
+  whole view now, and each tile draws its share.
+- **A taxiway says its letter once.** OpenStreetMap splits a taxiway into as many ways as
+  its tags change, and each piece was asking for its own designator — taxiway M at Logan
+  came out as three M's inside a hundred metres. Repeating a letter along a long taxiway is
+  how a chart reads, so the rule is a distance rather than a ban.
+- **Heavier lines**, which thin ones were not over a base map with its own detail in it.
+- **The map stopped deciding what to download on every frame.** Working out which airports
+  are near the camera costs a few milliseconds across seventy-eight thousand of them, and
+  MapKit moves the camera at display rate. It waits for the map to settle first.
+- **No grey sheet over Apple's map**: the drawn coastline was still being filled underneath,
+  invisible until the tiles it hid behind went away.
+
 ## 1.2.0-rc.7
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
