@@ -51,7 +51,9 @@ enum AtisMarkup {
 
     /// Compiled once: the time group a report carries, and the pressure group that ends its
     /// coded run. A `Calendar` too, which is not cheap to build and was being built per call.
-    private static let timeGroup = try! NSRegularExpression(pattern: #"\b(\d{2})(\d{2})Z\b"#)
+    /// Not private: the decoder reads the same group, and two copies of one pattern is two
+    /// things to keep in step.
+    static let timeGroup = try! NSRegularExpression(pattern: #"\b(\d{2})(\d{2})Z\b"#)
     private static let pressureGroup = try! NSRegularExpression(
         pattern: #"\b(?:A\d{4}|Q\d{3,4}|QNH\s?\d{3,4}|ALTIMETER\s+\d{4})\b"#)
     private static let zulu: Calendar = {

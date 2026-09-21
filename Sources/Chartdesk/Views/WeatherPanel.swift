@@ -337,6 +337,10 @@ struct WeatherPanel: View {
                 .font(mono ? .ngSmallMono : .ngSmall)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Under the ATIS rather than instead of it. The advisories above are half of
+            // what an ATIS is for, and nothing here summarises those.
+            if showsAge { DecodedAtis(text: text) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -365,6 +369,41 @@ struct WeatherPanel: View {
         }
         plain(text[cursor...])
         return result
+    }
+}
+
+// MARK: - Decoded
+
+/// The eight figures an ATIS is tuned in for, read out of it and set down in a column.
+///
+/// The point is not that the raw text is unreadable — it is that it is read aloud in one
+/// long breath, and the value you want is somewhere in the middle of a sentence about
+/// cranes. Anything the decoder could not read with confidence is simply absent: a missing
+/// row is honest, and a wrong one is worse than the text it was meant to save you reading.
+private struct DecodedAtis: View {
+
+    let text: String
+
+    var body: some View {
+        let decoded = AtisMarkup.decode(text)
+        if !decoded.isEmpty {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10,
+                 verticalSpacing: 2) {
+                ForEach(decoded.fields) { field in
+                    GridRow {
+                        Text(field.label)
+                            .font(.ngSmall)
+                            .foregroundStyle(.secondary)
+                            .gridColumnAlignment(.leading)
+                        Text(field.value)
+                            .font(.ngSmallMedium)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            .padding(.top, 5)
+            .padding(.leading, 2)
+        }
     }
 }
 

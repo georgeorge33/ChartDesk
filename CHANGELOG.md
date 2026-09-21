@@ -92,6 +92,16 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 
 **Also**
 
+- **An ATIS now comes with it decoded.** Under the report, the eight figures you tuned in
+  for, set down in a column: information letter, time, wind, visibility, cloud, temperature,
+  dew point and altimeter. Read from whichever form the field uses — the METAR-coded run an
+  American D-ATIS opens with, the ICAO groups a European one uses, or the plain English a
+  controller speaks — with the pressure given in both units because an ATIS gives one and
+  half the world flies on the other.
+- The full text stays above it. The advisories are half of what an ATIS is for, and nothing
+  here summarises cranes and closed taxiways. Anything the decoder cannot read with
+  confidence is left out rather than guessed: a missing row is honest, a wrong one is worse
+  than the text it was meant to save you reading.
 - **Weather is fetched when you pick the airport**, not when you turn to the weather tab. It
   used to start loading at the moment you asked to read it, so you watched it arrive — for a
   request that takes a second or two and is then good for minutes. Choosing the airport is
