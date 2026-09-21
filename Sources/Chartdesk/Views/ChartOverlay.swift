@@ -53,6 +53,11 @@ final class ChartRenderer: MKOverlayRenderer {
         didSet { setNeedsDisplay() }
     }
 
+    /// The last settled writing, and the lock over it: tiles are drawn on MapKit's own
+    /// queue, and more than one of them at a time.
+    private var decided: (key: String, writing: [Placed])?
+    private let settled = NSLock()
+
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
         guard frame.showsGroundLayout, !frame.layouts.isEmpty else { return }
         // Map points to the screen point: what a line width has to be divided by to come
@@ -61,23 +66,57 @@ final class ChartRenderer: MKOverlayRenderer {
         let chart = ChartContext(cg: context, mapPointsPerScreenPoint: scale)
         let sheet = MapSheet(mapRect: mapRect, padding: 64 * scale)
 
-        var writing: [ChartContext.Label] = []
         for layout in frame.layouts where sheet.mayShow(layout.cap) {
             ground(layout, in: chart, sheet: sheet)
-            self.writing(layout, in: chart, sheet: sheet, into: &writing)
         }
 
-        // Decluttered and drawn last, over every airport's tarmac rather than each field's
+        // Last, so that it goes over every airport's tarmac rather than each field's
         // writing being buried by the next field's concrete.
-        var taken: [CGRect] = []
-        let air = 2 * scale
-        for label in writing {
-            let room = chart.bounds(of: label).insetBy(dx: -air, dy: -air)
-            guard sheet.panel.intersects(room),
-                  !taken.contains(where: { $0.intersects(room) }) else { continue }
-            taken.append(room)
-            chart.draw(label)
+        for placed in writing(at: zoomScale, in: chart)
+        where sheet.panel.intersects(placed.room) {
+            chart.draw(placed.label)
         }
+    }
+
+    /// A label and the room it was given, both in map points.
+    private struct Placed {
+        var label: ChartContext.Label
+        var room: CGRect
+    }
+
+    /// Every label that won its space, settled once for the whole frame.
+    ///
+    /// MapKit draws an overlay in tiles — a dozen calls to `draw` for one view — so a
+    /// declutter that starts empty in each of them is not one decision but twelve. A
+    /// designator that loses its space in one tile and wins it in the next is drawn as half
+    /// a designator, and two labels either side of a seam never see each other at all.
+    ///
+    /// Where the writing goes does not depend on the tile. Labels sit at map points, and
+    /// only their size on the page changes with the scale, so panning cannot move them
+    /// relative to one another: the answer is the same for every tile at a given zoom, and
+    /// worth keeping until the zoom or the layouts change.
+    private func writing(at zoomScale: MKZoomScale, in chart: ChartContext) -> [Placed] {
+        let key = "\(frame.stamp)|\(zoomScale)"
+        settled.lock()
+        defer { settled.unlock() }
+        if let decided, decided.key == key { return decided.writing }
+
+        // The whole world, because a tile's own rectangle is the thing being avoided here.
+        let sheet = MapSheet(mapRect: .world, padding: 0)
+        var found: [ChartContext.Label] = []
+        for layout in frame.layouts {
+            writing(layout, in: sheet, into: &found)
+        }
+
+        var placed: [Placed] = []
+        let air = 2 / Double(zoomScale)
+        for label in found {
+            let room = chart.bounds(of: label).insetBy(dx: -air, dy: -air)
+            guard !placed.contains(where: { $0.room.intersects(room) }) else { continue }
+            placed.append(Placed(label: label, room: room))
+        }
+        decided = (key, placed)
+        return placed
     }
 
     /// The writing on the ground: taxiway designators, runway numbers at the ends they
@@ -86,16 +125,15 @@ final class ChartRenderer: MKOverlayRenderer {
     /// In here with the tarmac rather than on the canvas above it, because a designator
     /// that lags the taxiway it names is worse than no designator — it is a label pointing
     /// at the wrong piece of concrete.
-    private func writing(_ layout: AirportLayout, in chart: ChartContext, sheet: MapSheet,
+    private func writing(_ layout: AirportLayout, in sheet: MapSheet,
                          into found: inout [ChartContext.Label]) {
-        for way in layout.taxiways
-        where !way.ref.isEmpty && way.isMovementArea && sheet.mayShow(way.cap) {
+        for way in layout.taxiways where !way.ref.isEmpty && way.isMovementArea {
             guard let at = middle(of: way, sheet: sheet) else { continue }
             found.append(ChartContext.Label(text: AirportLayout.designator(way.ref),
                                             colour: Theme.taxiLine, box: .black,
                                             border: Theme.taxiLine, at: at))
         }
-        for way in layout.runways where !way.ref.isEmpty && sheet.mayShow(way.cap) {
+        for way in layout.runways where !way.ref.isEmpty {
             for (number, at) in AirportLayout.numbers(of: way) {
                 found.append(ChartContext.Label(text: number, colour: .white,
                                                 box: NSColor.black.withAlphaComponent(0.55),
