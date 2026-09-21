@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 // Everything between the camera and the canvas: what of the globe can be seen from where it
@@ -8,25 +9,25 @@ import SwiftUI
 /// One frame's worth of "where everything goes".
 struct MapSheet {
 
-    let projection: GlobeProjection
+    let projection: MercatorProjection
     let size: CGSize
     /// The panel with a few points of slack, so the edges a clip leaves behind fall outside
     /// anything the canvas actually draws.
     let panel: CGRect
-    /// True when the globe's edge is on the sheet, and shapes running off it have to be
-    /// closed along it. False once zoomed in past the point where the edge is visible, which
-    /// is most of the time you are looking at a route.
-    let showsEdge: Bool
 
     init(camera: MapCamera, size: CGSize, padding: CGFloat = 4) {
         projection = camera.projection(in: size)
         self.size = size
         panel = CGRect(origin: .zero, size: size).insetBy(dx: -padding, dy: -padding)
-        showsEdge = projection.showsHorizon(in: size)
     }
 
-    /// The globe's outline, for drawing the sea and for shading the sphere.
-    var disc: CGRect { projection.disc() }
+    /// Built from what the map view is actually showing, which is the only way an overlay
+    /// lands on its own base rather than near it.
+    init(rect: MKMapRect, size: CGSize, padding: CGFloat = 4) {
+        projection = MercatorProjection(rect: rect, in: size)
+        self.size = size
+        panel = CGRect(origin: .zero, size: size).insetBy(dx: -padding, dy: -padding)
+    }
 
     func point(_ coordinate: Coordinate) -> CGPoint {
         projection.point(coordinate.direction)

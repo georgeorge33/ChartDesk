@@ -12,7 +12,6 @@ struct MapLayerPanel: View {
     @EnvironmentObject private var browser: BrowserState
     @ObservedObject private var coastline = CoastlineStore.shared
     @ObservedObject private var openAIP = OpenAIPStore.shared
-    @ObservedObject private var base = BaseMapStore.shared
     @ObservedObject private var ground = AirportLayoutStore.shared
 
     var body: some View {
@@ -25,19 +24,12 @@ struct MapLayerPanel: View {
                     baseChoice(layer)
                 }
                 if browser.baseMap.needsNetwork {
-                    if let failure = base.failure {
-                        Text("\(browser.baseMap.name) did not answer: \(failure)")
-                            .font(.ngSmall)
-                            .foregroundStyle(Color.ngWarning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text("Drawn from about 30° across and closer, over the drawn map "
-                             + "rather than instead of it — so where the tiles have not "
-                             + "arrived, or there is no network, you still have a map.")
-                            .font(.ngSmall)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("Drawn by MapKit itself, which is why it pans and zooms the way "
+                         + "the Maps app does. It needs the network: Apple does not permit "
+                         + "an app to keep a copy of what it draws.")
+                        .font(.ngSmall)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                     // Both of these ask to be credited, and one of them asks for a link to
                     // who its data came from. The map carries the credit; this is the link.
                     if let legal = browser.baseMap.legal {

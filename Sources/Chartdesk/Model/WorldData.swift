@@ -450,8 +450,8 @@ struct MapCamera: Equatable {
     /// True once a runway is long enough on screen to be worth drawing.
     var showsRunways: Bool { worldWidth >= MapDetail.runwaysFrom }
 
-    func projection(in size: CGSize) -> GlobeProjection {
-        GlobeProjection(centre: centre, radius: radius, in: size)
+    func projection(in size: CGSize) -> MercatorProjection {
+        MercatorProjection(centre: centre, worldWidth: Double(worldWidth), in: size)
     }
 
     func screen(_ coordinate: Coordinate, in size: CGSize) -> CGPoint {

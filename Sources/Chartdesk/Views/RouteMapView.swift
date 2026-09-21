@@ -1,5 +1,6 @@
 import AppKit
 import simd
+import MapKit
 import SwiftUI
 
 /// A map you can drag and zoom, with the loaded flight drawn on it.
@@ -25,21 +26,21 @@ struct RouteMapView: View {
     /// Whether openAIP's table is on this Mac, which decides whether it can be drawn.
     @ObservedObject private var openAIP = OpenAIPStore.shared
     /// Apple Maps, when the base map is one of its two.
-    @ObservedObject private var base = BaseMapStore.shared
     /// Airport ground layouts, fetched one airport at a time.
     @ObservedObject private var ground = AirportLayoutStore.shared
 
     @State private var camera = MapCamera()
     /// The camera as the current drag began, so a drag is absolute rather than a running sum.
-    @State private var cameraAtDragStart: MapCamera?
     @State private var size: CGSize = .zero
-    @State private var scrollMonitor: Any?
     /// Where the map sits in the window, so a scroll elsewhere is left alone.
     @State private var frame: CGRect = .zero
     @State private var didFit = false
     /// Set once you drag or zoom, after which the map stops framing things for you.
     @State private var userMoved = false
     @State private var showsLayers = false
+    /// What the map view is showing. The camera above is derived from it rather than the
+    /// other way round, because the gesture happens in the map view.
+    @State private var mapRect = MKMapRect.world
 
     private var plan: FlightPlan? { flight.plan }
     private var waypoints: [FlightPlan.Waypoint] { plan?.waypoints ?? [] }
@@ -66,7 +67,20 @@ struct RouteMapView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // The map underneath, and it owns the panning and the zooming. Everything above
+            // is drawn against the rectangle it reports, so the chart follows the map rather
+            // than the two being kept in step.
+            AppleMapLayer(configuration: browser.baseMap.configuration,
+                          rect: $mapRect) { shown in
+                mapRect = shown
+                let (centre, width) = MercatorProjection.camera(of: shown, in: size)
+                camera.centre = centre
+                camera.worldWidth = width
+                userMoved = true
+            }
+            // Transparent, and out of the way of the mouse: a click belongs to the map.
             canvas
+                .allowsHitTesting(false)
             overlay
             // On its own, in the far corner: the layer switches are not map controls and
             // belong away from them.
@@ -84,19 +98,6 @@ struct RouteMapView: View {
                 fitRoute()
             }
         }
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    let start = cameraAtDragStart ?? camera
-                    cameraAtDragStart = start
-                    userMoved = true
-                    // Turned, not slid: whatever was grabbed stays under the finger, which is
-                    // why this needs where the drag began and not only how far it has gone.
-                    camera.turn(from: start, grabbing: value.startLocation,
-                                to: value.location, in: size)
-                }
-                .onEnded { _ in cameraAtDragStart = nil }
-        )
         // The flight is fetched after the window opens, so the first layout often has no route
         // to frame. Framing it when it lands is the difference between opening on your flight
         // and opening on the whole world.
@@ -108,22 +109,15 @@ struct RouteMapView: View {
         // to be on the ground at both ends of it.
         .onChange(of: flight.plan?.airfields.map(\.icao) ?? []) { _, _ in keepFlightLayouts() }
         .onAppear {
-            watchScroll()
             // The coarsest tier as well as the wanted one, so there is always something to
             // fall back on while a finer one is read.
             geography.request(.coarse)
             geography.request(camera.detail)
             if camera.showsRunways { geography.requestRunways() }
             requestCells()
-            requestBaseMap()
             openAIP.refresh()
             requestLayers()
             keepFlightLayouts()
-        }
-        .onChange(of: browser.baseMap) { _, _ in
-            // The old picture is the wrong map, not merely the wrong place.
-            base.forget()
-            requestBaseMap()
         }
         .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
         .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
@@ -138,7 +132,6 @@ struct RouteMapView: View {
         // of a drag costs a set lookup.
         .onChange(of: camera) { _, _ in
             requestCells()
-            requestBaseMap()
             requestLayers()
         }
         // The first ask for a cell only starts the index reading — fifteen megabytes of it,
@@ -150,8 +143,6 @@ struct RouteMapView: View {
             if shows { geography.requestRunways() }
         }
         .onDisappear {
-            if let monitor = scrollMonitor { NSEvent.removeMonitor(monitor) }
-            scrollMonitor = nil
         }
     }
 
@@ -195,13 +186,17 @@ struct RouteMapView: View {
 
     private func draw(in context: inout GraphicsContext, size: CGSize) {
         var labels: [Label] = []
-        let sheet = MapSheet(camera: camera, size: size)
+        // Against the map's own rectangle rather than a camera rebuilt from a centre and a
+        // zoom. Reconstructing it would be close, and close is a runway beside its
+        // photograph instead of on it.
+        let sheet = MapSheet(rect: mapRect, size: size)
 
-        // The sea first, as the sphere itself. Only when the globe's edge is on the sheet:
-        // zoomed in past that, the sea is simply the colour behind everything.
-        let globe = Path(ellipseIn: sheet.disc)
-        if sheet.showsEdge {
-            context.fill(globe, with: .color(Color(nsColor: Theme.canvas)))
+        // The sea is simply what is behind everything, now the map is flat. On a globe it
+        // was a disc that had to be drawn; a rectangle needs no drawing, and where Apple's
+        // map is showing there is a photograph of the sea there already.
+        if browser.baseMap == .vector {
+            context.fill(Path(CGRect(origin: .zero, size: size)),
+                         with: .color(Color(nsColor: Theme.canvas)))
         }
 
         // Land, then the lakes cut back out of it, then borders — all from the one level of
@@ -248,7 +243,6 @@ struct RouteMapView: View {
         // map stays underneath rather than being skipped: a snapshot covers the view a
         // moment after the view moves, and a map that goes blank while it waits is worse
         // than one that sharpens.
-        rasterBase(in: &context, sheet: sheet)
 
         // Frontiers on top of it — under the imagery they would be invisible, and a border
         // is the one thing imagery cannot show you.
@@ -271,19 +265,6 @@ struct RouteMapView: View {
         }
 
         graticule(in: &context, sheet: sheet)
-
-        // What makes it read as a ball rather than a disc: the limb falls away from the light
-        // the way a sphere's does. Over the geography, so the whole globe turns with it, and
-        // under the route, which has to stay legible wherever it runs.
-        if sheet.showsEdge {
-            context.fill(globe, with: .radialGradient(
-                Gradient(colors: [.clear, .black.opacity(0.55)]),
-                center: CGPoint(x: sheet.disc.midX, y: sheet.disc.midY),
-                startRadius: sheet.disc.width * 0.3,
-                endRadius: sheet.disc.width * 0.52))
-            context.stroke(globe, with: .color(Color(nsColor: Theme.coast).opacity(0.7)),
-                           lineWidth: 1)
-        }
 
         groundLayout(in: &context, sheet: sheet, labels: &labels)
         airspace(in: &context, sheet: sheet, labels: &labels)
@@ -337,7 +318,7 @@ struct RouteMapView: View {
         // The tarmac, but only where there is none underneath. Over imagery the pavement is
         // already in the picture and painting grey over it hides the very thing you chose
         // that base map to see — so there, only the markings are drawn.
-        if !showsRaster {
+        if !showsAppleMap {
             for apron in layout.aprons where sheet.mayShow(apron.cap) {
                 let path = sheet.path(ring: MapShape(directions: apron.directions,
                                                      cap: apron.cap))
@@ -367,12 +348,12 @@ struct RouteMapView: View {
         // The edges are drawn whatever the base map is — over imagery they are what tell you
         // where the pavement stops, which a photograph taken at dusk does not.
         let marking = Color(nsColor: Theme.runwayMarking)
-        if !showsRaster { pavement(.runway, of: layout, in: &context, sheet: sheet) }
+        if !showsAppleMap { pavement(.runway, of: layout, in: &context, sheet: sheet) }
         for way in layout.runways where sheet.mayShow(way.cap) {
             let wide = max(way.width * perMetre, 2)
             let line = sheet.path(straight: way.directions)
             guard !line.isEmpty else { continue }
-            if !showsRaster && !way.paved {
+            if !showsAppleMap && !way.paved {
                 context.stroke(line, with: .color(Color(nsColor: Theme.runwayAsphalt)),
                                style: StrokeStyle(lineWidth: wide, lineCap: .butt))
             }
@@ -537,23 +518,6 @@ struct RouteMapView: View {
         ground.layouts.values
             .filter { sheet.mayShow($0.cap) }
             .sorted { $0.icao < $1.icao }
-    }
-
-    /// The tiled base map, reprojected onto the globe.
-    private func rasterBase(in context: inout GraphicsContext, sheet: MapSheet) {
-        guard showsRaster,
-              let image = base.warped(camera: camera, projection: sheet.projection,
-                                      size: sheet.size, scale: 2, z: baseMapZoom)
-        else { return }
-        context.draw(Image(decorative: image, scale: 2),
-                     in: CGRect(origin: .zero, size: sheet.size))
-        // Taken down, so what goes over it reads. Over the whole sheet rather than over the
-        // tiles, so a half-loaded view dims evenly.
-        let dimming = browser.baseMap.dimming
-        if dimming > 0 {
-            context.fill(Path(CGRect(origin: .zero, size: sheet.size)),
-                         with: .color(.black.opacity(dimming)))
-        }
     }
 
     /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
@@ -908,35 +872,6 @@ struct RouteMapView: View {
         }
     }
 
-    /// Asks Apple Maps for what the view is looking at.
-    ///
-    /// The box is the view's own corners and edge middles put back through the globe — not
-    /// the centre plus a span, which on a sphere is not the same thing and is short at the
-    /// corners.
-    private func requestBaseMap() {
-        guard browser.baseMap.needsNetwork, size.width > 0, degreesAcross <= BaseMap.widest
-        else { return }
-        let sheet = MapSheet(camera: camera, size: size)
-        let z = baseMapZoom
-        // A handful of coarse tiles first, then the sharp ones. Three levels out is one or
-        // two squares covering the whole view, so there is something to look at in a couple
-        // of hundred milliseconds instead of a second and a half, and it sharpens as the
-        // rest land. Every map you have ever used does this.
-        let coarse = z > 3
-            ? BaseMapWarp.tiles(projection: sheet.projection, size: size, z: z - 3) : []
-        let sharp = BaseMapWarp.tiles(projection: sheet.projection, size: size, z: z)
-        // The middle of the view first — it is what you are looking at — then the coarse
-        // cover for everything else, then the rest of the detail.
-        base.request(Array(sharp.prefix(1)) + coarse + sharp.dropFirst(),
-                     layer: browser.baseMap)
-    }
-
-    /// Which level of the tile pyramid this view calls for.
-    private var baseMapZoom: Int {
-        BaseMapWarp.zoom(for: browser.baseMap, worldWidth: camera.worldWidth,
-                         latitude: camera.centre.latitude)
-    }
-
     /// Holds on to the ground layouts for the flight's own airfields.
     private func keepFlightLayouts() {
         let fields = (plan?.airfields ?? []).compactMap { WorldData.airport($0.icao) }
@@ -949,8 +884,6 @@ struct RouteMapView: View {
         guard camera.worldWidth >= MapDetail.fullFrom, size.width > 0 else { return }
         coastline.request(MapSheet(camera: camera, size: size).coastlineCells())
     }
-
-    // MARK: - Camera
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }
 
@@ -965,46 +898,29 @@ struct RouteMapView: View {
 
     /// Frames the flight, or the world when there is no flight loaded.
     /// Framing counts as putting the map back the way it was, so it clears that flag.
+    /// Points the map at the camera, for the moves that are not gestures.
+    private func show(_ wanted: MapCamera) {
+        camera = wanted
+        guard size.width > 0 else { return }
+        mapRect = MercatorProjection.rect(centre: wanted.centre,
+                                          worldWidth: Double(wanted.worldWidth), in: size)
+    }
+
     private func fitRoute() {
         userMoved = false
         let points = waypoints.map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
             + pinned.map(\.coordinate)
         guard points.count > 1 else {
             // A globe filling the panel: its circumference is pi times its width on screen.
-            camera = MapCamera(centre: Coordinate(latitude: 25, longitude: -20),
-                               worldWidth: max(min(size.width, size.height) * .pi, 900))
+            show(MapCamera(centre: Coordinate(latitude: 25, longitude: -20),
+                           worldWidth: max(min(size.width, size.height) * .pi, 900)))
             return
         }
-        camera.fit(points, in: size)
+        var wanted = camera
+        wanted.fit(points, in: size)
+        show(wanted)
     }
 
-    /// Zooming on scroll, but only for scrolls over the map.
-    ///
-    /// The map shares a window with the sidebar and the chart list now, and a monitor that
-    /// swallowed every scroll zoomed the map while you scrolled the airport list — and, because
-    /// it zoomed around a cursor that was nowhere near the map, walked the centre off to 206°W.
-    private func watchScroll() {
-        guard scrollMonitor == nil else { return }
-        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            guard let window = event.window, window.isKeyWindow,
-                  let content = window.contentView
-            else { return event }
-
-            // SwiftUI's global space has its origin at the top left; an event's does not.
-            let inWindow = event.locationInWindow
-            let point = CGPoint(x: inWindow.x, y: content.bounds.height - inWindow.y)
-            guard frame.contains(point) else { return event }
-
-            let delta = event.hasPreciseScrollingDeltas
-                ? event.scrollingDeltaY
-                : event.deltaY * 10
-            guard delta != 0 else { return event }
-
-            zoom(by: 1 + delta * 0.006,
-                 around: CGPoint(x: point.x - frame.minX, y: point.y - frame.minY))
-            return nil
-        }
-    }
 
     // MARK: - Controls
 
@@ -1091,7 +1007,7 @@ struct RouteMapView: View {
         // Under Apple's imagery the drawn coast is there but invisible, and a credit for
         // something nobody can see is clutter rather than honesty.
         var found: [String] = []
-        if !showsRaster {
+        if !showsAppleMap {
             found.append("\(Coastline.attribution) · \(Coastline.licence)")
         }
         found.append("Natural Earth · lakes, borders, places")
@@ -1100,13 +1016,13 @@ struct RouteMapView: View {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
         found.append("OurAirports · airports and runways")
-        if showsRaster { found.append(contentsOf: browser.baseMap.attribution) }
+        if showsAppleMap { found.append(contentsOf: browser.baseMap.attribution) }
         return found
     }
 
     /// True when Apple's map is chosen, close enough to be drawn, and has arrived.
-    private var showsRaster: Bool {
-        browser.baseMap.needsNetwork && degreesAcross <= BaseMap.widest && base.hasTiles
+    private var showsAppleMap: Bool {
+        browser.baseMap.needsNetwork
     }
 
     private var credit: some View {
@@ -1148,7 +1064,7 @@ struct RouteMapView: View {
     /// one is still being read.
     private var readout: String {
         // Which map you are looking at, which under imagery is not the coastline tier.
-        if showsRaster { return "\(across) across · \(position) · \(browser.baseMap.name)" }
+        if showsAppleMap { return "\(across) across · \(position) · \(browser.baseMap.name)" }
         var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
         if geography.isCatchingUp(to: camera.detail) {
             tier += " …"
