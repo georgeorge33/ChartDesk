@@ -84,8 +84,12 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var configuration: MKMapConfiguration? {
         switch self {
         case .vector: return nil
-        // Realistic elevation is what puts the hills in it; flat would be the road map.
-        case .appleMap: return MKStandardMapConfiguration(elevationStyle: .realistic)
+        // Flat, both of them, and not for looks. `.realistic` is what the old
+        // `satelliteFlyover` and `hybridFlyover` map types became — the 3D modes, the ones
+        // that curve into a globe when you zoom out. That is a lovely map and a hopeless
+        // one to draw over: `MKMapPoint` is Mercator whatever the view is doing, so the
+        // moment MapKit stops being flat the airspace stops being where the airspace is.
+        case .appleMap: return MKStandardMapConfiguration(elevationStyle: .flat)
         case .satellite: return MKImageryMapConfiguration(elevationStyle: .flat)
         }
     }

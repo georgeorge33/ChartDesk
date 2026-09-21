@@ -201,7 +201,11 @@ struct RouteMapView: View {
 
         // Land, then the lakes cut back out of it, then borders — all from the one level of
         // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
-        if let world = geography.best(for: camera.detail) {
+        //
+        // Only for the drawn map. It used to be drawn under the tiles and hidden by them,
+        // but the map view sits underneath now, and a grey Natural Earth landmass painted
+        // over Apple's own coastline is exactly as wrong as it sounds.
+        if browser.baseMap == .vector, let world = geography.best(for: camera.detail) {
             // Where the full coastline has arrived, the bundled one is held back — clipped
             // out, cell by cell. Drawing both was wrong: they disagree, and the bundled fill
             // stayed visible wherever it claimed land the finer one does not, which is a
@@ -239,14 +243,11 @@ struct RouteMapView: View {
 
         }
 
-        // The tiles over the drawn land, where one is chosen and has arrived. The drawn
-        // map stays underneath rather than being skipped: a snapshot covers the view a
-        // moment after the view moves, and a map that goes blank while it waits is worse
-        // than one that sharpens.
 
         // Frontiers on top of it — under the imagery they would be invisible, and a border
-        // is the one thing imagery cannot show you.
-        if let world = geography.best(for: camera.detail) {
+        // is the one thing imagery cannot show you. Not over Apple's own map, which draws
+        // its own: two sets of frontiers a pixel apart is worse than either alone.
+        if !appleDrawsPlaces, let world = geography.best(for: camera.detail) {
             for shape in world.borders where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
                                with: .color(Color(nsColor: Theme.border)),
@@ -256,7 +257,8 @@ struct RouteMapView: View {
 
         // State and province borders, fainter than a frontier between countries. Outside the
         // block above because they are a layer of their own and do not wait on a coastline.
-        if browser.showsStateBorders, camera.worldWidth >= MapLayerRoom.statesFrom {
+        if browser.showsStateBorders, !appleDrawsPlaces,
+           camera.worldWidth >= MapLayerRoom.statesFrom {
             for shape in geography.states where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
                                with: .color(Color(nsColor: Theme.stateBorder)),
@@ -591,7 +593,8 @@ struct RouteMapView: View {
     /// will not fit simply does not appear.
     private func places(in context: inout GraphicsContext, sheet: MapSheet,
                         labels: inout [Label]) {
-        guard browser.showsCityNames, !geography.cities.isEmpty else { return }
+        guard browser.showsCityNames, !appleDrawsPlaces, !geography.cities.isEmpty
+        else { return }
         let deepest = MapLayerRoom.cityRank(degreesAcross: degreesAcross)
         let colour = Color(nsColor: Theme.place)
 
@@ -1020,7 +1023,16 @@ struct RouteMapView: View {
         return found
     }
 
-    /// True when Apple's map is chosen, close enough to be drawn, and has arrived.
+    /// True when the base is Apple's own map, which already has coastlines, frontiers,
+    /// state lines and town names on it.
+    ///
+    /// Everything this app draws that Apple also draws is held back there. Not over the
+    /// imagery — a photograph has no borders and no names, so those are exactly what it
+    /// needs from us — and not over the drawn map, which has nothing else.
+    private var appleDrawsPlaces: Bool { browser.baseMap == .appleMap }
+
+    /// True when either of Apple's maps is under everything, which is when the ground
+    /// layout stops painting tarmac it would be covering a photograph with.
     private var showsAppleMap: Bool {
         browser.baseMap.needsNetwork
     }

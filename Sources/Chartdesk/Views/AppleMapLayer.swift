@@ -29,7 +29,6 @@ struct AppleMapLayer: NSViewRepresentable {
 
     func makeNSView(context: Context) -> MKMapView {
         let view = MKMapView()
-        view.delegate = context.coordinator
         view.showsCompass = false
         view.showsScale = false
         view.showsZoomControls = false
@@ -40,8 +39,14 @@ struct AppleMapLayer: NSViewRepresentable {
         view.isRotateEnabled = false
         view.pointOfInterestFilter = .excludingAll
         apply(configuration, to: view)
+        // The rectangle first and the delegate second, and in that order for a reason.
+        // `setVisibleMapRect` calls the delegate synchronously, and the delegate writes
+        // SwiftUI state — do that while the view is still being made and the state change
+        // lands in the middle of the update that is making it, which SwiftUI answers by
+        // never committing the window at all. No crash, no log, no window.
         view.setVisibleMapRect(rect, animated: false)
         context.coordinator.showing = rect
+        view.delegate = context.coordinator
         return view
     }
 
@@ -51,7 +56,11 @@ struct AppleMapLayer: NSViewRepresentable {
         // us about would fight the gesture that produced it.
         guard !MKMapRectEqualToRect(context.coordinator.showing, rect) else { return }
         context.coordinator.showing = rect
+        // Detached from the delegate for the same reason: a synchronous report from inside
+        // an update writes state inside that update.
+        view.delegate = nil
         view.setVisibleMapRect(rect, animated: false)
+        view.delegate = context.coordinator
     }
 
     private func apply(_ wanted: MKMapConfiguration?, to view: MKMapView) {
@@ -82,8 +91,10 @@ struct AppleMapLayer: NSViewRepresentable {
         /// Every frame of a pan or a zoom, not just the end of one. That is the whole point
         /// — the layers over the map have to move with it rather than catch up afterwards.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-            showing = mapView.visibleMapRect
-            moved(showing)
+            let shown = mapView.visibleMapRect
+            guard !MKMapRectEqualToRect(shown, showing) else { return }
+            showing = shown
+            moved(shown)
         }
     }
 }
