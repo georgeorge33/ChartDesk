@@ -8,8 +8,9 @@ import SwiftUI
 /// for is almost always the one whose charts you are reading, and a second window would mean
 /// keeping two selections in step.
 ///
-/// Another tab being on top counts as collapsed, and collapsed it fetches nothing, so looking
-/// away stops the traffic rather than hiding it.
+/// Another tab being on top counts as collapsed. That no longer stops the fetch — picking
+/// the airport starts it, so the report is there when you turn to it — and switching the
+/// weather off is what stops the traffic.
 struct WeatherPanel: View {
 
     @EnvironmentObject private var weather: WeatherStore

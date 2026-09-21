@@ -87,6 +87,14 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   line and the nearest border is nowhere near — so there was nothing to choose between. The
   Layers panel still says where the layout comes from and how far out it is fetched.
 
+**Also**
+
+- **Weather is fetched when you pick the airport**, not when you turn to the weather tab. It
+  used to start loading at the moment you asked to read it, so you watched it arrive — for a
+  request that takes a second or two and is then good for minutes. Choosing the airport is
+  the honest signal that you are interested in it. Turning the weather off still stops it;
+  that is what the switch is for.
+
 **Taxi routing, back again**
 
 - **Click where you are, then where you are going**, and the map draws the way between and

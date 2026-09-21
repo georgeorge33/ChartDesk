@@ -177,8 +177,9 @@ enum WeatherSource {
 
 /// Fetches and caches weather for whichever airport is on screen.
 ///
-/// Nothing is requested while the panel is collapsed, so closing it genuinely stops the
-/// traffic rather than just hiding it.
+/// Turning the weather off stops the traffic; collapsing the panel only hides it. An
+/// airport that has been picked is fetched either way, so opening the panel shows what is
+/// already in hand rather than starting the wait.
 @MainActor
 final class WeatherStore: ObservableObject {
 
@@ -267,13 +268,21 @@ final class WeatherStore: ObservableObject {
 
     // MARK: Fetching
 
-    /// Called when the chart list's airport changes. Respects the panel being collapsed.
+    /// Called when the chart list's airport changes.
+    ///
+    /// Fetched as soon as the airport is picked, whether or not the panel is open. It used
+    /// to wait for the panel, which meant the weather started loading at the moment you
+    /// asked to read it and you watched it arrive — for a request that takes a second or
+    /// two and is then good for minutes. Choosing the airport is the honest signal that you
+    /// are interested in it.
+    ///
+    /// Switching the weather off still stops it: that is what the switch is for.
     func show(icao newICAO: String?) {
         let code = newICAO?.uppercased()
         guard code != icao else { return }
         icao = code
         problem = nil
-        guard isEnabled, isExpanded else { return }
+        guard isEnabled else { return }
         fetchIfStale(code)
     }
 
