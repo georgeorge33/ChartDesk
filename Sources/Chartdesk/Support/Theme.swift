@@ -90,12 +90,10 @@ enum Theme {
     /// The names of towns.
     static let place            = rgb(0x9FB3C8)
 
-    /// The same ink, for a base map that is pale rather than dark.
-    ///
-    /// Every colour above is navy chosen to glow a little against near-black. Over the
-    /// terrain layer that arrangement inverts — the ground is the pale thing now — and the
-    /// same lines drawn in the same colours wash out entirely. These are their opposites:
-    /// the hue kept, the value flipped, so a border still reads as a border.
+    /// The "not for real-world navigation" red. Brighter than the system red, which goes
+    /// muddy at caption sizes against this navy.
+    static let warning          = rgb(0xFF5A5A)
+
     /// The four flight categories. Not a palette anyone gets to choose: green, blue, red and
     /// magenta are what every briefing map has meant by them for decades, and a chart using
     /// its own would be worse than one using none.
@@ -112,21 +110,6 @@ enum Theme {
         case .lifr: return categoryLIFR
         }
     }
-
-    /// Contour lines. The sepia every paper chart prints them in — brown enough to be
-    /// clearly not a road or a river, quiet enough to lie under everything aeronautical.
-    static let contour          = rgb(0x6B5836)
-
-    enum OnLight {
-        static let coast        = rgb(0x5A6B7B)
-        static let border       = rgb(0x5B6A78)
-        static let stateBorder  = rgb(0x78868F)
-        static let place        = rgb(0x33414D)
-        static let runway       = rgb(0x3E4B58)
-    }
-    /// The "not for real-world navigation" red. Brighter than the system red, which goes
-    /// muddy at caption sizes against this navy.
-    static let warning          = rgb(0xFF5A5A)
 
     /// A tint per chart category, matching the colour coding Navigraph Charts uses on its own
     /// tab strip. Bright enough to read as a label on the navy, and dark text sits on top of

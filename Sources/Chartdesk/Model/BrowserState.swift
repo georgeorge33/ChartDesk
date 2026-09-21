@@ -111,10 +111,11 @@ final class BrowserState: ObservableObject {
         zoomToFitOnOpen = defaults.bool(forKey: DefaultsKey.zoomToFitOnOpen)
         restoreLastChart = defaults.bool(forKey: DefaultsKey.restoreLastChart)
         showsAirspace = defaults.bool(forKey: DefaultsKey.showsAirspace)
-        // "topographic" is what the terrain layer used to be called, and somebody who had
-        // it chosen should get the layer in its place rather than be dropped back to Drawn.
+        // This slot has been three different maps. Anyone who had one of them chosen gets
+        // the one in its place rather than being dropped back to Drawn.
         let saved = defaults.string(forKey: DefaultsKey.baseMap) ?? ""
-        baseMap = BaseMap(rawValue: saved) ?? (saved == "topographic" ? .terrain : .vector)
+        let replaced = ["topographic", "terrain"]
+        baseMap = BaseMap(rawValue: saved) ?? (replaced.contains(saved) ? .appleMap : .vector)
         // An absent preference means the default set; an empty one means none, which is a
         // thing you can ask for by turning all six off.
         if let saved = defaults.string(forKey: DefaultsKey.airspaceClasses) {

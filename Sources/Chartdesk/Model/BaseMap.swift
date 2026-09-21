@@ -14,8 +14,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
 
     /// Natural Earth and OpenStreetMap, drawn as shapes. Works on a plane.
     case vector
-    /// Shaded relief, rendered here from raw elevation.
-    case terrain
+    /// Apple's own map: roads, places and relief, rendered by MapKit.
+    case appleMap
     /// Apple's imagery.
     case satellite
 
@@ -34,8 +34,7 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var source: Source {
         switch self {
         case .vector: return .drawn
-        case .terrain:
-            return .web("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png")
+        case .appleMap: return .appleMaps
         case .satellite: return .appleMaps
         }
     }
@@ -43,7 +42,7 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var name: String {
         switch self {
         case .vector: return "Drawn"
-        case .terrain: return "Terrain"
+        case .appleMap: return "Map"
         case .satellite: return "Satellite"
         }
     }
@@ -53,10 +52,9 @@ enum BaseMap: String, CaseIterable, Identifiable {
         case .vector:
             return "Coastline, lakes and borders, drawn from the tables in the app. Always "
                  + "there, network or no network."
-        case .terrain:
-            return "Shaded relief and height, drawn here from raw elevation rather than "
-                 + "fetched as a picture. Kept on this Mac once fetched, so anywhere you "
-                 + "have looked works offline."
+        case .appleMap:
+            return "Apple's own map, with roads, place names and shaded relief. Needs the "
+                 + "network every time — Apple does not permit an app to keep a copy."
         case .satellite:
             return "Apple Maps imagery. Needs the network every time — Apple does not "
                  + "permit an app to keep a copy."
@@ -88,9 +86,8 @@ enum BaseMap: String, CaseIterable, Identifiable {
     ///
     /// Drawing a tile server's 256-pixel squares at 256 *points* is what a slippy map does
     /// on a screen with one pixel to the point, and on a Retina screen it magnifies every
-    /// tile twofold — which is what a blurry map looks like. The terrain tiles are 256 square and there is no
-    /// Retina set, so the answer is to fetch one level deeper and draw at half the size: four
-    /// times the tiles, and the difference between reading "Reichenau" and not.
+    /// tile twofold — which is what a blurry map looks like. MapKit is asked for twice the
+    /// points instead, which is what a Retina screen wants and what it renders natively.
     var tileScale: CGFloat { 2 }
 
     /// As deep as the source goes. Past this the warp magnifies the deepest tiles, which is
@@ -98,16 +95,10 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var deepestZoom: Int {
         switch self {
         case .vector: return 0
-        // Measured: z16 is a 404 everywhere. The elevation itself is coarser than that
-        // in most of the world anyway — 30 m from SRTM is about a z12 pixel.
-        case .terrain: return 15
+        case .appleMap: return 20
         case .satellite: return 20
         }
     }
-
-    /// True for the one whose tiles are a measurement rather than a picture, and so have
-    /// to be rendered before they can be drawn.
-    var rendersElevation: Bool { self == .terrain }
 
     /// Tiles from a server may be kept; Apple's may not.
     var cachesOnDisk: Bool {
@@ -119,28 +110,27 @@ enum BaseMap: String, CaseIterable, Identifiable {
     var attribution: [String] {
         switch self {
         case .vector: return []
-        case .terrain:
-            // The full list names eleven national surveys and is too long for a corner of
-            // a map, so the map carries the short form and the Layers panel carries the
-            // link. LICENSES.md has it in full.
-            return ["Terrain: USGS 3DEP, SRTM, GMTED2010,",
-                    "Copernicus EU-DEM and others · Tilezen"]
+        case .appleMap: return ["Apple Maps"]
         case .satellite: return ["Apple Maps"]
         }
     }
 
     @MainActor
     var configuration: MKMapConfiguration? {
-        guard isAppleMaps else { return nil }
-        return MKImageryMapConfiguration(elevationStyle: .flat)
+        switch self {
+        case .vector: return nil
+        // Realistic elevation is what puts the hills in it; flat would be the road map.
+        case .appleMap: return MKStandardMapConfiguration(elevationStyle: .realistic)
+        case .satellite: return MKImageryMapConfiguration(elevationStyle: .flat)
+        }
     }
 
     /// Where to read the notices for whatever this layer is made of.
     var legal: URL? {
         switch self {
         case .vector: return nil
-        case .terrain:
-            return URL(string: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
+        case .appleMap:
+            return URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")
         case .satellite: return URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")
         }
     }
@@ -150,20 +140,18 @@ enum BaseMap: String, CaseIterable, Identifiable {
     /// it in the corner with the others.
     static let appleAttribution = "Apple Maps"
 
-    /// True for a base that is pale, so what goes over it has to be dark to be read.
-    var isLight: Bool { self == .terrain }
-
     /// How much to take off a base map before the overlays go over it.
     ///
     /// Imagery is made to be looked at on its own, and airspace over a bright aerial photo
     /// is two things competing; a third off puts it behind the chart without turning it
-    /// into a silhouette. The terrain layer needs almost none of that — it is drawn here,
-    /// in chart colours, already quiet — and dimming it only turns a chart the colour of a
-    /// chart into khaki.
+    /// into a silhouette. Apple's own map needs far less: it is drawn dark to begin with,
+    /// and taking a third off that as well leaves a faint suggestion of roads.
     var dimming: Double {
         switch self {
         case .vector: return 0
-        case .terrain: return 0.06
+        // Apple's map is drawn dark already, and taking a third off it as well leaves a
+        // sheet with a faint suggestion of roads on it.
+        case .appleMap: return 0.12
         case .satellite: return 0.32
         }
     }
@@ -250,11 +238,6 @@ final class BaseMapStore: ObservableObject {
     @Published private(set) var failure: String?
 
     private var tiles: [MapTile: TilePixels] = [:]
-    /// The contour lines found in each tile as it arrived. Kept beside the pixels and
-    /// dropped with them, because they describe the same square of ground.
-    private var lines: [MapTile: [TerrainContour]] = [:]
-    /// All of them at once, rebuilt when the set changes rather than on every frame.
-    private(set) var contours: [TerrainContour] = []
     private var order: [MapTile] = []
     private var bytesHeld = 0
     private var loading: Set<MapTile> = []
@@ -353,7 +336,7 @@ final class BaseMapStore: ObservableObject {
                     self.failure = error?.localizedDescription ?? "Apple Maps did not answer"
                     return
                 }
-                self.arrived(pixels, [], as: tile)
+                self.arrived(pixels, as: tile)
             }
         }
     }
@@ -374,12 +357,12 @@ final class BaseMapStore: ObservableObject {
 
         Self.work.async {
             if let data = try? Data(contentsOf: cached),
-               let (pixels, lines) = Self.read(data, for: wanted, at: tile) {
+               let pixels = Self.read(data) {
                 Task { @MainActor in
                     self.loading.remove(tile)
                     defer { self.start() }
                     guard wanted == self.layer else { return }
-                    self.arrived(pixels, lines, as: tile)
+                    self.arrived(pixels, as: tile)
                 }
                 return
             }
@@ -390,9 +373,8 @@ final class BaseMapStore: ObservableObject {
             request.setValue(Self.agent, forHTTPHeaderField: "User-Agent")
             URLSession.shared.dataTask(with: request) { data, response, error in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let made = (code == 200 && data != nil)
-                    ? Self.read(data!, for: wanted, at: tile) : nil
-                if let data = data, made != nil {
+                let pixels = (code == 200 && data != nil) ? Self.read(data!) : nil
+                if let data = data, pixels != nil {
                     try? FileManager.default.createDirectory(
                         at: cached.deletingLastPathComponent(),
                         withIntermediateDirectories: true)
@@ -402,24 +384,20 @@ final class BaseMapStore: ObservableObject {
                     self.loading.remove(tile)
                     defer { self.start() }
                     guard wanted == self.layer else { return }
-                    guard let (pixels, lines) = made else {
+                    guard let pixels = pixels else {
                         self.failure = error?.localizedDescription
                             ?? "the tile server answered \(code)"
                         return
                     }
-                    self.arrived(pixels, lines, as: tile)
+                    self.arrived(pixels, as: tile)
                 }
             }.resume()
         }
     }
 
-    private func arrived(_ pixels: TilePixels, _ found: [TerrainContour], as tile: MapTile) {
+    private func arrived(_ pixels: TilePixels, as tile: MapTile) {
         failure = nil
         keep(pixels, as: tile)
-        if !found.isEmpty {
-            lines[tile] = found
-            contours = lines.values.flatMap { $0 }
-        }
         version &+= 1
     }
 
@@ -463,10 +441,10 @@ final class BaseMapStore: ObservableObject {
         didSweep = true
         Self.work.async {
             let manager = FileManager.default
-            let root = Self.cacheURL(for: MapTile(z: 0, x: 0, y: 0), layer: .terrain)
-                .deletingLastPathComponent()      // …/terrain/0/0
-                .deletingLastPathComponent()      // …/terrain/0
-                .deletingLastPathComponent()      // …/terrain
+            let root = Self.cacheURL(for: MapTile(z: 0, x: 0, y: 0), layer: .vector)
+                .deletingLastPathComponent()      // …/vector/0/0
+                .deletingLastPathComponent()      // …/vector/0
+                .deletingLastPathComponent()      // …/vector
                 .deletingLastPathComponent()      // …/tiles
             guard let walk = manager.enumerator(
                 at: root, includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey])
@@ -500,9 +478,6 @@ final class BaseMapStore: ObservableObject {
             // It may have been asked for again since, in which case it is at the back too.
             if !order.contains(oldest), let dropped = tiles.removeValue(forKey: oldest) {
                 bytesHeld -= dropped.count
-                if lines.removeValue(forKey: oldest) != nil {
-                    contours = lines.values.flatMap { $0 }
-                }
             }
         }
     }
@@ -511,19 +486,6 @@ final class BaseMapStore: ObservableObject {
     ///
     /// Not by way of `tiffRepresentation`, which is what this did first: encoding a snapshot
     /// to TIFF and parsing it back cost 247ms for a full-view image and buys nothing.
-    /// A tile, ready to draw.
-    ///
-    /// The terrain layer's tiles are heights rather than a picture, so they are painted on
-    /// the way past — here, once, rather than on every warp, and off the main thread with
-    /// the decode. What is written to the cache is the untouched bytes from the server, so
-    /// changing how terrain is drawn does not mean fetching it all again.
-    nonisolated private static func read(_ data: Data, for layer: BaseMap,
-                                         at tile: MapTile) -> (TilePixels, [TerrainContour])? {
-        guard let pixels = read(data) else { return nil }
-        guard layer.rendersElevation else { return (pixels, []) }
-        return (pixels, TerrainShading.render(pixels, at: tile))
-    }
-
     nonisolated private static func read(_ data: Data) -> TilePixels? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
@@ -557,8 +519,6 @@ final class BaseMapStore: ObservableObject {
     func forget() {
         warped = nil
         warpedFor = nil
-        lines.removeAll()
-        contours = []
         tiles.removeAll()
         order.removeAll()
         queued.removeAll()

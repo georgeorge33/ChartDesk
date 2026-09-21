@@ -126,57 +126,18 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 
 **The base map**
 
-- **Terrain replaces Topographic.** The old one was OpenTopoMap — a picture somebody else had
-  already drawn, in somebody else's colours, over a map of roads and villages this app has no
-  use for. The new one is not a picture at all: the tiles are a measurement, a height in
-  metres per pixel, and the hillshading, the colour by height and the coastline are all drawn
-  here. Which means it can be made to sit under a chart instead of competing with one.
-- **Lit from the north-west at 45°**, where relief maps have put the sun since they were
-  painted by hand, and shaded from the surface normal — the slope-and-aspect form of the same
-  arithmetic costs four transcendentals a pixel and reads no better. A tile takes 1.5 ms.
-- **Coloured like a VFR chart**, because the colours were taken off one: pale cream on the
-  valley floors, sage green over the slopes, olive and tan as the ground gets up, rock and
-  snow above. Pale low and green above it is the opposite way round to an atlas and it is
-  deliberate — on a chart that green is forest against field, which elevation tiles do not
-  carry, but in mountains the two line up, so the same order reproduces the look from the
-  only thing this layer knows.
-- **It is a light map now**, and the ink over it follows: borders, state lines, runway
-  strips and town names all switch to a dark set while the tiles are showing, because navy
-  chosen to glow against near-black disappears entirely against pale ground. The drawn map
-  underneath is unchanged — zoom out past the tiles and it is the dark one it always was.
-- Dimming is **per layer** rather than one figure. Imagery still loses a third, because
-  airspace over a bright aerial photo is two things competing. Terrain loses almost nothing:
-  it is drawn here, in chart colours, already quiet, and taking a third off only turned a
-  chart the colour of a chart into khaki.
-- **Contour lines, drawn as lines.** The hillshade is pixels and pixels run out: past the
-  deepest zoom the terrain tiles go to there is nothing left to magnify and the relief turns
-  to porridge. So every tile is also read for its contours on the way past — marching
-  squares over the same heights the shading came from — and those are drawn as vectors,
-  projected onto the globe with the coastline rather than warped into place. Between them
-  they are what a paper chart is: the shape underneath, the numbers on top.
-- The crossings are chained into whole lines rather than left as loose two-point segments,
-  which is what makes it possible to thin them — Douglas-Peucker leaves about a fifth of the
-  points and the line is the same line. An Alpine tile comes to 55 contours and 1,655 points
-  at 250 m spacing, found in about 7 ms alongside the shading.
-- Spacing follows the zoom, 500 m out to 50 m in, because an interval loose enough for the
-  Alps has nothing to say about Vermont. **Every fifth line is heavier**, so you can count
-  them without stopping to read a figure off each.
-- They are gathered into two paths and stroked twice rather than stroked one at a time: a
-  view holds a couple of thousand contours across its tiles, and that many separate strokes
-  costs more than the geometry behind them.
-- **The sea is flat.** Below sea level the hillshade is switched off: the tiles carry real
-  bathymetry, and shading it turns every ridge on the sea floor into a wave and every
-  coastline to mush.
-- The slope is worked out against the tile's **own latitude**, because Mercator shrinks
-  towards the poles and a pixel over Svalbard covers a third of what one over the equator
-  does. Shade the Arctic with the equator's figure and it comes out as a mountain range.
-- Elevation comes from a dozen national surveys by way of Tilezen, and **all of them want
-  crediting**. The map carries the short form, the Layers panel links to the full notice, and
-  LICENSES.md has all eleven in full.
-- Anyone who had Topographic chosen gets Terrain in its place rather than being dropped back
-  to Drawn. The old OpenTopoMap tiles on disk are left alone — they are the oldest thing in
-  the cache, so the 400 MB sweep takes them first.
-
+- **Apple's own map replaces Terrain.** Roads, place names and shaded relief, rendered by
+  MapKit — no key, no account, and Apple carries the licensing of what it draws. It costs
+  the network every time: Apple does not permit an app to keep a copy, so unlike the tiles
+  it replaces there is nothing left on the disk to look at offline.
+- Drawn with realistic elevation rather than flat, which is what puts the hills in it, and
+  barely dimmed — it is drawn dark to begin with, and taking a third off as well leaves a
+  faint suggestion of roads.
+- **Out with it goes the terrain rendering**: the hillshade, the height colouring sampled
+  off a VFR chart, the vector contours, and the dark ink set the pale base needed. That was
+  a layer this app drew itself from raw elevation; this one is a layer Apple draws.
+- Anyone who had Topographic or Terrain chosen gets this in its place rather than being
+  dropped back to Drawn.
 
 **Also**
 

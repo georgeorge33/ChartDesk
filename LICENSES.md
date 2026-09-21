@@ -1,7 +1,7 @@
 # Data in Chartdesk
 
 Chartdesk draws on several public datasets. Most are public domain; the coastline, the
-airspace and the terrain base map are not, and those come with obligations rather than
+airspace and the layouts are not, and those come with obligations rather than
 courtesies.
 
 ## OpenStreetMap — ODbL 1.0
@@ -61,46 +61,6 @@ than to inherit with a download.
 
 **Attribution, where it is done:** "© openAIP contributors · CC BY-NC 4.0" appears on the map
 whenever openAIP airspace is being drawn, and beside the choice in the Layers panel.
-
-## Terrain Tiles — open data, attribution required
-
-**What:** the Terrain base map. Unlike every other layer here this one is not a picture:
-the tiles are a measurement, a height in metres per pixel packed into the colour channels,
-fetched from the [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) set on the
-AWS Registry of Open Data and **rendered in this app** — the hillshading, the colour by
-height and the coastline are all drawn here. Nothing is bundled; tiles are fetched as you
-look at places and **kept** in Application Support, so anywhere you have been works with the
-network off.
-
-**Licence:** the tiles are assembled by [Tilezen](https://github.com/tilezen/joerd) from
-national and global elevation surveys, each with its own terms, and attribution is required
-for use of the data whether it is displayed or only analysed. The short form appears on the
-map whenever the layer is drawn and the Layers panel links to the full notice. In full, as
-the project asks it be given:
-
-> * ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded
->   under National Science Foundation awards 1043681, 1559691, and 1542736;
-> * Australia terrain data © Commonwealth of Australia (Geoscience Australia) 2017;
-> * Austria terrain data © offene Daten Österreichs – Digitales Geländemodell (DGM)
->   Österreich;
-> * Canada terrain data contains information licensed under the Open Government Licence –
->   Canada;
-> * Europe terrain data produced using Copernicus data and information funded by the
->   European Union - EU-DEM layers;
-> * Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration
-> * Mexico terrain data source: INEGI, Continental relief, 2016;
-> * New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New Zealand
->   and the New Zealand Government (All rights reserved);
-> * Norway terrain data © Kartverket;
-> * United Kingdom terrain data © Environment Agency copyright and/or database right 2015.
->   All rights reserved;
-> * United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of
->   the U.S. Geological Survey.
-
-**Their bandwidth, their rules.** The bucket is public and needs no key, which is not the
-same as being free to hammer. This app fetches at most eight tiles at a time, never
-re-fetches one it already has, sends a user agent that says who is calling, and caps what it
-keeps at 400 MB.
 
 ## Apple Maps — Apple's own terms
 

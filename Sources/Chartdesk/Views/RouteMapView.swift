@@ -250,15 +250,12 @@ struct RouteMapView: View {
         // than one that sharpens.
         rasterBase(in: &context, sheet: sheet)
 
-        contours(in: &context, sheet: sheet)
-
         // Frontiers on top of it — under the imagery they would be invisible, and a border
         // is the one thing imagery cannot show you.
         if let world = geography.best(for: camera.detail) {
             for shape in world.borders where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
-                               with: .color(Color(nsColor: onLightBase ? Theme.OnLight.border
-                                                                          : Theme.border)),
+                               with: .color(Color(nsColor: Theme.border)),
                                style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
             }
         }
@@ -268,8 +265,7 @@ struct RouteMapView: View {
         if browser.showsStateBorders, camera.worldWidth >= MapLayerRoom.statesFrom {
             for shape in geography.states where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
-                               with: .color(Color(nsColor: onLightBase ? Theme.OnLight.stateBorder
-                                                                          : Theme.stateBorder)),
+                               with: .color(Color(nsColor: Theme.stateBorder)),
                                lineWidth: 0.6)
             }
         }
@@ -527,38 +523,6 @@ struct RouteMapView: View {
         metresAcross <= MapLayerRoom.layoutWithin
     }
 
-    /// The contour lines, over the hillshade they were found in.
-    ///
-    /// This is the half of the layer that does not run out. The shading is pixels and stops
-    /// at the deepest zoom the tiles go to; a contour is a line, and it is drawn from the
-    /// same directions on the sphere as the coastline, so it stays a line however far in
-    /// you go. Between them they are what a paper chart is: the shape underneath, the
-    /// numbers on top.
-    private func contours(in context: inout GraphicsContext, sheet: MapSheet) {
-        guard showsRaster, browser.baseMap.rendersElevation else { return }
-        let ink = Color(nsColor: Theme.contour)
-
-        // Gathered into two paths and stroked twice, rather than stroked line by line: a
-        // view holds a couple of thousand contours across its tiles, and that many separate
-        // strokes costs more than the geometry behind them.
-        var ordinary = Path(), index = Path()
-        for line in base.contours where sheet.mayShow(line.cap) {
-            let path = sheet.path(curve: line.directions)
-            guard !path.isEmpty else { continue }
-            // Every fifth one heavier, which is what lets you count them without stopping
-            // to read a figure off each.
-            if line.isIndex { index.addPath(path) } else { ordinary.addPath(path) }
-        }
-        context.stroke(ordinary, with: .color(ink.opacity(0.45)), lineWidth: 0.6)
-        context.stroke(index, with: .color(ink.opacity(0.7)), lineWidth: 1.0)
-    }
-
-    /// True when the base under everything is pale, so the ink over it has to be dark.
-    ///
-    /// Only where the tiles have actually arrived: with no base map, or before one loads,
-    /// the drawn map underneath is the dark one it has always been.
-    private var onLightBase: Bool { showsRaster && browser.baseMap.isLight }
-
     /// The layouts on the sheet, of those that have been fetched.
     ///
     /// Asked of the layouts rather than of the airport table, which is the cheap way round.
@@ -665,7 +629,7 @@ struct RouteMapView: View {
                         labels: inout [Label]) {
         guard browser.showsCityNames, !geography.cities.isEmpty else { return }
         let deepest = MapLayerRoom.cityRank(degreesAcross: degreesAcross)
-        let colour = Color(nsColor: onLightBase ? Theme.OnLight.place : Theme.place)
+        let colour = Color(nsColor: Theme.place)
 
         for city in geography.cities where city.rank <= deepest {
             guard sheet.projection.faces(city.direction) else { continue }
@@ -696,7 +660,7 @@ struct RouteMapView: View {
         // earth, which is what it is for.
         let drawnByLayout = drawsGroundLayout ? nearbyLayouts(sheet).map(\.cap) : []
 
-        let colour = Color(nsColor: onLightBase ? Theme.OnLight.runway : Theme.runway)
+        let colour = Color(nsColor: Theme.runway)
         let named = camera.worldWidth >= 500_000
         // Feet across, in points. The globe is drawn to one scale at the middle of the view,
         // so this is the same arithmetic wherever on Earth the runway is — which under
