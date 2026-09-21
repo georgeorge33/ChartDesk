@@ -331,11 +331,14 @@ final class WeatherStore: ObservableObject {
             guard let self = self, token == self.generation else { return }
             self.isFetching = false
 
+            // Said plainly. Both of these are the ordinary case at most of the world's
+            // airports rather than a fault, and a sentence explaining why reads as an
+            // apology for something that was never promised.
             if result.realAtis.isEmpty {
-                result.notes.append("No D-ATIS published for \(code) — it covers US fields only.")
+                result.notes.append("D-ATIS Unavailable")
             }
             if result.vatsimAtis.isEmpty {
-                result.notes.append("No VATSIM ATIS online at \(code).")
+                result.notes.append("No VATSIM online")
             }
             result.fetchedAt = Date()
 
