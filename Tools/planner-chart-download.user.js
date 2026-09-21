@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.5
+// @version      4.6
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @homepageURL  https://github.com/georgeorge33/ChartDesk
@@ -24,10 +24,13 @@
 // refused. GM_download and GM_xmlhttpRequest run privileged and are not subject to that, which
 // is the only reason this needs a userscript manager rather than a bookmarklet.
 //
-// ⌥S sweeps instead: it walks the category tabs, opens every chart the airport has, and files
-// each one without asking. There is no index to read — the planner has no endpoint that lists
-// an airport's charts, so the only way to learn a chart's URL is to make the viewer open it —
-// which is why a sweep drives the interface rather than fetching a manifest.
+// ⌥S sweeps instead: it works out which airport is showing, walks the category tabs, opens
+// every chart it has, and files each one without asking. ⌥⇧S asks which airport first, for
+// when it has worked that out wrongly.
+//
+// There is no index to read — the planner has no endpoint that lists an airport's charts, so
+// the only way to learn a chart's URL is to make the viewer open it — which is why a sweep
+// drives the interface rather than fetching a manifest.
 //
 // It counts before it fetches, walking every tab once to gather the whole list. That is what
 // lets it show a bar and a time remaining, and it costs no duplicated work: the rows are
@@ -35,9 +38,9 @@
 //
 // The list is virtualised: rows are absolutely positioned inside a spacer and only those near
 // the viewport exist, so the counting pass scrolls and collects as it goes, keyed by each
-// row's data-index. It clicks the button behind `img[alt="Preview chart"]` and waits for the image
-// to finish loading rather than for its src to change, because the src changes in about two
-// hundred milliseconds and the plate itself can take another second and a half.
+// row's data-index. It clicks the button behind `img[alt="Preview chart"]` and waits for the
+// image to finish loading rather than for its src to change, because the src changes in about
+// two hundred milliseconds and the plate itself can take another second and a half.
 
 (function () {
     'use strict';
@@ -144,12 +147,44 @@
         return '';
     }
 
+    /** Exact, when the page was reached that way: planner.flightsimulator.com/airport/KDCA. */
+    function icaoFromUrl() {
+        const match = location.pathname.match(/\/airport\/([A-Za-z]{4})(?:\/|$)/);
+        return match ? match[1].toUpperCase() : '';
+    }
+
+    /**
+     * The code heading the chart panel, found by starting at the category tabs and widening.
+     *
+     * Better than reading the whole page, which is what made LIDO and DATA worth blocking:
+     * the nearest ancestor holding both the tabs and a word of exactly four capitals is the
+     * panel, and the word is the airport it is showing. Anything further out — the map, its
+     * attribution, another airport in the route — is only reached if the panel has nothing,
+     * and by then there is nothing better to go on.
+     */
+    function icaoNearTabs() {
+        let node = (categoryTabs()[0] || {}).parentElement;
+        for (let up = 0; node && up < 6; up += 1, node = node.parentElement) {
+            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+            for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+                const word = (text.nodeValue || '').trim().toUpperCase();
+                if (/^[A-Z]{4}$/.test(word) && !NOT_ICAO.has(word)) return word;
+            }
+        }
+        return '';
+    }
+
+    /** The airport, in order of how much the answer can be trusted. */
+    function detectIcao() {
+        return icaoFromUrl() || icaoNearTabs() || currentIcao();
+    }
+
     /** A starting point only — you type over it. Empty when there is nothing worth offering. */
     function guessStem() {
         const named = visibleText().filter((text) => CHART_WORDS.test(text));
         // A chart's name mentions the procedure; a paragraph about it does not read like one.
         named.sort((a, b) => a.length - b.length);
-        return [currentIcao(), named[0] || ''].filter(Boolean)
+        return [detectIcao(), named[0] || ''].filter(Boolean)
             .join(' ').replace(/\s+/g, ' ').trim();
     }
 
@@ -830,13 +865,13 @@
      * duplicated work — the rows are collected here instead of, not as well as, on the way
      * past — and it means the run is planned before anything is written to disk.
      */
-    async function plan() {
+    async function plan(icao) {
         const wanted = [];
         const categories = categoryTabs().map((tab) => (tab.textContent || '').trim());
 
         for (const category of categories) {
             if (stopped) break;
-            showProgress('Counting ' + category + '…', 0, 0, '');
+            showProgress(icao + ' · counting ' + category + '…', 0, 0, '');
             const tab = categoryTabs().find((candidate) =>
                 (candidate.textContent || '').trim() === category);
             if (!tab) continue;
@@ -851,15 +886,21 @@
     let sweeping = false;
     let stopped = false;
 
-    async function sweep() {
+    async function sweep(ask) {
         if (sweeping) { toast('Already sweeping — Escape stops it.'); return; }
         if (!chartRows().length) {
             toast('No chart list on screen — open an airport first.');
             return;
         }
 
-        const icao = await askIcao(currentIcao());
-        if (!icao) return;
+        // Worked out rather than asked for. The code heads the panel for the whole run and
+        // Stop is one press away, so being wrong costs a second rather than an airport. ⌥⇧S
+        // asks anyway, for the times it cannot be worked out or is worked out wrongly.
+        let icao = ask ? '' : detectIcao();
+        if (!icao) {
+            icao = await askIcao(detectIcao());
+            if (!icao) return;
+        }
 
         // Before anything is counted, because the provider decides what the whole sweep
         // collects and a half-Lido, half-FAA airport is worse than no airport at all.
@@ -880,7 +921,7 @@
         let saved = 0;
 
         try {
-            const charts = await plan();
+            const charts = await plan(icao);
             if (!charts.length) { toast('No charts found for ' + icao + '.'); return; }
 
             const startedAt = performance.now();
@@ -977,7 +1018,7 @@
         }
         if (event.altKey && (event.key === 's' || event.key === 'S' || event.code === 'KeyS')) {
             event.preventDefault();
-            sweep();
+            sweep(event.shiftKey);
         }
         if (event.key === 'Escape' && sweeping) {
             stopped = true;
@@ -995,12 +1036,12 @@
         button.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            action();
+            action(event);
         });
         document.body.appendChild(button);
         return button;
     }
 
     launcher(16, '⤓ Chart', open);
-    launcher(54, '⤓ Airport', sweep);
+    launcher(54, '⤓ Airport', (event) => sweep(event.shiftKey));
 })();
