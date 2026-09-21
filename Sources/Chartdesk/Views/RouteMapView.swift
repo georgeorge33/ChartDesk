@@ -41,6 +41,8 @@ struct RouteMapView: View {
     /// What the map view is showing. The camera above is derived from it rather than the
     /// other way round, because the gesture happens in the map view.
     @State private var mapRect = MKMapRect.world
+    /// Pending "what should we be fetching" work, waiting for the map to stop moving.
+    @State private var settling: Task<Void, Never>?
 
     private var plan: FlightPlan? { flight.plan }
     private var waypoints: [FlightPlan.Waypoint] { plan?.waypoints ?? [] }
@@ -72,11 +74,16 @@ struct RouteMapView: View {
             // than the two being kept in step.
             AppleMapLayer(configuration: browser.baseMap.configuration,
                           rect: $mapRect) { shown in
+                // One write each, and only where something changed. This runs on every
+                // frame the map moves, and each state change is a pass through the view
+                // body — four of them a frame is three redraws nobody asked for.
                 mapRect = shown
                 let (centre, width) = MercatorProjection.camera(of: shown, in: size)
-                camera.centre = centre
-                camera.worldWidth = width
-                userMoved = true
+                var wanted = camera
+                wanted.centre = centre
+                wanted.worldWidth = width
+                if wanted != camera { camera = wanted }
+                if !userMoved { userMoved = true }
             }
             // Transparent, and out of the way of the mouse: a click belongs to the map.
             canvas
@@ -130,10 +137,7 @@ struct RouteMapView: View {
         // Panning and zooming both change which cells of the full coastline are in view. The
         // request is idempotent and skips whatever is already read, so asking on every step
         // of a drag costs a set lookup.
-        .onChange(of: camera) { _, _ in
-            requestCells()
-            requestLayers()
-        }
+        .onChange(of: camera) { _, _ in settle() }
         // The first ask for a cell only starts the index reading — fifteen megabytes of it,
         // off the main thread — and returns. Without this the cells were not asked for again
         // until something else moved the camera, so choosing full detail and sitting still
@@ -1021,6 +1025,28 @@ struct RouteMapView: View {
         found.append("OurAirports · airports and runways")
         if showsAppleMap { found.append(contentsOf: browser.baseMap.attribution) }
         return found
+    }
+
+    /// Works out what to fetch, once the map has stopped moving.
+    ///
+    /// This used to run on every camera change, which was fine when the camera only moved
+    /// on a drag or a scroll notch. The map view moves it every frame now, and the work is
+    /// not frame work: `WorldData.airports` walks all seventy-odd thousand airports on
+    /// earth, which is about six milliseconds, and a frame at 120 Hz is eight. Asking on
+    /// every one of them is most of a frame spent deciding what to download.
+    ///
+    /// Nothing is lost by waiting. These are all requests for things that take a second or
+    /// a minute to arrive, and a fifth of a second after you stop moving is soon enough —
+    /// it is arguably better, because a pan across a continent no longer queues a layout
+    /// for every field it passes over.
+    private func settle() {
+        settling?.cancel()
+        settling = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            requestCells()
+            requestLayers()
+        }
     }
 
     /// True when the base is Apple's own map, which already has coastlines, frontiers,
