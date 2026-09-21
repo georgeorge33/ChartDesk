@@ -82,6 +82,15 @@ final class ChartRenderer: MKOverlayRenderer {
     private struct Placed {
         var label: ChartContext.Label
         var room: CGRect
+
+        /// Whether this one leaves no space for another: either they overlap, or they say
+        /// the same thing too close together to be telling you anything twice.
+        func crowds(_ other: ChartContext.Label, room space: CGRect, within apart: Double)
+        -> Bool {
+            if room.intersects(space) { return true }
+            guard label.text == other.text else { return false }
+            return hypot(label.at.x - other.at.x, label.at.y - other.at.y) < apart
+        }
     }
 
     /// Every label that won its space, settled once for the whole frame.
@@ -110,9 +119,15 @@ final class ChartRenderer: MKOverlayRenderer {
 
         var placed: [Placed] = []
         let air = 2 / Double(zoomScale)
+        // How far apart two of the same letter have to be. A designator repeated along its
+        // own taxiway is how a ground chart reads; three of them inside a hundred metres is
+        // not. OpenStreetMap splits one taxiway into as many ways as its tags change, and
+        // each of those pieces was asking for its own letter.
+        let apart = chart.screen(160)
         for label in found {
             let room = chart.bounds(of: label).insetBy(dx: -air, dy: -air)
-            guard !placed.contains(where: { $0.room.intersects(room) }) else { continue }
+            guard !placed.contains(where: { $0.crowds(label, room: room, within: apart) })
+            else { continue }
             placed.append(Placed(label: label, room: room))
         }
         decided = (key, placed)
