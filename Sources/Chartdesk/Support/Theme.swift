@@ -96,6 +96,10 @@ enum Theme {
     /// terrain layer that arrangement inverts — the ground is the pale thing now — and the
     /// same lines drawn in the same colours wash out entirely. These are their opposites:
     /// the hue kept, the value flipped, so a border still reads as a border.
+    /// Contour lines. The sepia every paper chart prints them in — brown enough to be
+    /// clearly not a road or a river, quiet enough to lie under everything aeronautical.
+    static let contour          = rgb(0x6B5836)
+
     enum OnLight {
         static let coast        = rgb(0x5A6B7B)
         static let border       = rgb(0x5B6A78)

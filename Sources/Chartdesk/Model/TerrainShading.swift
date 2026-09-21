@@ -43,21 +43,42 @@ enum TerrainShading {
     /// gently, so this is gentler than a relief poster would want.
     private static let steepen = 1.6
 
-    /// Paints one tile, in place.
+    /// Paints one tile and gives back the contour lines on it.
     ///
-    /// The heights are read out first and the colours written after, because a hillshade
-    /// needs the pixels around each pixel and writing as it went would shade a tile against
-    /// itself half-painted.
-    static func paint(_ pixels: TilePixels, at tile: MapTile) {
+    /// Both from one call because the heights only exist until the paint overwrites them:
+    /// the tile arrives as a measurement and leaves as a picture, and anything that wants
+    /// the numbers has to ask on the way past.
+    static func render(_ pixels: TilePixels, at tile: MapTile) -> [TerrainContour] {
         let side = pixels.side
-        guard side > 1 else { return }
+        guard side > 1 else { return [] }
+        let height = heights(of: pixels)
+        let lines = TerrainContours.find(in: height, side: side, tile: tile,
+                                         interval: TerrainContours.interval(forZoom: tile.z))
+        paint(pixels, at: tile, height: height)
+        return lines
+    }
 
+    /// The tile as a list of heights in metres, before anything is drawn over them.
+    static func heights(of pixels: TilePixels) -> [Double] {
+        let side = pixels.side
         var height = [Double](repeating: 0, count: side * side)
         let bytes = pixels.bytes
         for index in 0..<(side * side) {
             let at = index * 4
             height[index] = metres(red: bytes[at], green: bytes[at + 1], blue: bytes[at + 2])
         }
+        return height
+    }
+
+    /// Paints one tile, in place.
+    ///
+    /// The heights are passed in rather than read here, because a hillshade needs the pixels
+    /// around each pixel and writing as it went would shade a tile against itself
+    /// half-painted.
+    static func paint(_ pixels: TilePixels, at tile: MapTile, height: [Double]) {
+        let side = pixels.side
+        guard side > 1, height.count == side * side else { return }
+        let bytes = pixels.bytes
 
         // How far apart two pixels are on the ground, which is what turns a difference in
         // height into a slope. Mercator shrinks towards the poles, so this is the tile's

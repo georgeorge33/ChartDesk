@@ -250,6 +250,11 @@ final class BaseMapStore: ObservableObject {
     @Published private(set) var failure: String?
 
     private var tiles: [MapTile: TilePixels] = [:]
+    /// The contour lines found in each tile as it arrived. Kept beside the pixels and
+    /// dropped with them, because they describe the same square of ground.
+    private var lines: [MapTile: [TerrainContour]] = [:]
+    /// All of them at once, rebuilt when the set changes rather than on every frame.
+    private(set) var contours: [TerrainContour] = []
     private var order: [MapTile] = []
     private var bytesHeld = 0
     private var loading: Set<MapTile> = []
@@ -348,7 +353,7 @@ final class BaseMapStore: ObservableObject {
                     self.failure = error?.localizedDescription ?? "Apple Maps did not answer"
                     return
                 }
-                self.arrived(pixels, as: tile)
+                self.arrived(pixels, [], as: tile)
             }
         }
     }
@@ -369,12 +374,12 @@ final class BaseMapStore: ObservableObject {
 
         Self.work.async {
             if let data = try? Data(contentsOf: cached),
-               let pixels = Self.read(data, for: wanted, at: tile) {
+               let (pixels, lines) = Self.read(data, for: wanted, at: tile) {
                 Task { @MainActor in
                     self.loading.remove(tile)
                     defer { self.start() }
                     guard wanted == self.layer else { return }
-                    self.arrived(pixels, as: tile)
+                    self.arrived(pixels, lines, as: tile)
                 }
                 return
             }
@@ -385,9 +390,9 @@ final class BaseMapStore: ObservableObject {
             request.setValue(Self.agent, forHTTPHeaderField: "User-Agent")
             URLSession.shared.dataTask(with: request) { data, response, error in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let pixels = (code == 200 && data != nil)
+                let made = (code == 200 && data != nil)
                     ? Self.read(data!, for: wanted, at: tile) : nil
-                if let data = data, pixels != nil {
+                if let data = data, made != nil {
                     try? FileManager.default.createDirectory(
                         at: cached.deletingLastPathComponent(),
                         withIntermediateDirectories: true)
@@ -397,20 +402,24 @@ final class BaseMapStore: ObservableObject {
                     self.loading.remove(tile)
                     defer { self.start() }
                     guard wanted == self.layer else { return }
-                    guard let pixels = pixels else {
+                    guard let (pixels, lines) = made else {
                         self.failure = error?.localizedDescription
                             ?? "the tile server answered \(code)"
                         return
                     }
-                    self.arrived(pixels, as: tile)
+                    self.arrived(pixels, lines, as: tile)
                 }
             }.resume()
         }
     }
 
-    private func arrived(_ pixels: TilePixels, as tile: MapTile) {
+    private func arrived(_ pixels: TilePixels, _ found: [TerrainContour], as tile: MapTile) {
         failure = nil
         keep(pixels, as: tile)
+        if !found.isEmpty {
+            lines[tile] = found
+            contours = lines.values.flatMap { $0 }
+        }
         version &+= 1
     }
 
@@ -491,6 +500,9 @@ final class BaseMapStore: ObservableObject {
             // It may have been asked for again since, in which case it is at the back too.
             if !order.contains(oldest), let dropped = tiles.removeValue(forKey: oldest) {
                 bytesHeld -= dropped.count
+                if lines.removeValue(forKey: oldest) != nil {
+                    contours = lines.values.flatMap { $0 }
+                }
             }
         }
     }
@@ -506,10 +518,10 @@ final class BaseMapStore: ObservableObject {
     /// the decode. What is written to the cache is the untouched bytes from the server, so
     /// changing how terrain is drawn does not mean fetching it all again.
     nonisolated private static func read(_ data: Data, for layer: BaseMap,
-                                         at tile: MapTile) -> TilePixels? {
+                                         at tile: MapTile) -> (TilePixels, [TerrainContour])? {
         guard let pixels = read(data) else { return nil }
-        if layer.rendersElevation { TerrainShading.paint(pixels, at: tile) }
-        return pixels
+        guard layer.rendersElevation else { return (pixels, []) }
+        return (pixels, TerrainShading.render(pixels, at: tile))
     }
 
     nonisolated private static func read(_ data: Data) -> TilePixels? {
@@ -545,6 +557,8 @@ final class BaseMapStore: ObservableObject {
     func forget() {
         warped = nil
         warpedFor = nil
+        lines.removeAll()
+        contours = []
         tiles.removeAll()
         order.removeAll()
         queued.removeAll()

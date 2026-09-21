@@ -111,6 +111,22 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   airspace over a bright aerial photo is two things competing. Terrain loses almost nothing:
   it is drawn here, in chart colours, already quiet, and taking a third off only turned a
   chart the colour of a chart into khaki.
+- **Contour lines, drawn as lines.** The hillshade is pixels and pixels run out: past the
+  deepest zoom the terrain tiles go to there is nothing left to magnify and the relief turns
+  to porridge. So every tile is also read for its contours on the way past — marching
+  squares over the same heights the shading came from — and those are drawn as vectors,
+  projected onto the globe with the coastline rather than warped into place. Between them
+  they are what a paper chart is: the shape underneath, the numbers on top.
+- The crossings are chained into whole lines rather than left as loose two-point segments,
+  which is what makes it possible to thin them — Douglas-Peucker leaves about a fifth of the
+  points and the line is the same line. An Alpine tile comes to 55 contours and 1,655 points
+  at 250 m spacing, found in about 7 ms alongside the shading.
+- Spacing follows the zoom, 500 m out to 50 m in, because an interval loose enough for the
+  Alps has nothing to say about Vermont. **Every fifth line is heavier**, so you can count
+  them without stopping to read a figure off each.
+- They are gathered into two paths and stroked twice rather than stroked one at a time: a
+  view holds a couple of thousand contours across its tiles, and that many separate strokes
+  costs more than the geometry behind them.
 - **The sea is flat.** Below sea level the hillshade is switched off: the tiles carry real
   bathymetry, and shading it turns every ridge on the sea floor into a wave and every
   coastline to mush.
