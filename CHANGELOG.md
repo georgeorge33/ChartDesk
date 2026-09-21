@@ -83,6 +83,9 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   about one taxiway in a hundred worldwide, and none at all at Frankfurt — so most fields
   look exactly as they did. At Maastricht, which has thirteen of them, the drawn outlines
   differ from the width tag they replace by a median of 58%.
+- Taxilanes **lose their yellow line and their letter**. A taxilane is the lead into a stand
+  on the apron, not movement area, and painting it like a taxiway made the ramp look like
+  somewhere you might be told to go. The pavement stays; the markings do not.
 - **No switch for it.** This far in the ground plan is the map — the coastline is a straight
   line and the nearest border is nowhere near — so there was nothing to choose between. The
   Layers panel still says where the layout comes from and how far out it is fetched.
@@ -94,33 +97,6 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   request that takes a second or two and is then good for minutes. Choosing the airport is
   the honest signal that you are interested in it. Turning the weather off still stops it;
   that is what the switch is for.
-
-**Taxi routing, back again**
-
-- **Click where you are, then where you are going**, and the map draws the way between and
-  names it: `F2 · A8 · A9 · A10 · A11 · A12 · A13 · A14 · AZ2 · M16 · R7 · R8 · Z2 · Z1`,
-  4.2 km, hold short at A11-4, A11-3, A-12-2, Z-2. Behind its own button, because the map is
-  dragged far more often than it is asked a question.
-- This was taken out for 1.0 and the reason is gone. The old one drew onto a scanned plate,
-  so the plate had to be dragged into alignment with the ground by hand, and that was the
-  fiddly part nobody wanted. There is no plate now — the layout is on the map in the same
-  coordinates as everything else, so there is nothing to line up.
-- **Runways are crossed, never followed.** They are left out of the network entirely; their
-  nodes survive through the taxiways that cross them, so a route may go over a runway and
-  can never run along one. Without that rule the shortest way off a stand at Kennedy is to
-  taxi down 13R, which is exactly what the search wants to do.
-- OpenStreetMap does not say which ways touch — Overpass returns coordinates and no node
-  numbers — so the network is built by the fact that two ways meeting quote the identical
-  point, because it is the identical node. Measured across the cached fields that puts
-  99–100% of a network into one piece: every one of Heathrow's 236 stands reaches 09R/27L,
-  Kennedy's 323 of 323, Atlanta's 432 of 434.
-- **It refuses rather than guesses.** Where a field is mapped in pieces it says so and gives
-  the figure; where two points are not joined by anything mapped it says that instead of
-  returning a route round the houses. Boston is 95% joined and 18 of its 162 stands cannot
-  reach the runway, and the map now tells you which case you are in.
-- Taxilanes **lose their yellow line and their letter**. A taxilane is the lead into a stand
-  on the apron, not movement area, and painting it like a taxiway made the ramp look like
-  somewhere you might be told to go. The pavement stays; the markings do not.
 
 **The base map**
 
