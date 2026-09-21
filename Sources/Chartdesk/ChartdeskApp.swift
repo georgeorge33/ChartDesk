@@ -86,6 +86,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// segmented control and grouped form backgrounds.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        fitWindowsToScreen()
+    }
+
+    /// Pulls any window that has been restored bigger than the screen back onto it.
+    ///
+    /// macOS remembers a window's frame against the screen it was last on, and hands it
+    /// back whether or not it still fits. This app's window is usually the full height of
+    /// the usable area — 949 points on this Mac — so anything that takes a little of that
+    /// away is enough: the Dock coming out of hiding, a display with a different notch, a
+    /// second monitor that has gone. The window comes back the height it was, the bottom
+    /// stays put, and the title bar ends up above the top of the screen where it cannot be
+    /// dragged back down.
+    ///
+    /// Run once at launch and again whenever the screens change, which is when it happens.
+    private func fitWindowsToScreen() {
+        fit()
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.fit() }
+            }
+    }
+
+    private func fit() {
+        // After the windows exist: at launch this runs before SwiftUI has made them.
+        DispatchQueue.main.async {
+            for window in NSApp.windows {
+                guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { continue }
+                var frame = window.frame
+                guard !visible.contains(frame) else { continue }
+
+                frame.size.width = min(frame.width, visible.width)
+                frame.size.height = min(frame.height, visible.height)
+                frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+                frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+                guard frame != window.frame else { continue }
+                window.setFrame(frame, display: true)
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
