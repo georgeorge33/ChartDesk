@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      3.0
-// @description  Alt-click a chart on planner.flightsimulator.com, name it, and save the full-resolution PNG
+// @version      4.0
+// @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @connect      foxtrotatlasprod.blob.core.windows.net
 // @connect      blob.core.windows.net
@@ -20,6 +20,17 @@
 // does not need them, so the page displays it happily, while a `fetch` from the page would be
 // refused. GM_download and GM_xmlhttpRequest run privileged and are not subject to that, which
 // is the only reason this needs a userscript manager rather than a bookmarklet.
+//
+// ⌥S sweeps instead: it walks the category tabs, opens every chart the airport has, and files
+// each one without asking. There is no index to read — the planner has no endpoint that lists
+// an airport's charts, so the only way to learn a chart's URL is to make the viewer open it —
+// which is why a sweep drives the interface rather than fetching a manifest.
+//
+// The list is virtualised: rows are absolutely positioned inside a spacer and only those near
+// the viewport exist, so a sweep scrolls and collects as it goes, keyed by each row's
+// data-index. It clicks the button behind `img[alt="Preview chart"]` and waits for the image
+// to finish loading rather than for its src to change, because the src changes in about two
+// hundred milliseconds and the plate itself can take another second and a half.
 
 (function () {
     'use strict';
@@ -89,7 +100,10 @@
     const NOT_ICAO = new Set(['CHART', 'CHARTS', 'PLAN', 'PLANS', 'FLIGHT', 'HELP', 'INFO',
                               'MENU', 'VIEW', 'ZOOM', 'TRUE', 'NULL', 'NONE', 'PAGE', 'OPEN',
                               'DARK', 'LIGHT', 'SAVE', 'LOAD', 'MORE', 'EDIT', 'TEXT', 'FROM',
-                              'ROUTE', 'WIND', 'FUEL', 'TIME', 'DATE', 'NAME', 'TYPE']);
+                              'ROUTE', 'WIND', 'FUEL', 'TIME', 'DATE', 'NAME', 'TYPE',
+                              // Four letters, and all over a chart list. Without these a
+                              // sweep could file a whole airport's charts under RNAV.
+                              'RNAV', 'STAR', 'MISC', 'TAXI', 'APCH', 'AREA', 'SIDS']);
 
     /** Short pieces of visible text, which is where a chart's name would be if anywhere. */
     function visibleText() {
@@ -105,28 +119,28 @@
         return found;
     }
 
-    /** A starting point only — you type over it. Empty when there is nothing worth offering. */
-    function guessStem() {
-        const texts = visibleText();
-
-        const named = texts.filter((text) => CHART_WORDS.test(text));
-        // A chart's name mentions the procedure; a paragraph about it does not read like one.
-        named.sort((a, b) => a.length - b.length);
-        const title = named[0] || '';
-
-        let icao = '';
+    /** The airport on show, which is the folder each of its charts belongs in. */
+    function currentIcao() {
         const inputs = [...document.querySelectorAll('input')]
             // Not this script's own field: it still holds the last name typed, so a chart at
             // one airport would otherwise be offered the airport before it.
             .filter((input) => !(box && box.card.contains(input)))
             .map((input) => (input.value || '').trim().toUpperCase());
-        for (const text of [...inputs, ...texts.map((entry) => entry.toUpperCase())]) {
+        for (const text of [...inputs, ...visibleText().map((entry) => entry.toUpperCase())]) {
             const codes = text.match(/\b[A-Z]{4}\b/g) || [];
             const code = codes.find((candidate) => !NOT_ICAO.has(candidate));
-            if (code) { icao = code; break; }
+            if (code) return code;
         }
+        return '';
+    }
 
-        return [icao, title].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    /** A starting point only — you type over it. Empty when there is nothing worth offering. */
+    function guessStem() {
+        const named = visibleText().filter((text) => CHART_WORDS.test(text));
+        // A chart's name mentions the procedure; a paragraph about it does not read like one.
+        named.sort((a, b) => a.length - b.length);
+        return [currentIcao(), named[0] || ''].filter(Boolean)
+            .join(' ').replace(/\s+/g, ' ').trim();
     }
 
     /** The path handed to the browser, which is a name and at most some folders under it. */
@@ -166,68 +180,80 @@
 
     /** Last resort: the page's own fetch, which CORS may well refuse. */
     function pageFetch(url, name) {
-        fetch(url)
+        return fetch(url)
             .then((response) => {
                 if (!response.ok) throw new Error('HTTP ' + response.status);
                 return response.blob();
             })
-            .then((blob) => saveBlob(blob, name))
+            .then((blob) => { saveBlob(blob, name); return true; })
             .catch((error) => {
                 console.warn('[chart downloader] falling back to a new tab:', error);
                 toast('Could not save directly — opening the chart in a tab, press ⌘S there.');
                 window.open(url, '_blank');
+                return false;
             });
     }
 
+    /**
+     * Resolves true when the file has landed, false when it has not. A sweep waits on this so
+     * that thirty charts go out one at a time rather than thirty at once, and so a chart that
+     * fails is counted rather than lost quietly. It reports failure rather than rejecting,
+     * because the single-chart path does not await it and an unhandled rejection would be the
+     * only trace of a problem that has already been shown in a toast.
+     */
     function download(url, name) {
         const path = destination(name);
 
-        if (path !== name) {
-            // Only GM_download can put a file in a folder; an <a download> can name a file and
-            // nothing more.
-            if (typeof GM_download === 'function') {
-                GM_download({
+        return new Promise((resolve) => {
+            if (path !== name) {
+                // Only GM_download can put a file in a folder; an <a download> can name a file
+                // and nothing more.
+                if (typeof GM_download === 'function') {
+                    GM_download({
+                        url,
+                        name: path,
+                        saveAs: false,
+                        onload: () => { toast('Saved ' + path); resolve(true); },
+                        onerror: (error) => {
+                            const reason = (error && (error.error || error.details)) || 'failed';
+                            toast('Could not save to ' + path + ' (' + reason + ')');
+                            console.warn('[chart downloader]', error, url);
+                            resolve(false);
+                        }
+                    });
+                    return;
+                }
+                toast('Folders need GM_download; saving as ' + name + ' instead.');
+            }
+
+            if (typeof GM_xmlhttpRequest === 'function') {
+                // Preferred over GM_download because it reports a size and cannot silently land
+                // a zero-byte file when the signed URL has expired.
+                GM_xmlhttpRequest({
+                    method: 'GET',
                     url,
-                    name: path,
-                    saveAs: false,
-                    onload: () => toast('Saved ' + path),
-                    onerror: (error) => {
-                        const reason = (error && (error.error || error.details)) || 'failed';
-                        toast('Could not save to ' + path + ' (' + reason + ')');
-                        console.warn('[chart downloader]', error, url);
-                    }
+                    responseType: 'blob',
+                    onload: (response) => {
+                        if (response.status >= 200 && response.status < 300 && response.response) {
+                            saveBlob(response.response, name);
+                            resolve(true);
+                        } else {
+                            toast('Blob store said HTTP ' + response.status + '; trying another way.');
+                            resolve(pageFetch(url, name));
+                        }
+                    },
+                    onerror: () => resolve(pageFetch(url, name))
                 });
                 return;
             }
-            toast('Folders need GM_download; saving as ' + name + ' instead.');
-        }
-
-        if (typeof GM_xmlhttpRequest === 'function') {
-            // Preferred over GM_download because it reports a size and cannot silently land a
-            // zero-byte file when the signed URL has expired.
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url,
-                responseType: 'blob',
-                onload: (response) => {
-                    if (response.status >= 200 && response.status < 300 && response.response) {
-                        saveBlob(response.response, name);
-                    } else {
-                        toast('Blob store said HTTP ' + response.status + '; trying another way.');
-                        pageFetch(url, name);
-                    }
-                },
-                onerror: () => pageFetch(url, name)
-            });
-            return;
-        }
-        if (typeof GM_download === 'function') {
-            GM_download({ url, name, saveAs: false,
-                          onload: () => toast('Saved ' + name),
-                          onerror: () => pageFetch(url, name) });
-            return;
-        }
-        pageFetch(url, name);
+            if (typeof GM_download === 'function') {
+                GM_download({ url, name, saveAs: false,
+                              onload: () => { toast('Saved ' + name); resolve(true); },
+                              onerror: () => resolve(pageFetch(url, name)) });
+                return;
+            }
+            resolve(pageFetch(url, name));
+        });
     }
 
     // --- The naming box -------------------------------------------------------------------
@@ -393,6 +419,318 @@
         download(url, name);
     }
 
+    // --- Sweeping an airport ----------------------------------------------------------------
+
+    /** The control that opens a chart. Its alt is the planner's, not ours, and it is stable. */
+    const OPEN_BUTTON = 'img[alt="Preview chart"]';
+    /** The type down the left edge of a row, written vertically: IAC, VAC, SID, SIDPT, AGC. */
+    const BADGE = '.vertical-writing-lr';
+    const TITLE = 'div.grow.cursor-default';
+
+    /** Long enough for a slow plate, short enough that one bad row does not stall a sweep. */
+    const CHART_TIMEOUT_MS = 20000;
+
+    /** A breath between downloads. The blob store would not notice; this is manners. */
+    const GAP_MS = 400;
+
+    // Where a plate serves both an ILS and the localiser beside it, the library holds it under
+    // the ILS, so the order here is the order of preference.
+    const CHIP_ORDER = ['ILS', 'LOC', 'LDA', 'GLS', 'RNAV', 'RNP', 'VOR', 'NDB', 'TACAN'];
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function textIn(root, selector) {
+        const found = root.querySelector(selector);
+        return found ? (found.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    }
+
+    /**
+     * The category strip: DEPARTURE, ARRIVAL, APPROACH, AIRPORT, MISC. Every one of them
+     * carries the underline that marks the selected tab, which is what tells them apart from
+     * the runway filter alongside — the same size and shape, but with neither underline nor
+     * text of its own.
+     */
+    function categoryTabs() {
+        return [...document.querySelectorAll('button')].filter((button) =>
+            /border-b-(msfs|transparent)\b/.test(String(button.className || ''))
+            && (button.textContent || '').trim().length > 0);
+    }
+
+    const isSelected = (tab) => /border-b-msfs\b/.test(String(tab.className || ''));
+
+    /**
+     * The chart rows. Recognising them by the button that opens a chart rather than by a class
+     * keeps this working when the styling moves, and it leaves out the "For all runways"
+     * headings, which carry no data-index at all.
+     */
+    function chartRows() {
+        return [...document.querySelectorAll('[data-index]')]
+            .filter((row) => row.querySelector(OPEN_BUTTON));
+    }
+
+    /** The panel a list scrolls in. The wrapper just above the rows has no height of its own. */
+    function listScroller(row) {
+        for (let node = row; node && node !== document.body; node = node.parentElement) {
+            if (node.clientHeight > 40 && node.scrollHeight > node.clientHeight + 20) return node;
+        }
+        return null;
+    }
+
+    function chipRank(chip) {
+        const place = CHIP_ORDER.indexOf(chip.split(/\s+/)[0].toUpperCase());
+        return place === -1 ? CHIP_ORDER.length : place;
+    }
+
+    // A SID and its procedure-text twin describe one procedure and so carry the same chip.
+    // Without this the second would be filed over the first — or, since file-charts.sh will
+    // not overwrite, not filed at all.
+    const withPart = (name, badge) => (/PT$/i.test(badge || '') ? name + ' PT' : name);
+
+    /**
+     * What a row should be called, in the shape the library already uses: AGC, ILS 01, RNAV 15.
+     *
+     * A chip is the planner saying how the plate is flown, and it reads exactly as the library
+     * names it. A chip of NONE is the viewer admitting it has no category for the procedure —
+     * an LDA, say — which is a statement rather than a name, so it is dropped and the title
+     * stands instead. An airport chart carries no chip but ends its title with its own code,
+     * and that code is the name. A visual approach ends with neither, and one airport can hold
+     * two of them, so there nothing shorter than the title will do.
+     */
+    function nameFrom(badge, title, chips) {
+        const usable = chips
+            .map((chip) => String(chip).replace(/\s+/g, ' ').trim())
+            .filter((chip) => chip && !/^NONE\b/i.test(chip))
+            .sort((a, b) => chipRank(a) - chipRank(b));
+        if (usable.length) return withPart(usable[0], badge);
+
+        if (badge && title.toUpperCase().endsWith(badge.toUpperCase())) {
+            return withPart(badge, badge);
+        }
+        return withPart(title || badge, badge);
+    }
+
+    /** The rule above, over a row as the page holds it. */
+    function rowName(row) {
+        return nameFrom(
+            textIn(row, BADGE),
+            textIn(row, TITLE),
+            [...row.querySelectorAll('button')].map((button) => button.textContent || '')
+        );
+    }
+
+    /**
+     * Every row of the list now showing, as index → name. The list is virtualised, so only the
+     * rows near the viewport exist; this walks the panel a little under a screen at a time and
+     * gathers what appears, with data-index saying whether a row has been counted already.
+     */
+    async function collectRows() {
+        const found = new Map();
+        const harvest = () => {
+            for (const row of chartRows()) {
+                const index = Number(row.getAttribute('data-index'));
+                if (!found.has(index)) found.set(index, rowName(row));
+            }
+        };
+        harvest();
+
+        const scroller = chartRows().length ? listScroller(chartRows()[0]) : null;
+        if (scroller) {
+            const step = Math.max(60, Math.floor(scroller.clientHeight * 0.6));
+            scroller.scrollTop = 0;
+            await wait(220);
+            harvest();
+            for (let guard = 0; guard < 300; guard += 1) {
+                if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) break;
+                const before = scroller.scrollTop;
+                scroller.scrollTop = before + step;
+                await wait(160);
+                harvest();
+                if (scroller.scrollTop === before) break;   // nothing moved; stop rather than spin
+            }
+            scroller.scrollTop = 0;
+            await wait(200);
+        }
+        return [...found.entries()].sort((a, b) => a[0] - b[0]);
+    }
+
+    /** Opens one row, scrolling down to it when the list has not built that row yet. */
+    async function openRow(index) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+            const row = chartRows().find((candidate) =>
+                Number(candidate.getAttribute('data-index')) === index);
+            if (row) {
+                const image = row.querySelector(OPEN_BUTTON);
+                const button = image.closest('button') || image;
+                button.scrollIntoView({ block: 'center' });
+                await wait(60);
+                button.click();
+                return true;
+            }
+
+            const scroller = chartRows().length ? listScroller(chartRows()[0]) : null;
+            if (!scroller) return false;
+            const before = scroller.scrollTop;
+            scroller.scrollTop = before + Math.max(60, Math.floor(scroller.clientHeight * 0.6));
+            await wait(140);
+            // At the bottom and still not found: begin again from the top rather than press
+            // against the end of the list for every remaining attempt.
+            if (scroller.scrollTop === before) scroller.scrollTop = 0;
+        }
+        return false;
+    }
+
+    /**
+     * The plate that appears after a click, once it has actually loaded. Waiting on the load
+     * rather than on the src matters: the src changes within a couple of hundred milliseconds
+     * and the image can take another second and a half, so a URL read in between is still the
+     * chart the viewer has just left.
+     */
+    async function waitForChart(already) {
+        for (let waited = 0; waited < CHART_TIMEOUT_MS; waited += 120) {
+            const loaded = candidates().filter((entry) => entry.pixels > 0);
+            const wanted = variant(loaded, PREFER_DARK)
+                || variant(loaded, !PREFER_DARK)
+                || loaded[0];
+            if (wanted && !already.has(wanted.url)) return wanted;
+            await wait(120);
+        }
+        return null;
+    }
+
+    /**
+     * One question for the whole sweep rather than one per chart. Everything lands in this
+     * folder, and a wrong code here would file an airport's worth of charts under it.
+     */
+    function askIcao(suggested) {
+        return new Promise((resolve) => {
+            const backdrop = styled('div', [
+                'position:fixed', 'inset:0', 'z-index:2147483646',
+                'background:rgba(0,0,0,.5)', 'display:flex',
+                'align-items:center', 'justify-content:center',
+                'font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif'
+            ].join(';'));
+            const card = styled('div', [
+                'min-width:340px', 'padding:18px 18px 14px', 'border-radius:12px',
+                'background:#0d1524', 'color:#e8eef8',
+                'box-shadow:0 18px 50px rgba(0,0,0,.6)', 'border:1px solid rgba(255,255,255,.08)'
+            ].join(';'));
+            const heading = styled('div', 'font-size:14px;font-weight:600;', 'Sweep every chart');
+            const caption = styled('div', 'font-size:11.5px;opacity:.65;margin:4px 0 12px;',
+                                   'Every chart this airport has, filed under this code. '
+                                   + 'Escape stops it part way.');
+
+            const field = document.createElement('input');
+            field.type = 'text';
+            field.value = suggested || '';
+            field.placeholder = 'ICAO';
+            field.spellcheck = false;
+            field.style.cssText = [
+                'width:100%', 'box-sizing:border-box', 'padding:7px 9px', 'border-radius:7px',
+                'border:1px solid rgba(255,255,255,.16)', 'background:#050a14', 'color:#e8eef8',
+                'font:13px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace',
+                'outline:none', 'text-transform:uppercase'
+            ].join(';');
+
+            const buttons = styled('div',
+                'margin-top:14px;display:flex;gap:8px;justify-content:flex-end;');
+            const cancel = styled('button', [
+                'padding:6px 12px', 'border-radius:7px', 'cursor:pointer',
+                'border:1px solid rgba(255,255,255,.18)', 'background:transparent',
+                'color:#e8eef8', 'font:13px/1 inherit'
+            ].join(';'), 'Cancel');
+            const go = styled('button', [
+                'padding:6px 14px', 'border-radius:7px', 'cursor:pointer', 'border:0',
+                'background:' + ACCENT, 'color:#fff', 'font:13px/1 inherit', 'font-weight:600'
+            ].join(';'), 'Sweep');
+
+            buttons.appendChild(cancel);
+            buttons.appendChild(go);
+            card.appendChild(heading);
+            card.appendChild(caption);
+            card.appendChild(field);
+            card.appendChild(buttons);
+            backdrop.appendChild(card);
+
+            const finish = (value) => { backdrop.remove(); resolve(value); };
+            // The viewer has its own shortcuts, and typing an airport code should not fire any.
+            for (const type of ['keydown', 'keyup', 'keypress']) {
+                card.addEventListener(type, (event) => event.stopPropagation());
+            }
+            field.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') { event.preventDefault(); finish(field.value.trim().toUpperCase()); }
+                if (event.key === 'Escape') { event.preventDefault(); finish(''); }
+            });
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop) finish('');
+            });
+            cancel.addEventListener('click', () => finish(''));
+            go.addEventListener('click', () => finish(field.value.trim().toUpperCase()));
+
+            document.body.appendChild(backdrop);
+            field.focus();
+            field.select();
+        });
+    }
+
+    let sweeping = false;
+    let stopped = false;
+
+    async function sweep() {
+        if (sweeping) { toast('Already sweeping — Escape stops it.'); return; }
+        if (!chartRows().length) {
+            toast('No chart list on screen — open an airport first.');
+            return;
+        }
+
+        const icao = await askIcao(currentIcao());
+        if (!icao) return;
+
+        sweeping = true;
+        stopped = false;
+        // Whatever is already on screen: the first chart opened has to be told apart from it.
+        const already = new Set(candidates().map((entry) => entry.url));
+        const missed = [];
+        let saved = 0;
+
+        try {
+            // Labels rather than elements: clicking a tab re-renders the strip, so a button
+            // held from before would be detached by the time its turn came and would take no
+            // click at all.
+            const categories = categoryTabs().map((tab) => (tab.textContent || '').trim());
+
+            for (const category of categories) {
+                if (stopped) break;
+                const tab = categoryTabs().find((candidate) =>
+                    (candidate.textContent || '').trim() === category);
+                if (!tab) { missed.push(category + ' (tab went away)'); continue; }
+                if (!isSelected(tab)) { tab.click(); await wait(600); }
+
+                for (const [index, name] of await collectRows()) {
+                    if (stopped) break;
+                    toast(category + ' · ' + name + ' · ' + saved + ' saved so far');
+
+                    if (!(await openRow(index))) { missed.push(category + ' ' + name); continue; }
+                    const chart = await waitForChart(already);
+                    if (!chart) { missed.push(category + ' ' + name); continue; }
+
+                    // Both variants of this chart, so the next wait cannot mistake either of
+                    // them for the plate it is waiting on.
+                    for (const entry of candidates()) already.add(entry.url);
+
+                    if (await download(chart.url, clean(icao + ' ' + name))) saved += 1;
+                    else missed.push(category + ' ' + name);
+                    await wait(GAP_MS);
+                }
+            }
+        } finally {
+            sweeping = false;
+            toast('Swept ' + icao + ': ' + saved + ' saved'
+                  + (missed.length ? ', ' + missed.length + ' missed' : '')
+                  + (stopped ? ' (stopped)' : ''));
+            if (missed.length) console.warn('[chart downloader] missed:', missed);
+        }
+    }
+
     // --- Triggers and feedback ------------------------------------------------------------
 
     let bubble = null;
@@ -424,24 +762,40 @@
         open();
     }, true);
 
-    // ⌥D for when the chart fills the window and there is nothing safe to click.
+    // ⌥D for when the chart fills the window and there is nothing safe to click; ⌥S to take
+    // the whole airport. Escape gives up a sweep that is already under way — after the chart
+    // in hand, so a part-written file is never left behind.
     window.addEventListener('keydown', (event) => {
         if (event.altKey && (event.key === 'd' || event.key === 'D' || event.code === 'KeyD')) {
             event.preventDefault();
             open();
         }
+        if (event.altKey && (event.key === 's' || event.key === 'S' || event.code === 'KeyS')) {
+            event.preventDefault();
+            sweep();
+        }
+        if (event.key === 'Escape' && sweeping) {
+            stopped = true;
+            toast('Stopping after this chart…');
+        }
     }, true);
 
-    const launcher = styled('button', [
-        'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483645',
-        'padding:7px 12px', 'border:0', 'border-radius:8px', 'cursor:pointer',
-        'background:' + ACCENT, 'color:#fff', 'font:13px/1 -apple-system,sans-serif',
-        'box-shadow:0 4px 14px rgba(0,0,0,.4)'
-    ].join(';'), '⤓ Chart');
-    launcher.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        open();
-    });
-    document.body.appendChild(launcher);
+    function launcher(bottom, label, action) {
+        const button = styled('button', [
+            'position:fixed', 'right:16px', 'bottom:' + bottom + 'px', 'z-index:2147483645',
+            'padding:7px 12px', 'border:0', 'border-radius:8px', 'cursor:pointer',
+            'background:' + ACCENT, 'color:#fff', 'font:13px/1 -apple-system,sans-serif',
+            'box-shadow:0 4px 14px rgba(0,0,0,.4)'
+        ].join(';'), label);
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            action();
+        });
+        document.body.appendChild(button);
+        return button;
+    }
+
+    launcher(16, '⤓ Chart', open);
+    launcher(54, '⤓ Airport', sweep);
 })();
