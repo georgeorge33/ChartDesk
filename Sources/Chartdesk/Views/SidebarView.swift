@@ -151,15 +151,6 @@ struct SidebarView: View {
                         .tag(SidebarItem.map)
                 }
 
-                if trimmedQuery.isEmpty, !library.recentAirports.isEmpty {
-                    Section("Recent") {
-                        ForEach(library.recentAirports) { airport in
-                            AirportRow(airport: airport)
-                                .tag(SidebarItem.airport(airport.code))
-                        }
-                    }
-                }
-
                 Section("Airports") {
                     ForEach(filteredAirports) { airport in
                         AirportRow(airport: airport)

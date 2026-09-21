@@ -330,8 +330,6 @@ struct ChartListColumn: View {
     private func handleSelectionChange() {
         browser.chartQuery = ""
         guard let airport = selectedAirport else { return }
-        library.noteVisit(airportCode: airport.code)
-
         if airport.count(in: browser.category) == 0 {
             browser.category = airport.firstPopulatedCategory
         }

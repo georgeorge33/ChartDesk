@@ -7,7 +7,6 @@ import Foundation
 enum DefaultsKey {
     static let libraryBookmark = "libraryBookmark"
     static let pinnedCharts = "pinnedCharts"
-    static let recentAirports = "recentAirports"
     static let lastAirport = "lastAirport"
     static let lastChart = "lastChart"
     static let lastCategory = "lastCategory"
@@ -114,7 +113,6 @@ final class ChartLibrary: ObservableObject {
     /// Bumped after every completed scan, so views can react cheaply.
     @Published private(set) var scanID = 0
     @Published private(set) var pinnedIDs: Set<String> = []
-    @Published private(set) var recentAirportCodes: [String] = []
     @Published private(set) var categoryOverrides: [String: ChartCategory] = [:]
 
     /// How stale a chart set has to be before it is worth saying so. A LIDO cycle is 28 days,
@@ -136,7 +134,6 @@ final class ChartLibrary: ObservableObject {
 
     init() {
         pinnedIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedCharts) ?? [])
-        recentAirportCodes = defaults.stringArray(forKey: DefaultsKey.recentAirports) ?? []
         categoryOverrides = OverrideStore.load()
 
         if let url = BookmarkStore.restore() {
@@ -160,10 +157,6 @@ final class ChartLibrary: ObservableObject {
     func airport(code: String?) -> Airport? {
         guard let code = code else { return nil }
         return airports.first { $0.code == code }
-    }
-
-    var recentAirports: [Airport] {
-        recentAirportCodes.compactMap { code in airports.first { $0.code == code } }
     }
 
     var pinnedCharts: [Chart] {
@@ -280,16 +273,5 @@ final class ChartLibrary: ObservableObject {
         categoryOverrides = [:]
         OverrideStore.save(categoryOverrides)
         rescan()
-    }
-
-    // MARK: Recents
-
-    func noteVisit(airportCode: String) {
-        guard airportCode != Airport.unsortedCode else { return }
-        var codes = recentAirportCodes.filter { $0 != airportCode }
-        codes.insert(airportCode, at: 0)
-        if codes.count > 6 { codes = Array(codes.prefix(6)) }
-        recentAirportCodes = codes
-        defaults.set(codes, forKey: DefaultsKey.recentAirports)
     }
 }
