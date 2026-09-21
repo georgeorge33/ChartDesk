@@ -28,7 +28,7 @@ struct AppleMapLayer: NSViewRepresentable {
     var moved: (MKMapRect) -> Void
 
     func makeNSView(context: Context) -> MKMapView {
-        let view = MKMapView()
+        let view = ZoomingMapView()
         view.showsCompass = false
         view.showsScale = false
         view.showsZoomControls = false
@@ -79,6 +79,46 @@ struct AppleMapLayer: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(moved: moved) }
+
+    /// A map view where the wheel zooms instead of panning.
+    ///
+    /// MapKit's own answer to a scroll on the Mac is to slide the map, which is right for a
+    /// document and wrong for a map: every map anyone has used in a browser for twenty
+    /// years zooms on the wheel, and this one did too before the map view took the gestures
+    /// over. Dragging still pans, and pinching still zooms, because those are untouched.
+    private final class ZoomingMapView: MKMapView {
+
+        override func scrollWheel(with event: NSEvent) {
+            // A trackpad reports fine-grained deltas and a wheel reports notches; the
+            // notches have to be scaled up or a wheel click barely moves.
+            let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY
+                                                        : event.deltaY * 10
+            guard delta != 0 else { return }
+            let factor = 1 + delta * 0.006
+            guard factor > 0.1, factor < 10 else { return }
+
+            let cursor = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(cursor) else { return }
+
+            // Zoom about the middle, then slide back so that whatever was under the pointer
+            // is under it again. Done by asking the map what is there before and after
+            // rather than by arithmetic on the rectangle, because that way the view's own
+            // flipped-or-not coordinates are MapKit's problem and not this method's.
+            let before = convert(cursor, toCoordinateFrom: self)
+            let rect = visibleMapRect
+            let wide = rect.width / factor, high = rect.height / factor
+            setVisibleMapRect(MKMapRect(x: rect.midX - wide / 2, y: rect.midY - high / 2,
+                                        width: wide, height: high), animated: false)
+
+            let after = convert(cursor, toCoordinateFrom: self)
+            let wanted = MKMapPoint(before), landed = MKMapPoint(after)
+            let moved = visibleMapRect
+            setVisibleMapRect(MKMapRect(x: moved.minX + wanted.x - landed.x,
+                                        y: moved.minY + wanted.y - landed.y,
+                                        width: moved.width, height: moved.height),
+                              animated: false)
+        }
+    }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         /// What we last told the map to show, so its own reports can be told apart from
