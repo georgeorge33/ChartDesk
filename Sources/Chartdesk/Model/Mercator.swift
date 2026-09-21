@@ -49,6 +49,19 @@ struct MercatorProjection {
         originY = rect.minY * scale
     }
 
+    /// The projection an overlay renderer wants: straight into `MKMapPoint`.
+    ///
+    /// Measured against a real renderer — for an overlay bounding the world, `point(for:)`
+    /// is the identity, so a shape drawn in map points is a shape drawn correctly and
+    /// MapKit owns every transform after that. Which is the whole reason for going this
+    /// way: a thing MapKit transforms cannot come loose from the map MapKit is drawing.
+    init(mapPoints across: CGSize) {
+        worldWidth = MKMapSize.world.width
+        size = across
+        originX = 0
+        originY = 0
+    }
+
     /// What the map view should be showing for this camera.
     static func rect(centre: Coordinate, worldWidth: Double, in size: CGSize) -> MKMapRect {
         let world = MKMapSize.world.width
@@ -104,7 +117,9 @@ struct MercatorProjection {
 
     /// The copy of a world-x nearest the middle of the panel.
     private func nearestCopy(of x: Double) -> Double {
-        guard worldWidth > 0 else { return x }
+        // Drawing in map points: there is one world and no view to centre a copy on, so a
+        // coordinate keeps the x it has.
+        guard worldWidth > 0, originX != 0 || originY != 0 else { return x }
         let middle = Double(size.width) / 2
         let off = x - middle
         return middle + off - (off / worldWidth).rounded() * worldWidth

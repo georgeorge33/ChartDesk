@@ -73,7 +73,8 @@ struct RouteMapView: View {
             // is drawn against the rectangle it reports, so the chart follows the map rather
             // than the two being kept in step.
             AppleMapLayer(configuration: browser.baseMap.configuration,
-                          rect: $mapRect) { shown in
+                          rect: $mapRect,
+                          chart: chartFrame) { shown in
                 // One write each, and only where something changed. This runs on every
                 // frame the map moves, and each state change is a pass through the view
                 // body — four of them a frame is three redraws nobody asked for.
@@ -307,131 +308,11 @@ struct RouteMapView: View {
     private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
                               labels: inout [Label]) {
         guard drawsGroundLayout else { return }
-        // Every field on the sheet, not only the one nearest the middle. At twenty
-        // kilometres across a city's two airports are often both in view, and drawing one
-        // of them as a ground plan and the other as a bare strip at the same zoom looks
-        // like the map has broken rather than like a decision.
+        // The ground itself is MapKit's to draw now — it is registered to a photograph and
+        // has to move with it. What is left here is the writing on it, which is not: a
+        // place name a frame behind is a place name.
         for layout in nearbyLayouts(sheet) {
-            groundLayout(layout, in: &context, sheet: sheet, labels: &labels)
-        }
-    }
-
-    private func groundLayout(_ layout: AirportLayout, in context: inout GraphicsContext,
-                              sheet: MapSheet, labels: inout [Label]) {
-        // Metres to points, which is what turns a width tag into a line you can see.
-        let perMetre = Double(camera.worldWidth) / 40_075_017
-
-        // The tarmac, but only where there is none underneath. Over imagery the pavement is
-        // already in the picture and painting grey over it hides the very thing you chose
-        // that base map to see — so there, only the markings are drawn.
-        if !showsAppleMap {
-            for apron in layout.aprons where sheet.mayShow(apron.cap) {
-                let path = sheet.path(ring: MapShape(directions: apron.directions,
-                                                     cap: apron.cap))
-                guard !path.isEmpty else { continue }
-                context.fill(path, with: .color(Color(nsColor: Theme.apron)))
-            }
-            // Where somebody has drawn the outline of the tarmac, that is the tarmac.
-            // Taxiway outlines go down here with the rest of the taxiway surface; the
-            // runway's own wait for the runway, which is drawn over everything that
-            // crosses it.
-            pavement(.taxiway, of: layout, in: &context, sheet: sheet)
-            // Every surface wide first, so one taxiway's tarmac cannot paint over its
-            // neighbour's centreline. Skipped where the outline above is the real thing:
-            // inflating the line by its width tag would only put a fatter, wronger shape
-            // on top of a measured one.
-            for way in layout.taxiways where !way.paved && sheet.mayShow(way.cap) {
-                let line = sheet.path(curve: way.directions)
-                guard !line.isEmpty else { continue }
-                context.stroke(line, with: .color(Color(nsColor: Theme.taxiway)),
-                               style: StrokeStyle(lineWidth: max(way.width * perMetre, 1),
-                                                  lineCap: .round, lineJoin: .round))
-            }
-        }
-
-        // The runway, the way a ground chart draws one: the paved strip where there is no
-        // photograph of it, a white line down each edge, and the broken line down the middle.
-        // The edges are drawn whatever the base map is — over imagery they are what tell you
-        // where the pavement stops, which a photograph taken at dusk does not.
-        let marking = Color(nsColor: Theme.runwayMarking)
-        if !showsAppleMap { pavement(.runway, of: layout, in: &context, sheet: sheet) }
-        for way in layout.runways where sheet.mayShow(way.cap) {
-            let wide = max(way.width * perMetre, 2)
-            let line = sheet.path(straight: way.directions)
-            guard !line.isEmpty else { continue }
-            if !showsAppleMap && !way.paved {
-                context.stroke(line, with: .color(Color(nsColor: Theme.runwayAsphalt)),
-                               style: StrokeStyle(lineWidth: wide, lineCap: .butt))
-            }
-            guard wide > 4 else { continue }        // too narrow to have sides yet
-            for edge in way.edges {
-                let side = sheet.path(straight: edge)
-                guard !side.isEmpty else { continue }
-                context.stroke(side, with: .color(marking.opacity(0.85)),
-                               style: StrokeStyle(lineWidth: min(max(wide * 0.05, 0.7), 1.6)))
-            }
-            // The piano keys, which are what say "runway" before any number is legible.
-            guard wide > 10 else { continue }
-            for bar in way.keys {
-                let stripe = sheet.path(straight: bar)
-                guard !stripe.isEmpty else { continue }
-                context.stroke(stripe, with: .color(marking),
-                               style: StrokeStyle(lineWidth: max(2.5 * perMetre, 1),
-                                                  lineCap: .butt))
-            }
-        }
-
-        // Then the markings.
-        //
-        // Only on the movement area. A taxilane is the lead into a stand on the apron, and
-        // the yellow line down it is not the line a clearance is read from — painting it
-        // the same as a taxiway makes the ramp look like somewhere you would be told to go.
-        let centreline = max(1, min(2.5, 6 * perMetre))
-        for way in layout.taxiways where way.isMovementArea && sheet.mayShow(way.cap) {
-            let line = sheet.path(curve: way.directions)
-            guard !line.isEmpty else { continue }
-            context.stroke(line, with: .color(Color(nsColor: Theme.taxiLine)),
-                           style: StrokeStyle(lineWidth: centreline, lineCap: .round,
-                                              lineJoin: .round))
-        }
-        for way in layout.runways where sheet.mayShow(way.cap) {
-            let line = sheet.path(straight: way.directions)
-            guard !line.isEmpty else { continue }
-            // Thirty metres of paint and twenty of gap, which is what is on the ground —
-            // and measured in metres rather than in points, so a dash stays on the same
-            // piece of tarmac as you zoom instead of sliding along the runway.
-            context.stroke(line, with: .color(Color(nsColor: Theme.runwayMarking)),
-                           style: StrokeStyle(lineWidth: centreline,
-                                              dash: [max(30 * perMetre, 2),
-                                                     max(20 * perMetre, 1.5)]))
-        }
-
-        // Where you stop and wait: the bar painted across the taxiway, square to it.
-        for hold in layout.holds where hold.across.count == 2 {
-            guard sheet.projection.faces(hold.direction) else { continue }
-            let bar = sheet.path(line: hold.across)
-            guard !bar.isEmpty else { continue }
-            context.stroke(bar, with: .color(Color(nsColor: Theme.holdShort)),
-                           style: StrokeStyle(lineWidth: max(centreline * 1.6, 1.5),
-                                              lineCap: .butt))
-        }
-
-        layoutLabels(layout, sheet: sheet, labels: &labels)
-    }
-
-    /// Fills the pavement of one kind that OpenStreetMap has the outline of.
-    ///
-    /// Drawn in two passes rather than one so the layering survives: a runway is painted
-    /// over every taxiway that meets it, which is both what a ground chart does and what
-    /// the inflated centrelines this replaces already did.
-    private func pavement(_ surface: AirportSurface, of layout: AirportLayout,
-                          in context: inout GraphicsContext, sheet: MapSheet) {
-        let colour = Color(nsColor: surface == .runway ? Theme.runwayAsphalt : Theme.taxiway)
-        for slab in layout.pavement
-        where (slab.surface == .runway) == (surface == .runway) && sheet.mayShow(slab.cap) {
-            let path = sheet.path(ring: MapShape(directions: slab.directions, cap: slab.cap))
-            guard !path.isEmpty else { continue }
-            context.fill(path, with: .color(colour))
+            layoutLabels(layout, sheet: sheet, labels: &labels)
         }
     }
 
@@ -1025,6 +906,23 @@ struct RouteMapView: View {
         found.append("OurAirports · airports and runways")
         if showsAppleMap { found.append(contentsOf: browser.baseMap.attribution) }
         return found
+    }
+
+    /// What MapKit should draw for us, inside its own pass.
+    ///
+    /// Only the ground: it is the layer registered to a photograph, so it is the one where
+    /// being a frame behind shows as a taxiway off the tarmac. The rest is still drawn on
+    /// the canvas above, where a frame of lag on a place name costs nothing.
+    private var chartFrame: ChartFrame {
+        ChartFrame(layouts: drawsGroundLayout ? held : [],
+                   showsGroundLayout: drawsGroundLayout,
+                   overAppleMap: showsAppleMap)
+    }
+
+    /// Every layout in hand. The renderer culls them itself against whatever rectangle
+    /// MapKit hands it, which is not the same rectangle as the view.
+    private var held: [AirportLayout] {
+        ground.layouts.values.sorted { $0.icao < $1.icao }
     }
 
     /// Works out what to fetch, once the map has stopped moving.

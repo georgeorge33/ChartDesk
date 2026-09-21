@@ -21,6 +21,21 @@ struct MapSheet {
         panel = CGRect(origin: .zero, size: size).insetBy(dx: -padding, dy: -padding)
     }
 
+    /// For drawing inside MapKit, where the coordinate space is `MKMapPoint` itself.
+    ///
+    /// No camera and no view size: an overlay renderer is handed a rectangle of the world
+    /// and draws that, and MapKit applies the transform. The panel is that rectangle, so
+    /// the same clipping that kept a continent from costing eighty thousand points on the
+    /// canvas keeps it from costing them here.
+    init(mapRect: MKMapRect, padding: Double) {
+        projection = MercatorProjection(mapPoints: CGSize(width: MKMapSize.world.width,
+                                                          height: MKMapSize.world.height))
+        size = CGSize(width: mapRect.width, height: mapRect.height)
+        panel = CGRect(x: mapRect.minX, y: mapRect.minY,
+                       width: mapRect.width, height: mapRect.height)
+            .insetBy(dx: -padding, dy: -padding)
+    }
+
     /// Built from what the map view is actually showing, which is the only way an overlay
     /// lands on its own base rather than near it.
     init(rect: MKMapRect, size: CGSize, padding: CGFloat = 4) {

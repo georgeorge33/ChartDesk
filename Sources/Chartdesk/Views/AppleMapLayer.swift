@@ -24,6 +24,8 @@ struct AppleMapLayer: NSViewRepresentable {
     var configuration: MKMapConfiguration?
     /// Where the map is looking. Written when something other than a gesture moves it.
     @Binding var rect: MKMapRect
+    /// What the chart renderer should draw, inside the map rather than over it.
+    var chart: ChartFrame
     /// Called whenever the user moves it, so the layers above can be redrawn.
     var moved: (MKMapRect) -> Void
 
@@ -47,11 +49,22 @@ struct AppleMapLayer: NSViewRepresentable {
         view.setVisibleMapRect(rect, animated: false)
         context.coordinator.showing = rect
         view.delegate = context.coordinator
+        // The chart, as something MapKit draws. Added after the delegate, which is what
+        // hands back the renderer for it.
+        context.coordinator.chart.frame = chart
+        context.coordinator.stamp = chart.stamp
+        view.addOverlay(context.coordinator.overlay, level: .aboveLabels)
         return view
     }
 
     func updateNSView(_ view: MKMapView, context: Context) {
         apply(configuration, to: view)
+        // Only when it would draw differently: setting it marks the overlay dirty, and the
+        // map view calls update on every frame it moves.
+        if context.coordinator.stamp != chart.stamp {
+            context.coordinator.stamp = chart.stamp
+            context.coordinator.chart.frame = chart
+        }
         // Only when something else moved it. Writing back the rectangle the map just told
         // us about would fight the gesture that produced it.
         guard !MKMapRectEqualToRect(context.coordinator.showing, rect) else { return }
@@ -124,9 +137,16 @@ struct AppleMapLayer: NSViewRepresentable {
         /// What we last told the map to show, so its own reports can be told apart from
         /// ours and the two do not chase each other.
         var showing = MKMapRect.world
+        let overlay = ChartOverlay()
+        lazy var chart = ChartRenderer(overlay: overlay)
+        var stamp = ""
         private let moved: (MKMapRect) -> Void
 
         init(moved: @escaping (MKMapRect) -> Void) { self.moved = moved }
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            chart
+        }
 
         /// Every frame of a pan or a zoom, not just the end of one. That is the whole point
         /// — the layers over the map have to move with it rather than catch up afterwards.
