@@ -1,18 +1,12 @@
 # Data in Chartdesk
 
-Chartdesk draws on several public datasets. Most are public domain; the coastline, the
-airspace and the layouts are not, and those come with obligations rather than
+Chartdesk draws on several public datasets. Most are public domain; the airport layouts,
+the airspace and Apple's maps are not, and those come with obligations rather than
 courtesies.
 
 ## OpenStreetMap — ODbL 1.0
 
-**What:** `Resources/land-osm.txt`, the simplified coastline, built by
-`Tools/make_coastline.py` from
-[osmdata.openstreetmap.de](https://osmdata.openstreetmap.de/data/land-polygons.html). The
-optional full coastline, built by the same script into Application Support, is from the same
-source.
-
-Also `~/Library/Application Support/Chartdesk/layouts/ICAO.json`: each airport's runways,
+**What:** `~/Library/Application Support/Chartdesk/layouts/ICAO.json`: each airport's runways,
 taxiways and aprons, fetched from the [Overpass API](https://overpass-api.de/) the first time
 you zoom into that airport, or ahead of time by `Tools/make_layouts.py`. Overpass is a free,
 shared, community-run service, so the app asks it for one airport at a time, writes the
@@ -23,21 +17,21 @@ answer to disk, and never asks twice.
 **What that requires of this app, and where it is done:**
 
 - **Attribution.** "© OpenStreetMap contributors" has to be shown wherever the data is drawn.
-  The map's readout carries it, and the Layers panel says the same under its note about where
-  the coast comes from.
-- **Share-alike.** Those tables are a Derived Database, so they are offered under ODbL too —
+  The map's credits carry it, and the Layers panel says the same beside the airport layout.
+- **Share-alike.** Those files are a Derived Database, so they are offered under ODbL too —
   not under whatever terms the rest of this app carries. Take them and the same conditions
   follow you.
 
-This is the coastline now — there is no longer a choice of one. Natural Earth still draws the
-two zoomed-out tiers, which have no OpenStreetMap equivalent, and still provides every lake
-and every border.
+OpenStreetMap's coastline used to be here too, behind a drawn base map. That map is gone —
+both bases are Apple's now, and Apple draws its own coast — so the land tables and
+`Tools/make_coastline.py` went with it.
 
 ## Natural Earth — public domain
 
-`Resources/land-*.txt`, `lakes-*.txt`, `borders-*.txt` at 1:110m, 1:50m and 1:10m, plus
-`states.txt` (internal borders) and `cities.txt` (towns, with Natural Earth's own scale rank),
-all built by `Tools/make_mapdata.py`. [naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/)
+`Resources/borders-*.txt` at 1:110m, 1:50m and 1:10m, plus `states.txt` (internal borders)
+and `cities.txt` (towns, with Natural Earth's own scale rank), all built by
+`Tools/make_mapdata.py`. These are drawn over Apple's imagery, which has no frontiers and no
+names on it; over Apple's own map they are held back, because it draws its own. [naturalearthdata.com](https://www.naturalearthdata.com/about/terms-of-use/)
 places these in the public domain, with no attribution required. It is credited anyway, in the
 headers of the tables and in the release notes.
 

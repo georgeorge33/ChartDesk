@@ -27,10 +27,6 @@ enum Theme {
     static let accentText       = rgb(0x30B8F0)
     /// Backdrop behind a chart, and the sea on the map.
     static let canvas           = rgb(0x000810)
-    /// Map land. Lifted well clear of the sea: at the old panel colour the coast was a guess.
-    static let land             = rgb(0x14243A)
-    /// Map coastline.
-    static let coast            = rgb(0x2E4A68)
     /// Altitude and speed restrictions, which on an Airbus display are magenta and nothing
     /// else is: on an F-PLN page only the constrained fix's figures are magenta, and that is
     /// exactly what makes the colour worth reading.
@@ -58,15 +54,11 @@ enum Theme {
     /// Prohibited, restricted and danger areas: red, because they are the one thing on this
     /// layer that is about staying out rather than talking to someone.
     static let airspaceDanger   = rgb(0xD9534F)
-    /// The airport's own ground, at the closest zoom there is: tarmac, and the lines
-    /// painted on it. Taxiway centrelines are yellow on every airfield on earth.
-    static let taxiway         = rgb(0x5C6874)
-    /// Asphalt, and darker than the concrete beside it, which is what tells a runway from a
-    /// taxiway before you have read a single number.
-    static let runwayAsphalt   = rgb(0x22272E)
+    /// The lines painted on the airport's own ground, at the closest zoom there is. The
+    /// tarmac under them is Apple's photograph, so the only colours left here are paint:
+    /// taxiway centrelines are yellow on every airfield on earth.
     static let runwayMarking   = rgb(0xF2F4F7)
     static let taxiLine        = rgb(0xE8C33A)
-    static let apron           = rgb(0x4A5561)
     /// The bar you hold short at, and the stand you park on. Magenta is what a ground chart
     /// paints a holding position in.
     static let holdShort       = rgb(0xE05AC8)

@@ -86,10 +86,6 @@ enum MapDetail: Int, CaseIterable, Comparable, CustomStringConvertible {
     static let fineFrom: CGFloat = 12_000
     /// Runways start to be longer than a few points at about 2.5° across.
     static let runwaysFrom: CGFloat = 120_000
-    /// And below about 5° across, the full OpenStreetMap coastline takes over from the
-    /// simplified one — where it is on hand. Not sooner: at a wider view it would mean reading
-    /// hundreds of one-degree cells to draw a coast the simplified table already draws well.
-    static let fullFrom: CGFloat = 65_000
 
     static func matching(worldWidth: CGFloat) -> MapDetail {
         if worldWidth >= fineFrom { return .fine }
@@ -102,8 +98,6 @@ enum MapDetail: Int, CaseIterable, Comparable, CustomStringConvertible {
 /// border puts the frontier in the sea.
 struct Geography {
     let detail: MapDetail
-    let land: [MapShape]
-    let lakes: [MapShape]
     let borders: [MapShape]
 }
 
@@ -160,24 +154,14 @@ enum WorldData {
         return airports[icao.uppercased()]
     }
 
-    /// Reads one tier off disk. Costs tens of milliseconds for the deepest one, so this is
-    /// called from `MapGeography` on a background queue rather than during a draw.
+    /// Reads one tier off disk, on `MapGeography`'s background queue rather than during a
+    /// draw.
     ///
-    /// Only the deepest level's *land* is OpenStreetMap's. Lakes and borders stay Natural
-    /// Earth: OpenStreetMap's coastline is the coast and nothing else — its download holds no
-    /// lakes and no frontiers — so the alternative to a slightly coarser lake beside a finer
-    /// coast is no lake at all.
+    /// Frontiers and nothing else, now that both base maps are Apple's: the land and the
+    /// lakes were the drawn map, and Apple draws its own coast. A border is the one thing
+    /// imagery cannot show you, which is why this tier is still read at all.
     nonisolated static func geography(_ detail: MapDetail) -> Geography {
-        return Geography(detail: detail,
-                         land: shapes(landTable(for: detail)),
-                         lakes: shapes("lakes-\(detail.scale)"),
-                         borders: shapes("borders-\(detail.scale)"))
-    }
-
-    /// Which land table a tier draws from: OpenStreetMap's for the deepest, Natural Earth's
-    /// for the two above it, which have no OpenStreetMap equivalent and need none.
-    nonisolated static func landTable(for detail: MapDetail) -> String {
-        detail == .fine ? Coastline.deepestLandTable : "land-\(detail.scale)"
+        Geography(detail: detail, borders: shapes("borders-\(detail.scale)"))
     }
 
     // MARK: - Loading

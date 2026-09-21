@@ -31,8 +31,6 @@ final class ChartOverlay: NSObject, MKOverlay {
 struct ChartFrame {
     var layouts: [AirportLayout] = []
     var showsGroundLayout = false
-    /// True over Apple's own map, where the tarmac is already in the picture.
-    var overAppleMap = false
     /// Stands are hundreds of numbers at a big field, and only worth the room at the very
     /// closest zooms.
     var showsStands = false
@@ -40,7 +38,7 @@ struct ChartFrame {
     /// What would make the drawing different. Compared instead of the layouts themselves,
     /// which are thousands of points each and are only ever swapped whole.
     var stamp: String {
-        "\(showsGroundLayout)\(overAppleMap)\(showsStands)"
+        "\(showsGroundLayout)\(showsStands)"
             + layouts.map(\.icao).joined(separator: ",")
     }
 }
@@ -199,28 +197,12 @@ final class ChartRenderer: MKOverlayRenderer {
         let metre = MKMapSize.world.width / (40_075_017 * max(cos(latitude), 0.02))
         let wide = { (metres: Double) in metres * metre }
 
-        if !frame.overAppleMap {
-            for apron in layout.aprons where sheet.mayShow(apron.cap) {
-                chart.fill(sheet.path(ring: MapShape(directions: apron.directions,
-                                                     cap: apron.cap)), Theme.apron)
-            }
-            for slab in layout.pavement where sheet.mayShow(slab.cap) {
-                let colour = slab.surface == .runway ? Theme.runwayAsphalt : Theme.taxiway
-                chart.fill(sheet.path(ring: MapShape(directions: slab.directions,
-                                                     cap: slab.cap)), colour)
-            }
-            for way in layout.taxiways
-            where way.isMovementArea && !way.paved && sheet.mayShow(way.cap) {
-                chart.stroke(sheet.path(curve: way.directions), Theme.taxiway,
-                             width: wide(way.width), cap: .round, join: .round)
-            }
-        }
-
+        // Only the markings. Both base maps are Apple's now and both already have the
+        // tarmac in the picture, so filling aprons and pavement over them would be
+        // painting grey over the thing you chose the base map to see. The aprons and the
+        // pavement are still parsed and still cached — nothing about the fetched layout
+        // changed — there is simply nowhere left that wants them drawn.
         for way in layout.runways where sheet.mayShow(way.cap) {
-            if !frame.overAppleMap && !way.paved {
-                chart.stroke(sheet.path(straight: way.directions), Theme.runwayAsphalt,
-                             width: wide(way.width), cap: .butt)
-            }
             for edge in way.edges {
                 chart.stroke(sheet.path(straight: edge), Theme.runwayMarking.withAlphaComponent(0.85),
                              width: chart.screen(1.4))

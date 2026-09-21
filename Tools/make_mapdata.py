@@ -4,6 +4,11 @@
     python3 Tools/make_mapdata.py path/to/sources
 
 Writes Resources/{land,lakes,borders}-{110,50,10}.txt, airports.txt and runway-ends.txt.
+
+Only the borders, airports and runways are bundled now: the land and the lakes were the
+drawn base map, and that went when both bases became Apple's, which draw their own coast.
+They are still written because the lake rings are cut out of the land rings and the two
+fall out of the same pass — the app simply does not copy them in.
 Every source is public domain: Natural Earth for the geography, OurAirports for the fields
 and the runways. The sources wanted in that directory, all under their published names:
 

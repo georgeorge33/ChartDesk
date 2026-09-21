@@ -10,7 +10,6 @@ import SwiftUI
 struct MapLayerPanel: View {
 
     @EnvironmentObject private var browser: BrowserState
-    @ObservedObject private var coastline = CoastlineStore.shared
     @ObservedObject private var openAIP = OpenAIPStore.shared
     @ObservedObject private var ground = AirportLayoutStore.shared
 
@@ -23,19 +22,17 @@ struct MapLayerPanel: View {
                 ForEach(BaseMap.allCases) { layer in
                     baseChoice(layer)
                 }
-                if browser.baseMap.needsNetwork {
-                    Text("Drawn by MapKit itself, which is why it pans and zooms the way "
-                         + "the Maps app does. It needs the network: Apple does not permit "
-                         + "an app to keep a copy of what it draws.")
+                Text("Both are Apple's, and both need the network every time: Apple "
+                     + "does not permit an app to keep a copy of what it draws. Your "
+                     + "charts do not — they are files on this Mac.")
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Apple asks to be credited and asks for a link to the notices. The map
+                // carries the credit; this is the link.
+                if let legal = browser.baseMap.legal {
+                    Link("Legal notices for \(browser.baseMap.name)", destination: legal)
                         .font(.ngSmall)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    // Both of these ask to be credited, and one of them asks for a link to
-                    // who its data came from. The map carries the credit; this is the link.
-                    if let legal = browser.baseMap.legal {
-                        Link("Legal notices for \(browser.baseMap.name)", destination: legal)
-                            .font(.ngSmall)
-                    }
                 }
             }
 
@@ -79,29 +76,6 @@ struct MapLayerPanel: View {
                           detail: "As many as there is room for, the largest first.")
             }
 
-            Divider().overlay(Color.ngSeparator)
-
-            // No choice of coastline any more, but it still has to say whose it is and it
-            // still has to say when the detailed half of it is missing.
-            VStack(alignment: .leading, spacing: 4) {
-                Text("The coast is OpenStreetMap's: simplified in the app, and in full from "
-                     + "about 5° across where the full table is on this Mac. Lakes and "
-                     + "borders stay Natural Earth — OpenStreetMap's download is the coast "
-                     + "and nothing else.")
-                    .font(.ngSmall)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(Coastline.attribution + " · " + Coastline.licence)
-                    .font(.ngSmall)
-                    .foregroundStyle(.tertiary)
-                if !coastline.isInstalled {
-                    Text("The full coastline is not on this Mac, so the simplified one draws "
-                         + "all the way in. Build it with Tools/make_coastline.py.")
-                        .font(.ngSmall)
-                        .foregroundStyle(Color.ngWarning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
         }
         .padding(16)
         .frame(width: 340)
@@ -165,16 +139,9 @@ struct MapLayerPanel: View {
                 Image(systemName: picked ? "largecircle.fill.circle" : "circle")
                     .foregroundStyle(picked ? Color.ngAccentText : .secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Text(layer.name)
-                            .font(.ngSmallMedium)
-                            .foregroundStyle(.primary)
-                        if layer.isAppleMaps {
-                            Image(systemName: "apple.logo")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
+                    Text(layer.name)
+                        .font(.ngSmallMedium)
+                        .foregroundStyle(.primary)
                     Text(layer.detail)
                         .font(.ngSmall)
                         .foregroundStyle(.secondary)

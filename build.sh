@@ -273,12 +273,11 @@ else
 	warn "Resources/runways.txt missing — runway menus will fall back to 01-36"
 fi
 
-# The map's geography, at each level of detail, plus airport and runway positions. The
-# geography is one file per layer per tier: the map reads the tier its zoom calls for.
-for TABLE in land-110 lakes-110 borders-110 \
-             land-50 lakes-50 borders-50 \
-             land-10 lakes-10 borders-10 \
-             land-osm states cities \
+# Frontiers at each level of detail, plus state lines, towns, and airport and runway
+# positions. The land and the lakes went with the drawn base map: the base is Apple's now
+# and draws its own coast, and a frontier is the one thing its imagery cannot show you.
+for TABLE in borders-110 borders-50 borders-10 \
+             states cities \
              airports runway-ends; do
 	if [ -f "Resources/${TABLE}.txt" ]; then
 		cp "Resources/${TABLE}.txt" "${CONTENTS}/Resources/${TABLE}.txt"

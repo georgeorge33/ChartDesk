@@ -21,8 +21,6 @@ struct RouteMapView: View {
     /// Whichever levels of detail have been read. Shared, not owned: shutting the panel and
     /// opening it again should not mean reading the world in again.
     @ObservedObject private var geography = MapGeography.shared
-    /// The full coastline, when it is on this Mac and the zoom calls for it.
-    @ObservedObject private var coastline = CoastlineStore.shared
     /// Whether openAIP's table is on this Mac, which decides whether it can be drawn.
     @ObservedObject private var openAIP = OpenAIPStore.shared
     /// Apple Maps, when the base map is one of its two.
@@ -122,7 +120,6 @@ struct RouteMapView: View {
             geography.request(.coarse)
             geography.request(camera.detail)
             if camera.showsRunways { geography.requestRunways() }
-            requestCells()
             openAIP.refresh()
             requestLayers()
             keepFlightLayouts()
@@ -135,15 +132,9 @@ struct RouteMapView: View {
         .onChange(of: camera.detail) { _, detail in
             geography.request(detail)
         }
-        // Panning and zooming both change which cells of the full coastline are in view. The
-        // request is idempotent and skips whatever is already read, so asking on every step
-        // of a drag costs a set lookup.
+        // Which airports are near enough to be worth a layout changes with the camera,
+        // and working that out is not something to do on every frame of a drag.
         .onChange(of: camera) { _, _ in settle() }
-        // The first ask for a cell only starts the index reading — fifteen megabytes of it,
-        // off the main thread — and returns. Without this the cells were not asked for again
-        // until something else moved the camera, so choosing full detail and sitting still
-        // drew the simplified coast and said "OSM full" while doing it.
-        .onChange(of: coastline.isReady) { _, _ in requestCells() }
         .onChange(of: camera.showsRunways) { _, shows in
             if shows { geography.requestRunways() }
         }
@@ -196,62 +187,9 @@ struct RouteMapView: View {
         // photograph instead of on it.
         let sheet = MapSheet(rect: mapRect, size: size)
 
-        // The sea is simply what is behind everything, now the map is flat. On a globe it
-        // was a disc that had to be drawn; a rectangle needs no drawing, and where Apple's
-        // map is showing there is a photograph of the sea there already.
-        if browser.baseMap == .vector {
-            context.fill(Path(CGRect(origin: .zero, size: size)),
-                         with: .color(Color(nsColor: Theme.canvas)))
-        }
-
-        // Land, then the lakes cut back out of it, then borders — all from the one level of
-        // detail, since a 1:10m coast beside a 1:50m border puts the frontier out at sea.
-        //
-        // Only for the drawn map. It used to be drawn under the tiles and hidden by them,
-        // but the map view sits underneath now, and a grey Natural Earth landmass painted
-        // over Apple's own coastline is exactly as wrong as it sounds.
-        if browser.baseMap == .vector, let world = geography.best(for: camera.detail) {
-            // Where the full coastline has arrived, the bundled one is held back — clipped
-            // out, cell by cell. Drawing both was wrong: they disagree, and the bundled fill
-            // stayed visible wherever it claimed land the finer one does not, which is a
-            // permanently wrong shape rather than the momentary hole it was meant to avoid.
-            let full = showsFullCoastline ? sheet.coastlineCells() : []
-            let covered = full.isEmpty ? Path() : arrived(full, sheet: sheet)
-            var beneath = context
-            // Only when there is something to hold back. Clipping to the inverse of an empty
-            // path ought to mean "everywhere", but that is not a thing to take on trust when
-            // being wrong about it means a map with no land on it.
-            if !covered.isEmpty {
-                beneath.clip(to: covered, options: .inverse)
-            }
-            fill(world.land, colour: Color(nsColor: Theme.land),
-                 stroke: Color(nsColor: Theme.coast), width: 0.7,
-                 in: &beneath, sheet: sheet)
-
-            if !full.isEmpty {
-                // Filled and not outlined, unlike every other layer. The full coastline comes
-                // cut into pieces on a whole-degree grid so that no single polygon is enormous,
-                // and those cuts run through the middle of the land: 3,130 perfectly straight
-                // segments sitting on whole degrees, in a sample of one piece in forty.
-                // Stroked, they draw as coastline — which is the grid of straight lines that
-                // appeared across the land close in. The edge between land and sea is the edge
-                // between two fills and needs no line of its own.
-                fill(coastline.shapes(in: full),
-                     colour: Color(nsColor: Theme.land),
-                     stroke: .clear, width: 0,
-                     in: &context, sheet: sheet)
-            }
-
-            fill(world.lakes, colour: Color(nsColor: Theme.canvas),
-                 stroke: Color(nsColor: Theme.coast).opacity(0.8), width: 0.5,
-                 in: &context, sheet: sheet)
-
-        }
-
-
-        // Frontiers on top of it — under the imagery they would be invisible, and a border
-        // is the one thing imagery cannot show you. Not over Apple's own map, which draws
-        // its own: two sets of frontiers a pixel apart is worse than either alone.
+        // Frontiers, which are the one thing a photograph cannot show you. Not over
+        // Apple's own map, which draws its own: two sets of frontiers a pixel apart is
+        // worse than either alone.
         if !appleDrawsPlaces, let world = geography.best(for: camera.detail) {
             for shape in world.borders where sheet.mayShow(shape.cap) {
                 context.stroke(sheet.path(line: shape.directions),
@@ -260,8 +198,7 @@ struct RouteMapView: View {
             }
         }
 
-        // State and province borders, fainter than a frontier between countries. Outside the
-        // block above because they are a layer of their own and do not wait on a coastline.
+        // State and province borders, fainter than a frontier between countries.
         if browser.showsStateBorders, !appleDrawsPlaces,
            camera.worldWidth >= MapLayerRoom.statesFrom {
             for shape in geography.states where sheet.mayShow(shape.cap) {
@@ -286,17 +223,6 @@ struct RouteMapView: View {
             route(in: &context, sheet: sheet, labels: &labels)
         }
         place(labels, in: &context, size: size)
-    }
-
-    private func fill(_ shapes: [MapShape], colour: Color, stroke: Color, width: CGFloat,
-                      in context: inout GraphicsContext, sheet: MapSheet) {
-        for shape in shapes where sheet.mayShow(shape.cap) {
-            let path = sheet.path(ring: shape)
-            guard !path.isEmpty else { continue }
-            context.fill(path, with: .color(colour))
-            guard width > 0 else { continue }
-            context.stroke(path, with: .color(stroke), lineWidth: width)
-        }
     }
 
     /// The airport's ground plan: aprons, taxiways and runways, the way a ground chart
@@ -646,35 +572,6 @@ struct RouteMapView: View {
                             anchor: .top))
     }
 
-    /// True when the zoom is close enough for the full coastline to be worth reading, and it
-    /// is on this Mac.
-    private var showsFullCoastline: Bool {
-        camera.worldWidth >= MapDetail.fullFrom && coastline.isReady
-    }
-
-    /// The parts of the view the full coastline has arrived for.
-    ///
-    /// A degree is a small thing at the zoom this runs at, so four corners describe a cell
-    /// closely enough. Neighbouring cells share their edges exactly, so the union of them has
-    /// no seam for the coast underneath to show through.
-    private func arrived(_ wanted: [CoastlineCell], sheet: MapSheet) -> Path {
-        var path = Path()
-        for cell in wanted where coastline.holds(cell) {
-            let west = Double(cell.longitude), east = west + 1
-            let south = Double(cell.latitude), north = south + 1
-            let corners = [Coordinate(latitude: south, longitude: west),
-                           Coordinate(latitude: north, longitude: west),
-                           Coordinate(latitude: north, longitude: east),
-                           Coordinate(latitude: south, longitude: east)]
-                .map { sheet.point($0) }
-
-            path.move(to: corners[0])
-            for corner in corners.dropFirst() { path.addLine(to: corner) }
-            path.closeSubpath()
-        }
-        return path
-    }
-
     /// Asks for whichever layer tables are switched on.
     private func requestLayers() {
         if browser.showsAirspace { geography.requestAirspace() }
@@ -694,12 +591,6 @@ struct RouteMapView: View {
         let fields = (plan?.airfields ?? []).compactMap { WorldData.airport($0.icao) }
         guard !fields.isEmpty else { return }
         ground.alwaysKeep(fields)
-    }
-
-    /// Asks for the cells of the full coastline the view covers.
-    private func requestCells() {
-        guard camera.worldWidth >= MapDetail.fullFrom, size.width > 0 else { return }
-        coastline.request(MapSheet(camera: camera, size: size).coastlineCells())
     }
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }
@@ -821,19 +712,14 @@ struct RouteMapView: View {
     /// are required — OpenStreetMap's by ODbL, openAIP's by CC BY-NC — and the other two are
     /// not, and are here because a map should say where it came from.
     private var credits: [String] {
-        // Under Apple's imagery the drawn coast is there but invisible, and a credit for
-        // something nobody can see is clutter rather than honesty.
         var found: [String] = []
-        if !showsAppleMap {
-            found.append("\(Coastline.attribution) · \(Coastline.licence)")
-        }
-        found.append("Natural Earth · lakes, borders, places")
+        found.append("Natural Earth · borders and places")
         if browser.showsAirspace, !geography.airspace.isEmpty,
            !browser.airspaceClasses.isEmpty, camera.worldWidth >= MapLayerRoom.airspaceFrom {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
         found.append("OurAirports · airports and runways")
-        if showsAppleMap { found.append(contentsOf: browser.baseMap.attribution) }
+        found.append(contentsOf: browser.baseMap.attribution)
         return found
     }
 
@@ -845,7 +731,6 @@ struct RouteMapView: View {
     private var chartFrame: ChartFrame {
         ChartFrame(layouts: drawsGroundLayout ? held : [],
                    showsGroundLayout: drawsGroundLayout,
-                   overAppleMap: showsAppleMap,
                    showsStands: camera.worldWidth >= MapLayerRoom.standsFrom)
     }
 
@@ -872,7 +757,6 @@ struct RouteMapView: View {
         settling = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
-            requestCells()
             requestLayers()
         }
     }
@@ -881,15 +765,9 @@ struct RouteMapView: View {
     /// state lines and town names on it.
     ///
     /// Everything this app draws that Apple also draws is held back there. Not over the
-    /// imagery — a photograph has no borders and no names, so those are exactly what it
-    /// needs from us — and not over the drawn map, which has nothing else.
+    /// imagery: a photograph has no borders and no names, so those are exactly what it
+    /// needs from us.
     private var appleDrawsPlaces: Bool { browser.baseMap == .appleMap }
-
-    /// True when either of Apple's maps is under everything, which is when the ground
-    /// layout stops painting tarmac it would be covering a photograph with.
-    private var showsAppleMap: Bool {
-        browser.baseMap.needsNetwork
-    }
 
     private var credit: some View {
         VStack(alignment: .trailing, spacing: 1) {
@@ -925,20 +803,9 @@ struct RouteMapView: View {
         .allowsHitTesting(false)
     }
 
-    /// Where the map is looking, how wide, and which of the three worlds it is drawing —
-    /// so that the tier is something you can see rather than infer. An ellipsis while a finer
-    /// one is still being read.
+    /// Where the map is looking, how wide, and which of the two it is looking through.
     private var readout: String {
-        // Which map you are looking at, which under imagery is not the coastline tier.
-        if showsAppleMap { return "\(across) across · \(position) · \(browser.baseMap.name)" }
-        var tier = showsFullCoastline ? "OSM full" : "\(camera.detail)"
-        if geography.isCatchingUp(to: camera.detail) {
-            tier += " …"
-        } else if showsFullCoastline, size.width > 0 {
-            let wanted = MapSheet(camera: camera, size: size).coastlineCells()
-            if !wanted.allSatisfy(coastline.holds) { tier += " …" }
-        }
-        return "\(across) across · \(position) · \(tier)"
+        "\(across) across · \(position) · \(browser.baseMap.name)"
     }
 
     /// How wide the view is, in whatever unit says something at this zoom.
