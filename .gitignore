@@ -5,3 +5,8 @@ build/
 .idea/
 __pycache__/
 .peek-in-progress
+
+# Stray renders from the terrain harnesses, which write to whatever directory they run in.
+/alps.png
+/woergl.png
+/grandcanyon.png
