@@ -1,9 +1,12 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.3
+// @version      4.4
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
+// @homepageURL  https://github.com/georgeorge33/ChartDesk
+// @updateURL    https://raw.githubusercontent.com/georgeorge33/ChartDesk/main/Tools/planner-chart-download.user.js
+// @downloadURL  https://raw.githubusercontent.com/georgeorge33/ChartDesk/main/Tools/planner-chart-download.user.js
 // @connect      foxtrotatlasprod.blob.core.windows.net
 // @connect      blob.core.windows.net
 // @grant        GM_download
