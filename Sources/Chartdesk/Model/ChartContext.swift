@@ -52,7 +52,7 @@ struct ChartContext {
     /// the screen however far in the map is.
     struct Label {
         let text: String
-        var size: Double = 9
+        var size: Double = 11
         var bold: Bool = true
         var colour: NSColor
         /// Filled behind it, the way a ground chart writes a taxiway's letter.

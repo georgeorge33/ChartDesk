@@ -53,6 +53,22 @@ final class ChartRenderer: MKOverlayRenderer {
         didSet { setNeedsDisplay() }
     }
 
+    /// How many map points go to one point on the screen, as the map view is actually
+    /// showing it.
+    ///
+    /// Not `1 / zoomScale`, which is what an overlay renderer is handed and which is
+    /// quantised to powers of two: MapKit rasterises a tile at the level below and scales
+    /// the result up until the next level is reached. A line asked to be two points thick
+    /// therefore grew to nearly four before snapping back, and so did the writing, which
+    /// is what made the letters breathe with the zoom. The map view is asked for the real
+    /// figure instead, and the drawing is sized by that.
+    ///
+    /// Snapped to a per cent by whoever sets it, so that the frame's writing is not thrown
+    /// away and worked out again over a hair of movement.
+    var page: Double = 0 {
+        didSet { if page != oldValue { setNeedsDisplay() } }
+    }
+
     /// The last settled writing, and the lock over it: tiles are drawn on MapKit's own
     /// queue, and more than one of them at a time.
     private var decided: (key: String, writing: [Placed])?
@@ -62,7 +78,7 @@ final class ChartRenderer: MKOverlayRenderer {
         guard frame.showsGroundLayout, !frame.layouts.isEmpty else { return }
         // Map points to the screen point: what a line width has to be divided by to come
         // out the same thickness however far in you are.
-        let scale = 1 / Double(zoomScale)
+        let scale = page > 0 ? page : 1 / Double(zoomScale)
         let chart = ChartContext(cg: context, mapPointsPerScreenPoint: scale)
         let sheet = MapSheet(mapRect: mapRect, padding: 64 * scale)
 
@@ -72,7 +88,7 @@ final class ChartRenderer: MKOverlayRenderer {
 
         // Last, so that it goes over every airport's tarmac rather than each field's
         // writing being buried by the next field's concrete.
-        for placed in writing(at: zoomScale, in: chart)
+        for placed in writing(at: scale, in: chart)
         where sheet.panel.intersects(placed.room) {
             chart.draw(placed.label)
         }
@@ -104,8 +120,8 @@ final class ChartRenderer: MKOverlayRenderer {
     /// only their size on the page changes with the scale, so panning cannot move them
     /// relative to one another: the answer is the same for every tile at a given zoom, and
     /// worth keeping until the zoom or the layouts change.
-    private func writing(at zoomScale: MKZoomScale, in chart: ChartContext) -> [Placed] {
-        let key = "\(frame.stamp)|\(zoomScale)"
+    private func writing(at scale: Double, in chart: ChartContext) -> [Placed] {
+        let key = "\(frame.stamp)|\(scale)"
         settled.lock()
         defer { settled.unlock() }
         if let decided, decided.key == key { return decided.writing }
@@ -118,7 +134,7 @@ final class ChartRenderer: MKOverlayRenderer {
         }
 
         var placed: [Placed] = []
-        let air = 2 / Double(zoomScale)
+        let air = 2 * scale
         // How far apart two of the same letter have to be. A designator repeated along its
         // own taxiway is how a ground chart reads; three of them inside a hundred metres is
         // not. OpenStreetMap splits one taxiway into as many ways as its tags change, and
@@ -162,7 +178,7 @@ final class ChartRenderer: MKOverlayRenderer {
         }
         guard frame.showsStands else { return }
         for stand in layout.stands where !stand.ref.isEmpty {
-            found.append(ChartContext.Label(text: stand.ref, size: 8, bold: false,
+            found.append(ChartContext.Label(text: stand.ref, size: 9, bold: false,
                                             colour: Theme.stand,
                                             at: sheet.projection.point(stand.direction)))
         }

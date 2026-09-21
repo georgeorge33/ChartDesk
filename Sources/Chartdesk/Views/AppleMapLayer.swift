@@ -59,6 +59,9 @@ struct AppleMapLayer: NSViewRepresentable {
 
     func updateNSView(_ view: MKMapView, context: Context) {
         apply(configuration, to: view)
+        // The view has a size by now, which it did not when it was made, so this is where
+        // the renderer first learns how big a point on the screen is.
+        context.coordinator.measure(view)
         // Only when it would draw differently: setting it marks the overlay dirty, and the
         // map view calls update on every frame it moves.
         if context.coordinator.stamp != chart.stamp {
@@ -152,9 +155,23 @@ struct AppleMapLayer: NSViewRepresentable {
         /// — the layers over the map have to move with it rather than catch up afterwards.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             let shown = mapView.visibleMapRect
+            measure(mapView)
             guard !MKMapRectEqualToRect(shown, showing) else { return }
             showing = shown
             moved(shown)
+        }
+
+        /// Tell the renderer how big a screen point is, in the map's own units.
+        ///
+        /// Snapped to a per cent: the figure moves by a hair on every frame of a pan, and
+        /// setting it marks the overlay dirty. A per cent is past seeing and leaves a pan
+        /// costing nothing, while a zoom — which is the thing that used to make the
+        /// writing swell — lands on a new value and redraws once.
+        func measure(_ mapView: MKMapView) {
+            let across = mapView.bounds.width
+            guard across > 0 else { return }
+            let scale = mapView.visibleMapRect.width / Double(across)
+            chart.page = (scale * 100).rounded() / 100
         }
     }
 }
