@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0-rc.4
+## 1.2.0-rc.5
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
 
@@ -97,6 +97,15 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
   request that takes a second or two and is then good for minutes. Choosing the airport is
   the honest signal that you are interested in it. Turning the weather off still stops it;
   that is what the switch is for.
+- **A window restored bigger than the screen is pulled back onto it.** macOS hands back the
+  frame it saved whether or not it still fits, and this window is usually the full height of
+  the usable area, so very little has to change for it to stop fitting — the Dock coming out
+  of hiding, a display with a different notch, a second monitor that has gone. The frame came
+  back as it was, the bottom stayed put, and the title bar ended up above the top of the
+  screen where it could not be dragged down. Checked at launch and whenever the screens
+  change; only windows that do not fit are touched.
+- **The Recent airports section is gone** from the sidebar, and the machinery behind it with
+  it. The sidebar goes from Route Map to Airports.
 
 **The base map**
 
