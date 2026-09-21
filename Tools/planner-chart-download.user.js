@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.2
+// @version      4.3
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @connect      foxtrotatlasprod.blob.core.windows.net
@@ -103,7 +103,10 @@
                               'ROUTE', 'WIND', 'FUEL', 'TIME', 'DATE', 'NAME', 'TYPE',
                               // Four letters, and all over a chart list. Without these a
                               // sweep could file a whole airport's charts under RNAV.
-                              'RNAV', 'STAR', 'MISC', 'TAXI', 'APCH', 'AREA', 'SIDS']);
+                              'RNAV', 'STAR', 'MISC', 'TAXI', 'APCH', 'AREA', 'SIDS',
+                              // The provider control, and the map's own attribution line:
+                              // "Powered By MapLibre, Data © OpenStreetMap, LIDO".
+                              'LIDO', 'DATA', 'JEPP']);
 
     /** Short pieces of visible text, which is where a chart's name would be if anywhere. */
     function visibleText() {
@@ -448,6 +451,19 @@
     const TAB_LABEL = /^[A-Za-z]{3,12}$/;
 
     /**
+     * The Chart Provider control, which is two buttons of the same shape as a tab and labelled
+     * in four letters and three. A sweep must not mistake either for a category: clicking FAA
+     * halfway through would finish the airport in the other provider's charts, and the library
+     * holds one or the other, never a mixture.
+     */
+    const SOURCE_LABELS = /^(LIDO|FAA|JEPP|JEPPESEN|NAVBLUE)$/i;
+
+    function providerButtons() {
+        return [...document.querySelectorAll('button[aria-pressed]')]
+            .filter((button) => SOURCE_LABELS.test((button.textContent || '').trim()));
+    }
+
+    /**
      * The category strip: DEPARTURE, ARRIVAL, APPROACH, AIRPORT, MISC. Every one of them
      * carries the underline that marks the selected tab, which is what tells them apart from
      * the runway filter alongside — the same size and shape, but with neither underline nor
@@ -460,9 +476,38 @@
      * though it were a tab of its own.
      */
     function categoryTabs() {
-        return [...document.querySelectorAll('button')].filter((button) =>
-            /border-b-(msfs|transparent)\b/.test(String(button.className || ''))
-            && TAB_LABEL.test((button.textContent || '').trim()));
+        return [...document.querySelectorAll('button')].filter((button) => {
+            const label = (button.textContent || '').trim();
+            return /border-b-(msfs|transparent)\b/.test(String(button.className || ''))
+                && TAB_LABEL.test(label)
+                && !SOURCE_LABELS.test(label);
+        });
+    }
+
+    /**
+     * Puts the viewer on Lido before a sweep begins, because the library holds Lido charts and
+     * a run that started on FAA would fill an airport with the other set under names this does
+     * not know how to make — the badges it reads for SID, STAR and the airport codes are Lido's.
+     *
+     * A missing control is not a failure. FAA charts exist for American airports and nowhere
+     * else, so at most of the world there is nothing to choose and nothing to put right.
+     */
+    async function useLido() {
+        const buttons = providerButtons();
+        if (!buttons.length) return true;
+
+        const lido = buttons.find((button) => /^LIDO$/i.test((button.textContent || '').trim()));
+        if (!lido) return true;
+        if (lido.getAttribute('aria-pressed') === 'true') return true;
+
+        toast('Switching to Lido charts…');
+        lido.click();
+        // The list is rebuilt from the other provider's charts, which takes a moment.
+        for (let waited = 0; waited < 5000; waited += 150) {
+            await wait(150);
+            if (lido.getAttribute('aria-pressed') === 'true') { await wait(400); return true; }
+        }
+        return false;
     }
 
     const isSelected = (tab) => /border-b-msfs\b/.test(String(tab.className || ''));
@@ -702,10 +747,21 @@
         const icao = await askIcao(currentIcao());
         if (!icao) return;
 
+        // Before anything is counted, because the provider decides what the whole sweep
+        // collects and a half-Lido, half-FAA airport is worse than no airport at all.
+        if (!(await useLido())) {
+            toast('Could not switch to Lido — nothing swept.');
+            return;
+        }
+
         sweeping = true;
         stopped = false;
         // Whatever is already on screen: the first chart opened has to be told apart from it.
         const already = new Set(candidates().map((entry) => entry.url));
+        // Names saved on this run. A chart reached twice is not worth fetching twice, and the
+        // second attempt would be the expensive kind of nothing: its plate is already known,
+        // so the wait for a new one runs its full length before giving up.
+        const done = new Set();
         const missed = [];
         let saved = 0;
 
@@ -724,6 +780,7 @@
 
                 for (const [index, name] of await collectRows()) {
                     if (stopped) break;
+                    if (done.has(name)) continue;
                     toast(category + ' · ' + name + ' · ' + saved + ' saved so far');
 
                     if (!(await openRow(index))) { missed.push(category + ' ' + name); continue; }
@@ -734,8 +791,12 @@
                     // them for the plate it is waiting on.
                     for (const entry of candidates()) already.add(entry.url);
 
-                    if (await download(chart.url, clean(icao + ' ' + name))) saved += 1;
-                    else missed.push(category + ' ' + name);
+                    if (await download(chart.url, clean(icao + ' ' + name))) {
+                        saved += 1;
+                        done.add(name);
+                    } else {
+                        missed.push(category + ' ' + name);
+                    }
                     await wait(GAP_MS);
                 }
             }
