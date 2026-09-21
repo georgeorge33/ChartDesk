@@ -94,6 +94,13 @@ enum Theme {
     /// muddy at caption sizes against this navy.
     static let warning          = rgb(0xFF5A5A)
 
+    /// The loaded flight: its legs, its fixes and the fields at either end.
+    ///
+    /// Magenta because that is what a flight-planned track is on every navigation display
+    /// and every chart that draws one — the accent blue it used to be is the colour of the
+    /// app's own furniture, and a route is not furniture.
+    static let route            = rgb(0xE04FD4)
+
     /// The four flight categories. Not a palette anyone gets to choose: green, blue, red and
     /// magenta are what every briefing map has meant by them for decades, and a chart using
     /// its own would be worse than one using none.

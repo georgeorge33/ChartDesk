@@ -803,7 +803,7 @@ struct RouteMapView: View {
         // Two passes so the enroute line and the procedure legs each read as one colour
         // rather than alternating down the route.
         for procedure in [false, true] {
-            let colour = procedure ? Color.orange : Color.ngAccentText
+            let colour = procedure ? Color.orange : Color(nsColor: Theme.route)
             let style = StrokeStyle(lineWidth: procedure ? 2.5 : 2,
                                     lineCap: .round, lineJoin: .round)
             for (index, waypoint) in waypoints.enumerated() where index > 0 {
@@ -829,7 +829,8 @@ struct RouteMapView: View {
             let point = sheet.point(coordinate)
             let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
             context.fill(Path(ellipseIn: dot),
-                         with: .color(waypoint.isProcedure ? Color.orange : Color.ngAccentText))
+                         with: .color(waypoint.isProcedure ? Color.orange
+                                                           : Color(nsColor: Theme.route)))
             if labelled {
                 labels.append(Label(text: Text(waypoint.ident)
                                         .font(.ngSmall)
@@ -850,7 +851,7 @@ struct RouteMapView: View {
               point.y > -20, point.y < sheet.size.height + 20 else { return }
 
         let onRoute = plan?.airfields.contains { $0.icao == airport.icao } ?? false
-        let colour = onRoute ? Color.ngAccentText : Color.secondary
+        let colour = onRoute ? Color(nsColor: Theme.route) : Color.secondary
         let box = CGRect(x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7)
         context.fill(Path(ellipseIn: box), with: .color(colour))
         context.stroke(Path(ellipseIn: box.insetBy(dx: -2, dy: -2)),
@@ -858,7 +859,8 @@ struct RouteMapView: View {
 
         labels.append(Label(text: Text(airport.icao)
                                 .font(.ngSmallBold)
-                                .foregroundStyle(onRoute ? Color.ngAccentText : Color.secondary),
+                                .foregroundStyle(onRoute ? Color(nsColor: Theme.route)
+                                                         : Color.secondary),
                             at: CGPoint(x: point.x, y: point.y + 8),
                             anchor: .top))
     }

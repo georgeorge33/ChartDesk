@@ -124,6 +124,12 @@ What this candidate adds to 1.1.0. Full release when it has been flown.
 - **The Recent airports section is gone** from the sidebar, and the machinery behind it with
   it. The sidebar goes from Route Map to Airports.
 
+- **The flight plan is drawn magenta** — its legs, its fixes and the fields at either end.
+  That is what a planned track is on every navigation display and every chart that draws
+  one; the accent blue it used to be is the colour of the app's own buttons and panels, and
+  a route is not furniture. SID and STAR legs stay orange, which is the distinction that
+  was already being made.
+
 **The base map**
 
 - **Apple's own map replaces Terrain.** Roads, place names and shaded relief, rendered by
