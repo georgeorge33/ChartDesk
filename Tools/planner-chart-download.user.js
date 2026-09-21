@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.4
+// @version      4.5
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @homepageURL  https://github.com/georgeorge33/ChartDesk
@@ -29,9 +29,13 @@
 // an airport's charts, so the only way to learn a chart's URL is to make the viewer open it —
 // which is why a sweep drives the interface rather than fetching a manifest.
 //
+// It counts before it fetches, walking every tab once to gather the whole list. That is what
+// lets it show a bar and a time remaining, and it costs no duplicated work: the rows are
+// collected in that pass instead of, rather than as well as, on the way past.
+//
 // The list is virtualised: rows are absolutely positioned inside a spacer and only those near
-// the viewport exist, so a sweep scrolls and collects as it goes, keyed by each row's
-// data-index. It clicks the button behind `img[alt="Preview chart"]` and waits for the image
+// the viewport exist, so the counting pass scrolls and collects as it goes, keyed by each
+// row's data-index. It clicks the button behind `img[alt="Preview chart"]` and waits for the image
 // to finish loading rather than for its src to change, because the src changes in about two
 // hundred milliseconds and the plate itself can take another second and a half.
 
@@ -181,7 +185,7 @@
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(href), 10000);
-        toast('Saved ' + name + ' (' + Math.round(blob.size / 1024) + ' KB)');
+        if (!sweeping) toast('Saved ' + name + ' (' + Math.round(blob.size / 1024) + ' KB)');
     }
 
     /** Last resort: the page's own fetch, which CORS may well refuse. */
@@ -219,7 +223,7 @@
                         url,
                         name: path,
                         saveAs: false,
-                        onload: () => { toast('Saved ' + path); resolve(true); },
+                        onload: () => { if (!sweeping) toast('Saved ' + path); resolve(true); },
                         onerror: (error) => {
                             const reason = (error && (error.error || error.details)) || 'failed';
                             toast('Could not save to ' + path + ' (' + reason + ')');
@@ -254,7 +258,7 @@
             }
             if (typeof GM_download === 'function') {
                 GM_download({ url, name, saveAs: false,
-                              onload: () => { toast('Saved ' + name); resolve(true); },
+                              onload: () => { if (!sweeping) toast('Saved ' + name); resolve(true); },
                               onerror: () => resolve(pageFetch(url, name)) });
                 return;
             }
@@ -737,6 +741,113 @@
         });
     }
 
+    // --- Showing how far along it is ---------------------------------------------------------
+
+    let panel = null;
+
+    function buildPanel() {
+        const shell = styled('div', [
+            // Above the page, and at the top where neither the toast nor the two launcher
+            // buttons in the bottom corner can be underneath it.
+            'position:fixed', 'top:18px', 'left:50%', 'transform:translateX(-50%)',
+            'z-index:2147483646', 'min-width:360px', 'max-width:70vw',
+            'padding:11px 14px 10px', 'border-radius:10px',
+            'background:rgba(8,16,32,.94)', 'color:#e8eef8',
+            'border:1px solid rgba(255,255,255,.10)',
+            'box-shadow:0 10px 34px rgba(0,0,0,.5)',
+            'font:13px/1.35 -apple-system,BlinkMacSystemFont,sans-serif',
+            'display:none'
+        ].join(';'));
+
+        const heading = styled('div', 'display:flex;gap:12px;align-items:baseline;');
+        const what = styled('div', 'flex:1;min-width:0;overflow:hidden;white-space:nowrap;'
+                                 + 'text-overflow:ellipsis;');
+        const count = styled('div', 'font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;'
+                                  + 'opacity:.8;');
+        heading.appendChild(what);
+        heading.appendChild(count);
+
+        const track = styled('div', 'margin:9px 0 7px;height:4px;border-radius:999px;'
+                                  + 'background:rgba(255,255,255,.14);overflow:hidden;');
+        const fill = styled('div', 'height:100%;width:0%;border-radius:999px;'
+                                 + 'background:' + ACCENT + ';transition:width .25s;');
+        track.appendChild(fill);
+
+        const footer = styled('div', 'display:flex;gap:12px;align-items:center;');
+        const eta = styled('div', 'flex:1;font-size:11.5px;opacity:.65;');
+        const stop = styled('button', [
+            'padding:3px 10px', 'border-radius:999px', 'cursor:pointer',
+            'border:1px solid rgba(255,255,255,.22)', 'background:transparent',
+            'color:#e8eef8', 'font:11.5px/1.5 inherit'
+        ].join(';'), 'Stop');
+        stop.addEventListener('click', () => {
+            stopped = true;
+            eta.textContent = 'stopping after this chart…';
+        });
+        footer.appendChild(eta);
+        footer.appendChild(stop);
+
+        shell.appendChild(heading);
+        shell.appendChild(track);
+        shell.appendChild(footer);
+        document.body.appendChild(shell);
+
+        panel = { shell, what, count, fill, eta };
+        return panel;
+    }
+
+    function showProgress(label, done, total, eta) {
+        if (!panel) buildPanel();
+        panel.shell.style.display = '';
+        panel.what.textContent = label;
+        panel.count.textContent = total ? done + ' / ' + total : '';
+        panel.fill.style.width = total ? Math.round((done / total) * 100) + '%' : '0%';
+        panel.eta.textContent = eta || '';
+    }
+
+    const hideProgress = () => { if (panel) panel.shell.style.display = 'none'; };
+
+    /**
+     * How much longer, from how long the charts so far have taken. Rough on purpose: a plate
+     * is anywhere between half a second and several, so the mean settles quickly but the
+     * spread around it never gets small. Past a minute and a half it says minutes, because a
+     * figure in seconds there would be precision the number does not have.
+     */
+    function remainingTime(startedAt, done, total) {
+        if (done < 2) return 'working out how long…';
+        const each = (performance.now() - startedAt) / done;
+        const left = Math.round((each * (total - done)) / 1000);
+        if (left <= 3) return 'nearly there';
+        if (left < 90) return 'about ' + Math.max(5, Math.round(left / 5) * 5) + 's left';
+        return 'about ' + Math.round(left / 60) + ' minutes left';
+    }
+
+    /**
+     * Every chart the airport holds, gathered tab by tab before a single one is fetched.
+     *
+     * A bar cannot be drawn without a total, and the total is not knowable while the sweep
+     * discovers each tab as it arrives at it. Doing the walk first costs a few seconds and no
+     * duplicated work — the rows are collected here instead of, not as well as, on the way
+     * past — and it means the run is planned before anything is written to disk.
+     */
+    async function plan() {
+        const wanted = [];
+        const categories = categoryTabs().map((tab) => (tab.textContent || '').trim());
+
+        for (const category of categories) {
+            if (stopped) break;
+            showProgress('Counting ' + category + '…', 0, 0, '');
+            const tab = categoryTabs().find((candidate) =>
+                (candidate.textContent || '').trim() === category);
+            if (!tab) continue;
+            if (!isSelected(tab)) { tab.click(); await wait(600); }
+            for (const [index, name] of await collectRows()) {
+                wanted.push({ category, index, name });
+            }
+        }
+        return wanted;
+    }
+
     let sweeping = false;
     let stopped = false;
 
@@ -769,42 +880,55 @@
         let saved = 0;
 
         try {
-            // Labels rather than elements: clicking a tab re-renders the strip, so a button
-            // held from before would be detached by the time its turn came and would take no
-            // click at all.
-            const categories = categoryTabs().map((tab) => (tab.textContent || '').trim());
+            const charts = await plan();
+            if (!charts.length) { toast('No charts found for ' + icao + '.'); return; }
 
-            for (const category of categories) {
+            const startedAt = performance.now();
+            let attempted = 0;
+            let showing = '';
+
+            for (const chart of charts) {
                 if (stopped) break;
-                const tab = categoryTabs().find((candidate) =>
-                    (candidate.textContent || '').trim() === category);
-                if (!tab) { missed.push(category + ' (tab went away)'); continue; }
-                if (!isSelected(tab)) { tab.click(); await wait(600); }
+                if (done.has(chart.name)) continue;
 
-                for (const [index, name] of await collectRows()) {
-                    if (stopped) break;
-                    if (done.has(name)) continue;
-                    toast(category + ' · ' + name + ' · ' + saved + ' saved so far');
-
-                    if (!(await openRow(index))) { missed.push(category + ' ' + name); continue; }
-                    const chart = await waitForChart(already);
-                    if (!chart) { missed.push(category + ' ' + name); continue; }
-
-                    // Both variants of this chart, so the next wait cannot mistake either of
-                    // them for the plate it is waiting on.
-                    for (const entry of candidates()) already.add(entry.url);
-
-                    if (await download(chart.url, clean(icao + ' ' + name))) {
-                        saved += 1;
-                        done.add(name);
-                    } else {
-                        missed.push(category + ' ' + name);
-                    }
-                    await wait(GAP_MS);
+                // Labels rather than elements: clicking a tab re-renders the strip, so a
+                // button held from the planning walk would be detached by now and would take
+                // no click at all.
+                if (chart.category !== showing) {
+                    const tab = categoryTabs().find((candidate) =>
+                        (candidate.textContent || '').trim() === chart.category);
+                    if (!tab) { missed.push(chart.category + ' (tab went away)'); continue; }
+                    if (!isSelected(tab)) { tab.click(); await wait(600); }
+                    showing = chart.category;
                 }
+
+                showProgress(icao + ' · ' + chart.category + ' · ' + chart.name,
+                             attempted, charts.length,
+                             remainingTime(startedAt, attempted, charts.length));
+                attempted += 1;
+
+                if (!(await openRow(chart.index))) {
+                    missed.push(chart.category + ' ' + chart.name);
+                    continue;
+                }
+                const plate = await waitForChart(already);
+                if (!plate) { missed.push(chart.category + ' ' + chart.name); continue; }
+
+                // Both variants of this chart, so the next wait cannot mistake either of
+                // them for the plate it is waiting on.
+                for (const entry of candidates()) already.add(entry.url);
+
+                if (await download(plate.url, clean(icao + ' ' + chart.name))) {
+                    saved += 1;
+                    done.add(chart.name);
+                } else {
+                    missed.push(chart.category + ' ' + chart.name);
+                }
+                await wait(GAP_MS);
             }
         } finally {
             sweeping = false;
+            hideProgress();
             toast('Swept ' + icao + ': ' + saved + ' saved'
                   + (missed.length ? ', ' + missed.length + ' missed' : '')
                   + (stopped ? ' (stopped)' : ''));
