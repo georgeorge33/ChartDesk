@@ -1,8 +1,11 @@
 # Changelog
 
-## 1.2.0-rc.10
+## 1.2.0-rc.11
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
+
+1.2.0-rc.10 was tagged and never built — the release build found two lines the runner's
+compiler would not take — so this is the same candidate, built.
 
 **Runways drawn like a ground chart**
 
