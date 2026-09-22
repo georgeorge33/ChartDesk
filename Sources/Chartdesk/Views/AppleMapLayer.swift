@@ -20,8 +20,8 @@ import SwiftUI
 /// same rectangle. Nothing has to be kept in step, because there is only one camera.
 struct AppleMapLayer: NSViewRepresentable {
 
-    /// Which of Apple's maps, or nothing to leave it blank for the drawn map.
-    var configuration: MKMapConfiguration?
+    /// Which of Apple's two maps.
+    var configuration: MKMapConfiguration
     /// Where the map is looking. Written when something other than a gesture moves it.
     @Binding var rect: MKMapRect
     /// What the chart renderer should draw, inside the map rather than over it.
@@ -79,16 +79,8 @@ struct AppleMapLayer: NSViewRepresentable {
         view.delegate = context.coordinator
     }
 
-    private func apply(_ wanted: MKMapConfiguration?, to view: MKMapView) {
-        // Never hidden, even for the drawn map, because a hidden view does not hit-test and
-        // the map view is what does the panning. For the drawn map the canvas simply paints
-        // over it, opaquely, and the map underneath is never seen.
-        //
-        // The cost of that is real and worth writing down: the drawn map is the layer that
-        // promises to work with the network off, and there is a map view behind it fetching
-        // tiles nobody will look at. Fixing it properly means a separate path for the drawn
-        // map that does its own panning, which is a second camera to keep in step.
-        guard let wanted else { return }
+    private func apply(_ wanted: MKMapConfiguration, to view: MKMapView) {
+        // Only when it is the other kind: setting it again reloads the map.
         if type(of: view.preferredConfiguration) != type(of: wanted) {
             view.preferredConfiguration = wanted
         }
