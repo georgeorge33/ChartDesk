@@ -16,6 +16,14 @@ struct ChartdeskApp: App {
     @StateObject private var importer = ImportController()
     @StateObject private var navdata = NavDataStore()
 
+    init() {
+        // Before anything is made: the probe draws a picture and quits, and none of the
+        // app's state should exist long enough to do anything.
+        #if DEBUG
+        RenderProbe.runIfAsked()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
