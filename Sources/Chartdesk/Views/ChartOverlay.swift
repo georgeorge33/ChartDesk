@@ -165,7 +165,8 @@ final class ChartRenderer: MKOverlayRenderer {
         for way in layout.runways where !way.ref.isEmpty {
             for (number, at) in AirportLayout.numbers(of: way) {
                 found.append(ChartContext.Label(text: number, colour: .white,
-                                                box: NSColor.black.withAlphaComponent(0.55),
+                                                box: NSColor.black.withAlphaComponent(0.85),
+                                                border: NSColor.white.withAlphaComponent(0.7),
                                                 at: sheet.projection.point(at)))
             }
         }
@@ -178,6 +179,7 @@ final class ChartRenderer: MKOverlayRenderer {
         for stand in layout.stands where !stand.ref.isEmpty {
             found.append(ChartContext.Label(text: stand.ref, size: 9, bold: false,
                                             colour: Theme.stand,
+                                            box: NSColor.black.withAlphaComponent(0.8),
                                             at: sheet.projection.point(stand.direction)))
         }
     }
