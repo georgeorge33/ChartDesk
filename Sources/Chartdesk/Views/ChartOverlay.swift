@@ -135,7 +135,7 @@ final class ChartRenderer: MKOverlayRenderer {
     // MARK: - Drawing
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
-        let (frame, page, view) = lock.withLock { (current, scale, shown) }
+        let (frame, page, view) = lock.withLock { (self.current, self.scale, self.shown) }
         // Map points to the screen point: what a line width has to be divided by to come
         // out the same thickness however far in you are.
         let scale = page > 0 ? page : 1 / Double(zoomScale)
@@ -404,7 +404,8 @@ final class ChartRenderer: MKOverlayRenderer {
                 // Only what could land in a tile. Tiles are only ever drawn inside the
                 // region, so a ring wholly outside it is one every tile would test and
                 // none would draw — which, kept worldwide, was fifteen thousand of them.
-                guard [0, world, -world].contains(where: {
+                let copies: [Double] = [0, world, -world]
+                guard copies.contains(where: {
                     bounds.offsetBy(dx: $0, dy: 0).intersects(region)
                 }) else { continue }
                 let style = stroke(of: space.klass)
@@ -519,9 +520,8 @@ final class ChartRenderer: MKOverlayRenderer {
     /// on the far side will find it.
     private static func shifts(of bounds: CGRect, in sheet: MapSheet) -> [Double] {
         let world = MKMapSize.world.width
-        return [0, world, -world].filter {
-            bounds.offsetBy(dx: $0, dy: 0).intersects(sheet.panel)
-        }
+        let copies: [Double] = [0, world, -world]
+        return copies.filter { bounds.offsetBy(dx: $0, dy: 0).intersects(sheet.panel) }
     }
 
     private static func box(_ points: [CGPoint]) -> CGRect {
