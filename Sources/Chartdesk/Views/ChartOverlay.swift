@@ -62,7 +62,9 @@ struct ChartFrame {
     var stamp: String {
         [
             "\(showsGroundLayout)\(showsStands)",
-            layouts.map(\.icao).joined(separator: ","),
+            // With how many ends each has: a layout topped up with its stopways comes back
+            // under the same ICAO, and by the ICAO alone it would never be drawn again.
+            layouts.map { "\($0.icao):\($0.ends.count)" }.joined(separator: ","),
             "\(airspace.count):\(airspace.first?.name ?? ""):\(airspace.last?.name ?? "")",
             airspaceKinds.map(\.rawValue).sorted().joined(),
             "\(runways.count):\(cities.count)",
@@ -682,6 +684,28 @@ final class ChartRenderer: MKOverlayRenderer {
         // number across the threshold. Everything painted is in metres, because it is
         // paint and should grow with the ground; the lines that are there to be seen
         // rather than to be to scale stay the same on the screen however far in you are.
+        // The ends that are not the runway proper, under it. A displaced stretch is runway
+        // concrete you may roll on but not land on, painted with arrows at the threshold
+        // instead of a centreline; a stopway or blast pad is concrete nobody should be on,
+        // painted with yellow chevrons pointing back at the runway.
+        for end in layout.ends where sheet.mayShow(end.cap) {
+            let outline = sheet.path(ring: MapShape(directions: end.outline, cap: end.cap))
+            chart.fill(outline, Theme.runwaySurface)
+            // The same faint edge as the runway's, or over the dark map it has none.
+            chart.stroke(outline, Theme.runwayMarking.withAlphaComponent(0.35),
+                         width: chart.screen(1))
+            let colour = end.kind == .pad ? Theme.taxiLine : Theme.runwayMarking
+            chart.clipped(to: outline) {
+                for mark in end.marks {
+                    // Round where it is a line to follow, so an arrow's head and a
+                    // chevron's apex meet in a point rather than a notch.
+                    chart.stroke(sheet.path(straight: mark.line), colour,
+                                 width: max(wide(mark.width), chart.screen(mark.least)),
+                                 cap: mark.least > 0 ? .round : .butt)
+                }
+            }
+        }
+
         for way in layout.runways where sheet.mayShow(way.cap) {
             if way.edges.count == 2 {
                 let outline = way.edges[0] + way.edges[1].reversed()

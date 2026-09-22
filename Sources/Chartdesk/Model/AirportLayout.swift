@@ -69,6 +69,27 @@ struct AirportLayout {
     struct Paint {
         let line: [SIMD3<Double>]
         let width: Double
+        /// And never thinner than this on the screen, in points. For paint that is a line
+        /// to be followed rather than a block to be seen — a centreline's arrows, a
+        /// chevron — which at its real width is a hairline at any zoom a chart is read at.
+        var least = 0.0
+    }
+
+    /// The ends of a runway that are not the runway proper.
+    ///
+    /// A displaced threshold's stretch is runway you may take off from and roll out on but
+    /// not land on, so it carries arrows pointing at the threshold where the centreline
+    /// would be. A stopway or a blast pad beyond the end is not for aeroplanes at all but
+    /// in an emergency, and carries yellow chevrons pointing back at the runway.
+    struct RunwayEnd {
+        enum Kind { case displaced, pad }
+        let kind: Kind
+        /// The concrete, as a closed ring.
+        let outline: [SIMD3<Double>]
+        /// Its paint: the threshold bar, arrowheads and arrows in white, or chevrons in
+        /// yellow.
+        let marks: [Paint]
+        let cap: SphericalCap
     }
 
     /// A runway number, painted on the runway rather than written beside it.
@@ -323,8 +344,11 @@ struct AirportLayout {
     /// where an aeroplane lines up to fly 140°, so it belongs at the end the way runs *from*
     /// on that heading.
     static func numbers(of way: Way) -> [(String, SIMD3<Double>)] {
-        let parts = way.ref.split(separator: "/").map(String.init)
-        guard parts.count == 2, let first = way.directions.first,
+        // "14L/32R" usually, "14L-32R" at some fields, and "18" alone for a runway used
+        // one way only, which has one number painted at one end.
+        let parts = way.ref.split(whereSeparator: { $0 == "/" || $0 == "-" })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard (1...2).contains(parts.count), let first = way.directions.first,
               let last = way.directions.last
         else { return [] }
 
@@ -350,6 +374,8 @@ struct AirportLayout {
     let pavement: [Pavement]
     let stands: [Stand]
     let holds: [Hold]
+    /// Displaced thresholds, stopways and blast pads.
+    let ends: [RunwayEnd]
     /// The field's own plane, kept so anything worked out later is worked out on it.
     let frame: AirportFrame
     /// When it was fetched, so the panel can say how old it is.
@@ -426,6 +452,12 @@ final class AirportLayoutStore: ObservableObject {
     private var queued: [MapAirport] = []
     /// The flight's own fields, wanted whatever the map is showing.
     private var pinned: [MapAirport] = []
+    /// Layouts on disk from before the query asked for stopways and blast pads, waiting
+    /// for those two to be fetched on their own. After any whole airport, so a top-up
+    /// never holds up a field that has nothing at all yet; once per airport per run.
+    private var topping: [MapAirport] = []
+    private var toppedUp: Set<String> = []
+    private var toppingUp = false
 
     /// The mirrors, in order. The main instance is the busiest.
     private static let endpoints = [
@@ -452,6 +484,28 @@ final class AirportLayoutStore: ObservableObject {
     nonisolated static func file(for icao: String) -> URL {
         directory.appendingPathComponent("\(icao.uppercased()).json")
     }
+
+    /// Written into every answer saved from the query that asks for stopways and blast
+    /// pads, so an answer from before it can be told apart. Overpass's own JSON has no
+    /// room for a note like this, and an extra key at the top is ignored by everything
+    /// that reads it.
+    nonisolated static let completeKey = "chartdeskQuery"
+    nonisolated static let completeness = 2
+
+    nonisolated static func isComplete(_ data: Data) -> Bool {
+        guard let top = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return (top[completeKey] as? Int ?? 0) >= completeness
+    }
+
+    nonisolated static func marked(_ data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return data }
+        top[completeKey] = completeness
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
+    }
+
+    nonisolated static let userAgent = "Chartdesk/1.1 (+https://github.com/georgeorge33/ChartDesk)"
 
     func layout(for icao: String) -> AirportLayout? { layouts[icao.uppercased()] }
 
@@ -564,7 +618,8 @@ final class AirportLayoutStore: ObservableObject {
 
     /// Takes the next one off the queue, unless one is already on its way.
     private func start() {
-        guard fetching == nil, !queued.isEmpty else { return }
+        guard fetching == nil, !toppingUp else { return }
+        guard !queued.isEmpty else { return topUp() }
         let airport = queued.removeFirst()
         let icao = airport.icao.uppercased()
         guard !isHeld(icao) else { return start() }
@@ -573,6 +628,9 @@ final class AirportLayoutStore: ObservableObject {
         if let onDisk = try? Data(contentsOf: Self.file(for: icao)),
            let layout = Self.parse(onDisk, icao: icao) {
             layouts[icao] = layout
+            // Drawn as it is straight away, and its stopways asked for when the queue
+            // is quiet.
+            if !Self.isComplete(onDisk), !toppedUp.contains(icao) { topping.append(airport) }
             return start()
         }
 
@@ -597,6 +655,87 @@ final class AirportLayoutStore: ObservableObject {
         }
     }
 
+    /// The next layout that is missing its stopways and blast pads, if any.
+    private func topUp() {
+        guard !topping.isEmpty else { return }
+        let airport = topping.removeFirst()
+        let icao = airport.icao.uppercased()
+        guard toppedUp.insert(icao).inserted else { return topUp() }
+        toppingUp = true
+        let where_ = airport.coordinate
+        Task.detached(priority: .utility) {
+            let merged = await Self.fetchEnds(icao: icao, at: where_)
+            await MainActor.run {
+                self.toppingUp = false
+                if let merged, let layout = Self.parse(merged, icao: icao) {
+                    self.layouts[icao] = layout
+                }
+                self.start()
+            }
+        }
+    }
+
+    /// Stopways and blast pads for a layout saved before the query asked for them,
+    /// merged into what is on disk and written back marked complete.
+    ///
+    /// Those two tags rather than the whole airport again. Nothing else in the answer has
+    /// changed, and asking a free, shared server for every taxiway on a field to find its
+    /// four stopways is minutes of its time for seconds of news. An airport with none is
+    /// marked complete all the same, so it is not asked again.
+    private static func fetchEnds(icao: String, at where_: Coordinate) async -> Data? {
+        guard let onDisk = try? Data(contentsOf: file(for: icao)),
+              var top = try? JSONSerialization.jsonObject(with: onDisk) as? [String: Any],
+              let elements = top["elements"] as? [[String: Any]]
+        else { return nil }
+        for endpoint in endpoints {
+            guard let url = URL(string: endpoint) else { continue }
+            var request = URLRequest(url: url, timeoutInterval: 60)
+            request.httpMethod = "POST"
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            request.httpBody = endsQuery(icao: icao, at: where_).data(using: .utf8)
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  remark(in: data) == nil,
+                  let answer = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let found = answer["elements"] as? [[String: Any]]
+            else { continue }
+            // An empty answer is only news if the server knows the field. The Swiss mirror
+            // holds Switzerland and answers everywhere else with a perfectly good nothing,
+            // which taken at its word would mark Heathrow as having no stopways for good.
+            // So the aerodrome comes back too, and an answer with neither it nor a stopway
+            // in it proves nothing and is not kept.
+            let ends = found.filter {
+                (($0["tags"] as? [String: Any])?["aeroway"] as? String) != "aerodrome"
+            }
+            guard ends.count < found.count || !ends.isEmpty else { continue }
+            top["elements"] = elements + ends
+            top[completeKey] = completeness
+            guard let merged = try? JSONSerialization.data(withJSONObject: top) else { return nil }
+            try? merged.write(to: file(for: icao), options: .atomic)
+            return merged
+        }
+        return nil
+    }
+
+    /// Only the stopways and blast pads, for a layout that has everything else.
+    nonisolated static func endsQuery(icao: String, at where_: Coordinate) -> String {
+        let around = "(around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)))"
+        return """
+        [out:json][timeout:60];
+        (
+          way["aeroway"="aerodrome"]["icao"="\(icao)"];
+          relation["aeroway"="aerodrome"]["icao"="\(icao)"];
+        )->.field;
+        .field map_to_area->.apt;
+        (
+          way["aeroway"~"^(stopway|blast_pad)$"](area.apt);
+          way["aeroway"~"^(stopway|blast_pad)$"]\(around);
+        );
+        out geom;
+        .field out tags;
+        """
+    }
+
     /// What came back, or why nothing did.
     enum Answer {
         case arrived(AirportLayout)
@@ -610,8 +749,7 @@ final class AirportLayoutStore: ObservableObject {
             guard let url = URL(string: endpoint) else { continue }
             var request = URLRequest(url: url, timeoutInterval: 90)
             request.httpMethod = "POST"
-            request.setValue("Chartdesk/1.1 (+https://github.com/georgeorge33/ChartDesk)",
-                             forHTTPHeaderField: "User-Agent")
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             request.httpBody = query(icao: icao, at: where_).data(using: .utf8)
 
             do {
@@ -631,7 +769,7 @@ final class AirportLayoutStore: ObservableObject {
                 }
                 try? FileManager.default.createDirectory(at: directory,
                                                          withIntermediateDirectories: true)
-                try? data.write(to: file(for: icao))
+                try? marked(data).write(to: file(for: icao))
                 return .arrived(layout)
             } catch {
                 last = error.localizedDescription
@@ -653,8 +791,8 @@ final class AirportLayoutStore: ObservableObject {
         );
         map_to_area->.apt;
         (
-          way["aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
-          way["aeroway"~"^(runway|taxiway|taxilane|apron)$"]\
+          way["aeroway"~"^(runway|taxiway|taxilane|apron|stopway|blast_pad)$"](area.apt);
+          way["aeroway"~"^(runway|taxiway|taxilane|apron|stopway|blast_pad)$"]\
         (around:4000,\(figure(where_.latitude)),\(figure(where_.longitude)));
           way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"](area.apt);
           way["area:aeroway"~"^(runway|taxiway|taxilane|apron)$"]\
@@ -697,6 +835,8 @@ final class AirportLayoutStore: ObservableObject {
         var pavement: [AirportLayout.Pavement] = []
         var stands: [AirportLayout.Stand] = []
         var holdPoints: [(ref: String, direction: SIMD3<Double>)] = []
+        var displaced: [AirportLayout.Way] = []
+        var pads: [AirportLayout.Way] = []
         var seen = Set<String>()
 
         for element in elements {
@@ -740,6 +880,33 @@ final class AirportLayoutStore: ObservableObject {
                 } else {
                     holdPoints.append((ref, at))
                 }
+                continue
+            }
+
+            // The ends of a runway that are not the runway proper. Kept apart before
+            // anything is joined: a displaced threshold's stretch often carries no ref
+            // and was drawn as a little runway of its own, piano keys at both ends, and
+            // where it does carry the runway's ref it was chained on, which put the
+            // threshold's paint at the end of the concrete instead of at the threshold.
+            let role = tags["runway"] as? String
+            let isPad = kind == "stopway" || kind == "blast_pad"
+                || (kind == "runway" && (role == "stopway" || role == "blast_pad"))
+            let isDisplaced = kind == "runway" && role == "displaced_threshold"
+            if isPad || isDisplaced {
+                guard outline == nil,
+                      let geometry = element["geometry"] as? [[String: Any]] else { continue }
+                let line: [SIMD3<Double>] = geometry.compactMap { point in
+                    guard let latitude = point["lat"] as? Double,
+                          let longitude = point["lon"] as? Double else { return nil }
+                    return Coordinate(latitude: latitude, longitude: longitude).direction
+                }
+                guard line.count >= 2 else { continue }
+                // No width of its own means the runway's, which is found when it is
+                // matched to one.
+                let width = (tags["width"] as? String).flatMap(metres) ?? 0
+                let way = AirportLayout.Way(ref: ref, width: width, directions: line,
+                                            cap: SphericalCap(line), surface: .runway)
+                if isPad { pads.append(way) } else { displaced.append(way) }
                 continue
             }
 
@@ -793,6 +960,12 @@ final class AirportLayoutStore: ObservableObject {
         let frame = AirportFrame(covering: runways.flatMap(\.directions)
                                     + taxiways.flatMap(\.directions))
 
+        // Displaced stretches, chained where they were split, and any that meet no runway
+        // taken back as runway.
+        let found = attached(chained(displaced), to: runways, in: frame)
+        let sections = found.attached
+        if !found.orphans.isEmpty { runways = joined(runways + found.orphans) }
+
         // The outlines in metres, once. Asking whether a centreline has its pavement drawn
         // is then a ray cast rather than a reprojection per test.
         let rings = pavement.map { (isRunway: $0.surface == .runway, cap: $0.cap,
@@ -833,9 +1006,230 @@ final class AirportLayoutStore: ObservableObject {
         }
 
         let holds = bars(for: holdPoints, along: taxied + paved, in: frame)
+        let ends = runwayEnds(displaced: sections, pads: pads, runways: runways, in: frame)
         return AirportLayout(icao: icao, runways: paved, taxiways: taxied,
                              aprons: aprons, pavement: pavement, stands: stands,
-                             holds: holds, frame: frame, fetched: Date())
+                             holds: holds, ends: ends, frame: frame, fetched: Date())
+    }
+
+    /// Each displaced threshold and pad, matched to the runway end it belongs to and
+    /// painted.
+    ///
+    /// Matched by where it meets a runway: a displaced stretch shares the threshold's node
+    /// with the runway proper, and a pad starts where the runway, or its displaced
+    /// stretch, stops. One that meets nothing is left out — without knowing which end is
+    /// the runway's, there is no knowing which way its arrows or chevrons point.
+    nonisolated static func runwayEnds(displaced: [AirportLayout.Way],
+                                       pads: [AirportLayout.Way],
+                                       runways: [AirportLayout.Way],
+                                       in frame: AirportFrame) -> [AirportLayout.RunwayEnd] {
+        typealias End = (at: SIMD2<Double>, width: Double)
+        var ends: [End] = []
+        for way in runways {
+            let line = way.directions.map(frame.plane)
+            guard let first = line.first, let last = line.last, line.count >= 2 else { continue }
+            ends.append((first, way.width))
+            ends.append((last, way.width))
+        }
+
+        // Which of a way's two ends is within reach of one of these, and that one.
+        func meeting(_ line: [SIMD2<Double>], _ ends: [End], within reach: Double)
+        -> (end: End, first: Bool)? {
+            guard let head = line.first, let tail = line.last else { return nil }
+            var best: (end: End, first: Bool, distance: Double)?
+            for end in ends {
+                for (point, first) in [(head, true), (tail, false)] {
+                    let distance = simd_distance(point, end.at)
+                    if distance <= reach, distance < (best?.distance ?? .infinity) {
+                        best = (end, first, distance)
+                    }
+                }
+            }
+            return best.map { ($0.end, $0.first) }
+        }
+
+        var out: [AirportLayout.RunwayEnd] = []
+        var beyond: [End] = []   // the outer ends of displaced stretches, where a pad starts
+        for way in displaced {
+            let line = way.directions.map(frame.plane)
+            guard let (end, first) = meeting(line, ends, within: 15) else { continue }
+            // Running from the outer end to the threshold.
+            let towards = first ? Array(line.reversed()) : line
+            let width = way.width > 0 ? way.width : end.width
+            out.append(displacedEnd(towards, width: width, in: frame))
+            beyond.append((towards[0], width))
+        }
+        for way in pads {
+            let line = way.directions.map(frame.plane)
+            guard let (end, first) = meeting(line, ends + beyond, within: 30) else { continue }
+            // Running from the runway's end outwards.
+            let outwards = first ? line : Array(line.reversed())
+            let width = way.width > 0 ? way.width : end.width
+            out.append(padEnd(outwards, width: width, in: frame))
+        }
+        return out
+    }
+
+    /// A displaced threshold's stretch, painted the FAA's way: a threshold bar across the
+    /// runway at the threshold, a row of arrowheads just before it, and arrows down the
+    /// middle pointing at it where the centreline would be — a stretch you may roll on but
+    /// not land on. `line` runs from the outer end to the threshold.
+    nonisolated private static func displacedEnd(_ line: [SIMD2<Double>], width: Double,
+                                     in frame: AirportFrame) -> AirportLayout.RunwayEnd {
+        let ring = band(line, width: width).map(frame.globe)
+        let threshold = line[line.count - 1]
+        let forward = simd_normalize(threshold - line[line.count - 2])
+        let side = SIMD2(-forward.y, forward.x)
+        let half = width / 2
+        var marks: [AirportLayout.Paint] = []
+
+        // The bar: three metres of white across the full width, on this side of the line.
+        marks.append(AirportLayout.Paint(
+            line: [frame.globe(threshold - forward * 1.5 - side * half),
+                   frame.globe(threshold - forward * 1.5 + side * half)], width: 3))
+
+        // A row of arrowheads, each a V pointing at the bar.
+        let heads = max(2, Int(width * 0.8 / 11))
+        for index in 0..<heads {
+            let across = ((Double(index) + 0.5) / Double(heads) - 0.5) * width * 0.8
+            let apex = threshold - forward * 6 + side * across
+            for sign in [-1.0, 1.0] {
+                marks.append(AirportLayout.Paint(
+                    line: [frame.globe(apex - forward * 5 + side * (sign * 3.5)),
+                           frame.globe(apex)], width: 0.9, least: 1.2))
+            }
+        }
+
+        // Arrows down the middle, sixty metres apart, as long as there is room for a whole
+        // one: a thirty-metre shaft and a head, pointing at the threshold.
+        let back = Array(line.reversed())
+        let length = pathLength(line)
+        var tip = 30.0
+        while tip + 30 <= length - 5 {
+            let (at, away) = walk(back, tip)
+            let towards = -away
+            let across = SIMD2(-towards.y, towards.x)
+            marks.append(AirportLayout.Paint(line: [frame.globe(at - towards * 30),
+                                                    frame.globe(at)], width: 0.9, least: 1.6))
+            for sign in [-1.0, 1.0] {
+                marks.append(AirportLayout.Paint(
+                    line: [frame.globe(at - towards * 6 + across * (sign * 2.5)),
+                           frame.globe(at)], width: 0.9, least: 1.6))
+            }
+            tip += 60
+        }
+        return AirportLayout.RunwayEnd(kind: .displaced, outline: ring, marks: marks,
+                                       cap: SphericalCap(ring))
+    }
+
+    /// A stopway or a blast pad: the concrete, and yellow chevrons every thirty metres
+    /// pointing back at the runway, their arms running out to the edges at forty-five
+    /// degrees. `line` runs from the runway's end outwards.
+    nonisolated private static func padEnd(_ line: [SIMD2<Double>], width: Double,
+                               in frame: AirportFrame) -> AirportLayout.RunwayEnd {
+        let ring = band(line, width: width).map(frame.globe)
+        let half = width / 2
+        let length = pathLength(line)
+        var marks: [AirportLayout.Paint] = []
+        var apex = 15.0
+        while apex < length {
+            let (at, outwards) = walk(line, apex)
+            let side = SIMD2(-outwards.y, outwards.x)
+            for sign in [-1.0, 1.0] {
+                // Past the far end of a short pad, which the drawing clips to its concrete.
+                marks.append(AirportLayout.Paint(
+                    line: [frame.globe(at),
+                           frame.globe(at + outwards * half + side * (sign * half))],
+                    width: 0.9, least: 1.2))
+            }
+            apex += 30
+        }
+        return AirportLayout.RunwayEnd(kind: .pad, outline: ring, marks: marks,
+                                       cap: SphericalCap(ring))
+    }
+
+    /// A line on the plane widened into a closed ring, half the width either side.
+    nonisolated private static func band(_ line: [SIMD2<Double>], width: Double) -> [SIMD2<Double>] {
+        let half = width / 2
+        var left: [SIMD2<Double>] = [], right: [SIMD2<Double>] = []
+        for (index, at) in line.enumerated() {
+            let before = index > 0 ? line[index - 1] : at
+            let after = index < line.count - 1 ? line[index + 1] : at
+            let along = after - before
+            guard simd_length(along) > 1e-9 else { continue }
+            let forward = simd_normalize(along)
+            let sideways = SIMD2(-forward.y, forward.x) * half
+            left.append(at - sideways)
+            right.append(at + sideways)
+        }
+        return left + right.reversed()
+    }
+
+    nonisolated private static func pathLength(_ line: [SIMD2<Double>]) -> Double {
+        zip(line, line.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) }
+    }
+
+    /// The point so many metres along a line from its start, and the way the line runs
+    /// there. Past the end, the end.
+    nonisolated private static func walk(_ line: [SIMD2<Double>], _ metres: Double)
+    -> (SIMD2<Double>, SIMD2<Double>) {
+        var left = metres
+        for index in 0..<(line.count - 1) {
+            let a = line[index], b = line[index + 1]
+            let step = simd_distance(a, b)
+            guard step > 1e-9 else { continue }
+            let direction = (b - a) / step
+            if step >= left { return (a + direction * left, direction) }
+            left -= step
+        }
+        let last = line[line.count - 1], before = line[max(line.count - 2, 0)]
+        let run = simd_distance(before, last)
+        return (last, run > 1e-9 ? (last - before) / run : SIMD2(1, 0))
+    }
+
+    /// Ways that meet end to end, chained into one line each, whatever their refs.
+    ///
+    /// For displaced stretches, which OpenStreetMap splits wherever a taxiway crosses and
+    /// which often carry no ref to group them by: two pieces of one stretch are one
+    /// stretch, with one threshold bar, not two.
+    nonisolated static func chained(_ ways: [AirportLayout.Way]) -> [AirportLayout.Way] {
+        joined(ways.map { way in
+            AirportLayout.Way(ref: "\u{0}", width: way.width, directions: way.directions,
+                              cap: way.cap, surface: way.surface)
+        }).map { chain in
+            // Its own pieces' ref and width, not the whole airport's: every piece went in
+            // under one ref to be chained, so the chain's width is the widest stretch on
+            // the field, and a stretch on a thirty-metre runway would be drawn at forty-six.
+            let pieces = ways.filter { chain.directions.contains($0.directions[0]) }
+            return AirportLayout.Way(ref: pieces.first { !$0.ref.isEmpty }?.ref ?? "",
+                                     width: pieces.map(\.width).max() ?? 0,
+                                     directions: chain.directions, cap: chain.cap,
+                                     surface: chain.surface)
+        }
+    }
+
+    /// Displaced stretches that meet a runway end, and those that meet none.
+    ///
+    /// The ones that meet none are runway. Some fields are mapped with every piece of a
+    /// runway tagged as displaced threshold and no runway proper at all — Kennedy's 13L/31R,
+    /// Newark's 4L/22R, two of Las Vegas's — and leaving those out would take the runway
+    /// off the map; drawn as runway, they are what they were before.
+    nonisolated static func attached(_ sections: [AirportLayout.Way],
+                                     to runways: [AirportLayout.Way],
+                                     in frame: AirportFrame)
+    -> (attached: [AirportLayout.Way], orphans: [AirportLayout.Way]) {
+        let ends = runways.flatMap { way -> [SIMD2<Double>] in
+            guard let first = way.directions.first, let last = way.directions.last else { return [] }
+            return [frame.plane(first), frame.plane(last)]
+        }
+        var attached: [AirportLayout.Way] = [], orphans: [AirportLayout.Way] = []
+        for section in sections {
+            let tips = [section.directions.first, section.directions.last].compactMap { $0 }
+                .map(frame.plane)
+            let meets = tips.contains { tip in ends.contains { simd_distance($0, tip) <= 15 } }
+            if meets { attached.append(section) } else { orphans.append(section) }
+        }
+        return (attached, orphans)
     }
 
     /// One runway, however many ways OpenStreetMap drew it as.

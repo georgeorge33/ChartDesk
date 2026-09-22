@@ -50,6 +50,17 @@ struct ChartContext {
         cg.restoreGState()
     }
 
+    /// Whatever `draw` does, kept inside `path`: a chevron's arms stop at the edge of the
+    /// concrete it is painted on, however far past it the arm would have run.
+    func clipped(to path: Path, _ draw: () -> Void) {
+        guard !path.isEmpty else { return }
+        cg.saveGState()
+        cg.addPath(path.cgPath)
+        cg.clip()
+        draw()
+        cg.restoreGState()
+    }
+
     /// A dot that stays the same size on the screen, `radius` in points.
     func dot(at centre: CGPoint, radius: Double, _ colour: NSColor) {
         let r = screen(radius)
