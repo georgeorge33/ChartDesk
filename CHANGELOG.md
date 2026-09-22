@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.2.0-rc.10
+
+What this candidate adds to 1.1.0. Full release when it has been flown.
+
+**Runways drawn like a ground chart**
+
+- **A runway is a solid dark band** the full width of the concrete, and on it in white: the
+  piano keys, the touchdown zone and the aiming point, a broken centreline, and each end's
+  number painted across the threshold, facing the aeroplane landing on it. Modelled on
+  Navigraph's ground chart. The paint is in metres and grows with the ground — the FAA's
+  pattern for a precision runway, only on runways wide and long enough to carry it — and
+  the centreline stops short of the number rather than striking it out. Where the painted
+  number would be too small to read, it goes in a label at the threshold instead.
+- **Displaced thresholds** carry arrows down the middle pointing at the threshold, a row of
+  arrowheads and a threshold bar: runway you may roll on but not land on. The markings at
+  the threshold itself begin where the threshold really is, not at the end of the concrete.
+- **Stopways and blast pads** carry yellow chevrons pointing back at the runway. They were
+  never fetched before; new layouts include them, and a layout already on this Mac is
+  drawn as it is and topped up the first time you look at it, with a small request for the
+  stopways alone rather than the whole airport again.
+- **Holding positions are red**, bar and name, the way a ground chart draws them.
+- Runways that OpenStreetMap maps with a hyphen in the ref — "18L-36R" — and one-way
+  runways with a single number now have their numbers painted; runways mapped with every
+  piece tagged as displaced threshold, at Kennedy, Newark and Las Vegas, are drawn as
+  runway rather than left out.
+
+**Everything with writing on it drawn by MapKit**
+
+- **The airspace, the route, the airport markers, the bundled runways and the town names**
+  are drawn by MapKit's own renderer now, in the same pass as Apple's map, the way the
+  ground already was. None of it trails the map during a pan, and none of it runs on the
+  main thread. What is still drawn over the map has no writing on it: frontiers, state
+  lines and the graticule.
+- **One declutter for every label**, airports first, then fixes, the ground's writing,
+  runway idents, airspace figures and towns — so a ceiling can no longer push an airport's
+  name off the map. Unboxed writing has a dark edge so it reads over imagery.
+- A route over the antimeridian is one line, and dashed airspace boundaries stay in step
+  across the renderer's tiles.
+- The map redraws far less during a zoom: the scale it snapped to was rounded to two
+  decimal places, which at a continent's width snapped nothing and redrew every tile on
+  every frame.
+
 ## 1.2.0-rc.9
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
