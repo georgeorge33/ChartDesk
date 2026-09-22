@@ -57,6 +57,12 @@ enum ChartNameParser {
         .reference: ["TXT", "MRC"]
     ]
 
+    /// Airport chart types by their codes. A name that opens with one is that chart, whatever
+    /// it goes on to mention — see `category(fileTokens:folderTokens:rawName:leadingToken:)`.
+    private static let airportChartCodes: Set<String> = [
+        "AFC", "AGC", "APC", "APDC", "ADC", "AOI", "AOC", "LVC", "LVP", "FAM", "GMC"
+    ]
+
     private static let strongWeight = 10
     private static let weakWeight = 4
     private static let folderPenalty = 4
@@ -140,12 +146,16 @@ enum ChartNameParser {
         let upperBase = baseName.uppercased()
         let fileTokens = tokens(in: upperBase)
         let folderTokens = folders.flatMap { tokens(in: $0.uppercased()) }
+        let chartTitle = title(fileName: baseName, airportCode: code)
 
         return ParsedChart(
             airportCode: code ?? Airport.unsortedCode,
             airportName: name,
-            title: title(fileName: baseName, airportCode: code),
-            category: category(fileTokens: fileTokens, folderTokens: folderTokens, rawName: upperBase),
+            title: chartTitle,
+            // The title rather than the file name, because a flat "KBOS AGC.png" opens with its
+            // airport, and the chart's own first word is the one that says what it is.
+            category: category(fileTokens: fileTokens, folderTokens: folderTokens, rawName: upperBase,
+                               leadingToken: tokens(in: chartTitle.uppercased()).first),
             runway: runway(in: upperBase)
         )
     }
@@ -190,7 +200,15 @@ enum ChartNameParser {
 
     // MARK: - Category
 
-    static func category(fileTokens: [String], folderTokens: [String], rawName: String) -> ChartCategory {
+    static func category(fileTokens: [String], folderTokens: [String], rawName: String,
+                         leadingToken: String? = nil) -> ChartCategory {
+        // A name that opens with an airport chart's code is that chart, however the rest of it
+        // scores. "AFC STARS SIDS" is a facility chart showing the SIDs and STARs: word by word
+        // it is three strong words for three categories, and `tieBreakOrder` settles a tie in
+        // favour of departures. The code in front is the chart's type; the words after it are
+        // only what the chart is about.
+        if let leadingToken, airportChartCodes.contains(leadingToken) { return .airport }
+
         var scores: [ChartCategory: Int] = [:]
 
         for token in fileTokens {
