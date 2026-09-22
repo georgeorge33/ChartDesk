@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MSFS Planner chart downloader
 // @namespace    local.chartdesk
-// @version      4.6
+// @version      4.8
 // @description  Alt-click a chart on planner.flightsimulator.com to save it, or sweep every chart an airport has
 // @match        https://planner.flightsimulator.com/*
 // @homepageURL  https://github.com/georgeorge33/ChartDesk
@@ -198,6 +198,35 @@
         return [SUBFOLDER, path].filter(Boolean).join('/');
     }
 
+    // The long forms a title spells out, and the codes the library files them under. A plate
+    // with only one of its kind is named for its code already; these are for the ones with
+    // company — "Airport Parking Chart West Apron", "Airport Facility Chart AFC 2" — whose
+    // titles do not end in the code and so came through whole.
+    const LONG_FORMS = [
+        [/\bAIRPORT PARKING CHART\b/gi, 'APC'],
+        [/\bAIRPORT GROUND CHART\b/gi, 'AGC'],
+        [/\bAIRPORT FACILITY CHART\b/gi, 'AFC']
+    ];
+
+    /**
+     * Shortens the long forms to their codes, then keeps each code once. The title that
+     * already carried its code says it twice by then — APC APC CARGO — so the first mention
+     * stands and any later one goes.
+     */
+    function abbreviate(name) {
+        let result = String(name);
+        for (const [long, code] of LONG_FORMS) result = result.replace(long, code);
+        for (const [, code] of LONG_FORMS) {
+            let seen = false;
+            result = result.replace(new RegExp('\\b' + code + '\\b', 'gi'), (match) => {
+                if (seen) return '';
+                seen = true;
+                return match;
+            });
+        }
+        return result.replace(/\s+/g, ' ').trim();
+    }
+
     /// Upper case throughout, which is how charts are named and what the airport code has to
     /// be for anything downstream to file it. The extension stays lower case.
     function clean(stem) {
@@ -206,7 +235,7 @@
             .replace(/\s+/g, ' ')
             .trim()
             .toUpperCase();
-        return (name || 'CHART') + '.png';
+        return (abbreviate(name) || 'CHART') + '.png';
     }
 
     // --- Saving ---------------------------------------------------------------------------
@@ -913,15 +942,20 @@
         stopped = false;
         // Whatever is already on screen: the first chart opened has to be told apart from it.
         const already = new Set(candidates().map((entry) => entry.url));
-        // Names saved on this run. A chart reached twice is not worth fetching twice, and the
-        // second attempt would be the expensive kind of nothing: its plate is already known,
-        // so the wait for a new one runs its full length before giving up.
-        const done = new Set();
         const missed = [];
         let saved = 0;
 
         try {
-            const charts = await plan(icao);
+            // One chart per file. Two rows can come to the same name — a plate listed twice,
+            // or "Airport Ground Chart" beside "Airport Ground Chart AGC", which are both AGC
+            // once shortened — and the library keeps one of each, so the first in the list is
+            // fetched and the rest are never counted as work. A second fetch would be the
+            // expensive kind of nothing besides: its plate is already known, so the wait for a
+            // new one would run its full length before giving up.
+            const files = new Set();
+            const charts = (await plan(icao))
+                .map((chart) => ({ ...chart, file: clean(icao + ' ' + chart.name) }))
+                .filter((chart) => !files.has(chart.file) && files.add(chart.file));
             if (!charts.length) { toast('No charts found for ' + icao + '.'); return; }
 
             const startedAt = performance.now();
@@ -930,7 +964,6 @@
 
             for (const chart of charts) {
                 if (stopped) break;
-                if (done.has(chart.name)) continue;
 
                 // Labels rather than elements: clicking a tab re-renders the strip, so a
                 // button held from the planning walk would be detached by now and would take
@@ -943,7 +976,9 @@
                     showing = chart.category;
                 }
 
-                showProgress(icao + ' · ' + chart.category + ' · ' + chart.name,
+                // The name it is being filed under, which is not always the row's title.
+                showProgress(icao + ' · ' + chart.category + ' · '
+                             + chart.file.replace(/\.png$/i, '').replace(/^[A-Z]{4} /, ''),
                              attempted, charts.length,
                              remainingTime(startedAt, attempted, charts.length));
                 attempted += 1;
@@ -959,9 +994,8 @@
                 // them for the plate it is waiting on.
                 for (const entry of candidates()) already.add(entry.url);
 
-                if (await download(plate.url, clean(icao + ' ' + chart.name))) {
+                if (await download(plate.url, chart.file)) {
                     saved += 1;
-                    done.add(chart.name);
                 } else {
                     missed.push(chart.category + ' ' + chart.name);
                 }
