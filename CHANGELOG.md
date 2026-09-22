@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.2.0-rc.9
+
+What this candidate adds to 1.1.0. Full release when it has been flown.
+
+**Two base maps, both Apple's**
+
+- **The drawn map is gone.** It was the layer that worked with the network off, and it had
+  already stopped being that: once MapKit took over the panning, a drawn map still needed a
+  map view underneath to pan against, so it sat there fetching tiles nobody could see. The
+  promise was broken before it was removed; this stops pretending otherwise. Map and
+  Satellite are what is left. Your charts still need no network — they are files on this Mac.
+- Out with it went the Natural Earth land and lakes, the OpenStreetMap coastline and the
+  store that read it a degree at a time, and **35 MB of tables the app no longer opens**.
+- **Frontiers, state lines and town names stay**, and are still drawn over the imagery — a
+  photograph has no borders and no names, which is exactly what it needs from us. Over
+  Apple's own map they are still held back, because it draws its own.
+- The ground layout **no longer fills pavement** — aprons, slabs, the asphalt under a runway.
+  That was only ever for the drawn map, since both of Apple's already have the tarmac in the
+  picture. Nothing already fetched needs fetching again: the aprons and the pavement are
+  still parsed, still cached, and still counted in the Debug window.
+
+**The writing on the ground**
+
+- **The chart no longer breathes with the zoom.** Line weights and letters were sized by the
+  `zoomScale` an overlay renderer is handed, which is quantised to powers of two — a line
+  asked to be two points thick grew towards four before snapping back. The map view is asked
+  for the real figure now. The same centreline measures four pixels at 2.2 km across and
+  four at 694 m.
+- **Labels are readable.** Their boxes were built from ascent plus descent, so every
+  designator carried empty descender space and sat high in its own chip; it is cap height
+  now, with the baseline where a capital's feet are. The padding has gone from cramped to
+  enough to read. Runway numbers were white on 55% black, which over a threshold's piano
+  keys is white on white — they get a solid chip and a white border. Stand numbers had no
+  box at all, which over imagery was magenta on a photograph of a terminal; they get a quiet
+  dark one.
+- Designators up from 9 points to 11, stands from 8 to 9.
+
 ## 1.2.0-rc.8
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
