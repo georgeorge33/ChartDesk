@@ -88,13 +88,15 @@ final class ChartRenderer: MKOverlayRenderer {
         // writing being buried by the next field's concrete.
         for placed in writing(at: scale, in: chart)
         where sheet.panel.intersects(placed.room) {
-            chart.draw(placed.label)
+            if let label = placed.label { chart.draw(label) }
         }
     }
 
     /// A label and the room it was given, both in map points.
     private struct Placed {
-        var label: ChartContext.Label
+        /// Nothing, for a reservation: room something else already fills — a runway's
+        /// painted number — that no label may be put on top of.
+        var label: ChartContext.Label?
         var room: CGRect
 
         /// Whether this one leaves no space for another: either they overlap, or they say
@@ -102,7 +104,7 @@ final class ChartRenderer: MKOverlayRenderer {
         func crowds(_ other: ChartContext.Label, room space: CGRect, within apart: Double)
         -> Bool {
             if room.intersects(space) { return true }
-            guard label.text == other.text else { return false }
+            guard let label, label.text == other.text else { return false }
             return hypot(label.at.x - other.at.x, label.at.y - other.at.y) < apart
         }
     }
@@ -127,11 +129,12 @@ final class ChartRenderer: MKOverlayRenderer {
         // The whole world, because a tile's own rectangle is the thing being avoided here.
         let sheet = MapSheet(mapRect: .world, padding: 0)
         var found: [ChartContext.Label] = []
+        var painted: [CGRect] = []
         for layout in frame.layouts {
-            writing(layout, in: sheet, into: &found)
+            writing(layout, in: sheet, chart: chart, into: &found, painted: &painted)
         }
 
-        var placed: [Placed] = []
+        var placed: [Placed] = painted.map { Placed(label: nil, room: $0) }
         let air = 2 * scale
         // How far apart two of the same letter have to be. A designator repeated along its
         // own taxiway is how a ground chart reads; three of them inside a hundred metres is
@@ -154,16 +157,36 @@ final class ChartRenderer: MKOverlayRenderer {
     /// In here with the tarmac rather than on the canvas above it, because a designator
     /// that lags the taxiway it names is worse than no designator — it is a label pointing
     /// at the wrong piece of concrete.
-    private func writing(_ layout: AirportLayout, in sheet: MapSheet,
-                         into found: inout [ChartContext.Label]) {
+    private func writing(_ layout: AirportLayout, in sheet: MapSheet, chart: ChartContext,
+                         into found: inout [ChartContext.Label],
+                         painted: inout [CGRect]) {
         for way in layout.taxiways where !way.ref.isEmpty && way.isMovementArea {
             guard let at = middle(of: way, sheet: sheet) else { continue }
             found.append(ChartContext.Label(text: AirportLayout.designator(way.ref),
                                             colour: Theme.taxiLine, box: .black,
                                             border: Theme.taxiLine, at: at))
         }
+        // Each runway number once: painted on the runway when it is big enough to read
+        // there, and in a label at the threshold when it is not. Both would be the same
+        // figures twice, a few metres apart.
+        let metre = Self.mapPointsPerMetre(at: layout)
         for way in layout.runways where !way.ref.isEmpty {
-            for (number, at) in AirportLayout.numbers(of: way) {
+            var paintedHere = Set<String>()
+            for name in way.names {
+                let height = name.height * metre
+                guard chart.paintedHeight(inMapPoints: height) >= Self.paintedFrom else {
+                    continue
+                }
+                let centre = sheet.projection.point(name.centre)
+                let ahead = sheet.projection.point(name.ahead)
+                painted.append(chart.paintedBounds(
+                    name.text, centre: centre,
+                    facing: CGVector(dx: ahead.x - centre.x, dy: ahead.y - centre.y),
+                    capHeight: height))
+                paintedHere.insert(name.text)
+            }
+            for (number, at) in AirportLayout.numbers(of: way)
+            where !paintedHere.contains(number) {
                 found.append(ChartContext.Label(text: number, colour: .white,
                                                 box: NSColor.black.withAlphaComponent(0.85),
                                                 border: NSColor.white.withAlphaComponent(0.7),
@@ -190,28 +213,54 @@ final class ChartRenderer: MKOverlayRenderer {
         return sheet.projection.point(way.directions[way.directions.count / 2])
     }
 
+    /// Metres into map points, at this airport's latitude and not at the equator.
+    /// Mercator stretches by 1/cos φ, so the equator's figure would draw Boston's taxiways
+    /// a quarter narrower than they are and Svalbard's at half.
+    private static func mapPointsPerMetre(at layout: AirportLayout) -> Double {
+        let latitude = Coordinate(layout.frame.centre).latitude * .pi / 180
+        return MKMapSize.world.width / (40_075_017 * max(cos(latitude), 0.02))
+    }
+
+    /// How tall a runway's painted number has to be on the screen, in points, before it
+    /// is painted on the runway. Below this the figures are a smudge on the threshold, and
+    /// the number goes in a label beside the runway instead.
+    private static let paintedFrom: Double = 7
+
     /// The airport's own ground, in map points.
     private func ground(_ layout: AirportLayout, in chart: ChartContext, sheet: MapSheet) {
-        // Metres into map points, at this airport's latitude and not at the equator.
-        // Mercator stretches by 1/cos φ, so the equator's figure would draw Boston's
-        // taxiways a quarter narrower than they are and Svalbard's at half.
-        let latitude = Coordinate(layout.frame.centre).latitude * .pi / 180
-        let metre = MKMapSize.world.width / (40_075_017 * max(cos(latitude), 0.02))
+        let metre = Self.mapPointsPerMetre(at: layout)
         let wide = { (metres: Double) in metres * metre }
 
-        // Only the markings. Both base maps are Apple's now and both already have the
-        // tarmac in the picture, so filling aprons and pavement over them would be
-        // painting grey over the thing you chose the base map to see. The aprons and the
-        // pavement are still parsed and still cached — nothing about the fetched layout
-        // changed — there is simply nowhere left that wants them drawn.
+        // The taxiways get only their paint: both base maps are Apple's and both already
+        // have the taxiway tarmac in the picture. The aprons and the taxiway pavement are
+        // still parsed and still cached, and simply not filled.
+        //
+        // The runway is different, and is drawn the way a ground chart draws it: a solid
+        // dark band the full width of the concrete, and on it, in white, the piano keys,
+        // the touchdown zone and the aiming point, the broken centreline and each end's
+        // number across the threshold. Everything painted is in metres, because it is
+        // paint and should grow with the ground; the lines that are there to be seen
+        // rather than to be to scale stay the same on the screen however far in you are.
         for way in layout.runways where sheet.mayShow(way.cap) {
-            for edge in way.edges {
-                chart.stroke(sheet.path(straight: edge), Theme.runwayMarking.withAlphaComponent(0.85),
-                             width: chart.screen(1.4))
+            if way.edges.count == 2 {
+                let outline = way.edges[0] + way.edges[1].reversed()
+                chart.fill(sheet.path(ring: MapShape(directions: outline, cap: way.cap)),
+                           Theme.runwaySurface)
+                // A hairline at the edge, faint. Over a light photograph the band's own
+                // edge is enough; over Apple's dark map it is not, quite.
+                for edge in way.edges {
+                    chart.stroke(sheet.path(straight: edge),
+                                 Theme.runwayMarking.withAlphaComponent(0.35),
+                                 width: chart.screen(1))
+                }
             }
             for bar in way.keys {
                 chart.stroke(sheet.path(straight: bar), Theme.runwayMarking, width: wide(2.5),
                              cap: .butt)
+            }
+            for zone in way.zones {
+                chart.stroke(sheet.path(straight: zone.line), Theme.runwayMarking,
+                             width: wide(zone.width), cap: .butt)
             }
         }
 
@@ -221,8 +270,21 @@ final class ChartRenderer: MKOverlayRenderer {
                          width: line, cap: .round, join: .round)
         }
         for way in layout.runways where sheet.mayShow(way.cap) {
-            chart.stroke(sheet.path(straight: way.directions), Theme.runwayMarking,
-                         width: line, dash: [wide(30), wide(20)])
+            // Thirty-six metres of paint and twenty-four of gap, which is the FAA's 120ft
+            // and 80ft; narrower than a taxiway line, the way the reference draws it.
+            chart.stroke(sheet.path(straight: way.centreline), Theme.runwayMarking,
+                         width: chart.screen(1.6), dash: [wide(36), wide(24)])
+            for name in way.names {
+                let height = wide(name.height)
+                guard chart.paintedHeight(inMapPoints: height) >= Self.paintedFrom else {
+                    continue
+                }
+                let centre = sheet.projection.point(name.centre)
+                let ahead = sheet.projection.point(name.ahead)
+                chart.paint(name.text, centre: centre,
+                            facing: CGVector(dx: ahead.x - centre.x, dy: ahead.y - centre.y),
+                            capHeight: height, colour: Theme.runwayMarking)
+            }
         }
         for hold in layout.holds where hold.across.count == 2 {
             chart.stroke(sheet.path(line: hold.across), Theme.holdShort,

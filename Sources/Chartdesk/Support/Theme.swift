@@ -57,6 +57,10 @@ enum Theme {
     /// The lines painted on the airport's own ground, at the closest zoom there is. The
     /// tarmac under them is Apple's photograph, so the only colours left here are paint:
     /// taxiway centrelines are yellow on every airfield on earth.
+    /// The runway itself: near-black, the full width of the concrete. A ground chart
+    /// draws a runway as a solid band so that it reads as a runway before any of the paint
+    /// on it does, and a photograph of one, grey among grey taxiways, does not.
+    static let runwaySurface   = rgb(0x26282C)
     static let runwayMarking   = rgb(0xF2F4F7)
     static let taxiLine        = rgb(0xE8C33A)
     /// The bar you hold short at, and the stand you park on. Magenta is what a ground chart

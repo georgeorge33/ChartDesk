@@ -150,4 +150,84 @@ struct ChartContext {
         CTLineDraw(made, cg)
         cg.restoreGState()
     }
+
+    // MARK: - Paint
+
+    /// Figures for painting on the ground, shaped once at a reference size. Their colour
+    /// comes from the context, so one shaped line serves every colour it is drawn in.
+    private static let paints = NSCache<NSString, Shaped>()
+
+    private final class Shaped {
+        let line: CTLine
+        /// Width and cap height, at the reference size.
+        let size: CGSize
+        init(line: CTLine, size: CGSize) { self.line = line; self.size = size }
+    }
+
+    private static func shaped(_ text: String) -> Shaped {
+        if let held = paints.object(forKey: text as NSString) { return held }
+        // Narrow and heavy, the way runway figures are painted: tall enough to read from
+        // a cockpit on the approach, narrow enough that three of them fit across.
+        let font = NSFont.systemFont(ofSize: 100, weight: .bold, width: .condensed)
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: font,
+            NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+        ])
+        let line = CTLineCreateWithAttributedString(attributed)
+        let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+        let made = Shaped(line: line, size: CGSize(width: width, height: font.capHeight))
+        paints.setObject(made, forKey: text as NSString)
+        return made
+    }
+
+    /// How big painted figures would be on the screen, to decide whether they are worth
+    /// painting at all or whether a label beside the runway says it better.
+    func paintedHeight(inMapPoints height: Double) -> Double {
+        height / mapPointsPerScreenPoint
+    }
+
+    /// Writing laid on the ground rather than floated above it: a runway's number, as tall
+    /// in map points as the paint is in metres, with the tops of the figures facing `up`.
+    ///
+    /// The line is turned rather than the world. Its baseline runs a right angle clockwise
+    /// from `up` on the page, which on a runway means across it, left to right as the
+    /// pilot landing on it sees it.
+    func paint(_ text: String, centre: CGPoint, facing up: CGVector, capHeight: Double,
+               colour: NSColor) {
+        let length = hypot(up.dx, up.dy)
+        guard length > 0, capHeight > 0 else { return }
+        let top = CGVector(dx: up.dx / length, dy: up.dy / length)
+        let across = CGVector(dx: -top.dy, dy: top.dx)
+
+        let made = Self.shaped(text)
+        let unit = capHeight / made.size.height
+        let origin = CGPoint(
+            x: centre.x - (across.dx * made.size.width + top.dx * made.size.height) * unit / 2,
+            y: centre.y - (across.dy * made.size.width + top.dy * made.size.height) * unit / 2)
+
+        cg.saveGState()
+        cg.setShouldAntialias(true)
+        cg.concatenate(CGAffineTransform(a: across.dx * unit, b: across.dy * unit,
+                                         c: top.dx * unit, d: top.dy * unit,
+                                         tx: origin.x, ty: origin.y))
+        cg.textMatrix = .identity
+        cg.textPosition = .zero
+        cg.setFillColor(colour.cgColor)
+        CTLineDraw(made.line, cg)
+        cg.restoreGState()
+    }
+
+    /// The box painted figures cover, square to the page, for keeping labels off them.
+    func paintedBounds(_ text: String, centre: CGPoint, facing up: CGVector,
+                       capHeight: Double) -> CGRect {
+        let made = Self.shaped(text)
+        let unit = capHeight / made.size.height
+        let length = max(hypot(up.dx, up.dy), 1e-9)
+        let top = CGVector(dx: up.dx / length, dy: up.dy / length)
+        let halfAcross = made.size.width * unit / 2, halfUp = capHeight / 2
+        let reachX = abs(top.dy) * halfAcross + abs(top.dx) * halfUp
+        let reachY = abs(top.dx) * halfAcross + abs(top.dy) * halfUp
+        return CGRect(x: centre.x - reachX, y: centre.y - reachY,
+                      width: reachX * 2, height: reachY * 2)
+    }
 }

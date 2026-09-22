@@ -34,13 +34,23 @@ struct AirportLayout {
         /// frame: they depend on the runway and not on where the camera is.
         let edges: [[SIMD3<Double>]]
         let keys: [[SIMD3<Double>]]
+        /// The touchdown zone and the aiming point: the blocks of white either side of the
+        /// centreline a few hundred metres in from each threshold.
+        let zones: [Paint]
+        /// Each end's number, painted across the runway the way it is on the concrete.
+        let names: [Painted]
+        /// The broken white line down the middle, which starts where the number ends
+        /// rather than at the threshold: painted through the figures, it strikes them out.
+        let centreline: [SIMD3<Double>]
 
         /// True for the movement area: what a clearance names and a chart letters.
         var isMovementArea: Bool { surface == .runway || surface == .taxiway }
 
         init(ref: String, width: Double, directions: [SIMD3<Double>], cap: SphericalCap,
              surface: AirportSurface, paved: Bool = false,
-             edges: [[SIMD3<Double>]] = [], keys: [[SIMD3<Double>]] = []) {
+             edges: [[SIMD3<Double>]] = [], keys: [[SIMD3<Double>]] = [],
+             zones: [Paint] = [], names: [Painted] = [],
+             centreline: [SIMD3<Double>] = []) {
             self.ref = ref
             self.width = width
             self.directions = directions
@@ -49,7 +59,33 @@ struct AirportLayout {
             self.paved = paved
             self.edges = edges
             self.keys = keys
+            self.zones = zones
+            self.names = names
+            self.centreline = centreline
         }
+    }
+
+    /// A stripe of paint: a line down its middle, and how wide it is in metres.
+    struct Paint {
+        let line: [SIMD3<Double>]
+        let width: Double
+    }
+
+    /// A runway number, painted on the runway rather than written beside it.
+    ///
+    /// Across the runway and facing the aeroplane landing on it, which is how the paint is
+    /// laid: the top of the figures points down the runway, away from the threshold.
+    struct Painted {
+        let text: String
+        /// The middle of the figures.
+        let centre: SIMD3<Double>
+        /// A point further down the runway from the centre, which is the way the tops of
+        /// the figures face. A bearing would do on a globe; on a map, projecting the two
+        /// points and taking the angle between them is the same thing and stays right
+        /// whatever the projection does to angles near the poles.
+        let ahead: SIMD3<Double>
+        /// How tall the figures are, in metres.
+        let height: Double
     }
 
     /// Pavement mapped as its own outline rather than as a line with a width tag.
@@ -157,6 +193,128 @@ struct AirportLayout {
             }
         }
         return bars
+    }
+
+    /// The touchdown zone markings and the aiming point, at both ends.
+    ///
+    /// The FAA's pattern for a precision runway, at 500ft steps from the threshold: three
+    /// stripes a side, then the aiming point, then two, two, one, one. The stripes are 75ft
+    /// by 6ft with 5ft between them and the aiming point is 150ft by 30ft, with the inner
+    /// edges of both 72ft apart — laid out here in metres, which is what the plane is in.
+    ///
+    /// Only where there is room for it: a runway narrower than thirty metres or shorter than
+    /// twelve hundred is not a precision runway and does not carry the paint, and no stripe
+    /// goes past the middle, where it would meet the other end's.
+    static func touchdownZones(of way: Way, in frame: AirportFrame) -> [Paint] {
+        let line = way.directions.map(frame.plane)
+        guard line.count >= 2, way.width >= 30 else { return [] }
+        let length = simd_distance(line[0], line[line.count - 1])
+        guard length >= 1_200 else { return [] }
+
+        // On a runway narrower than the forty-five metres the pattern is drawn for, the
+        // whole of it is brought in towards the centreline so that it stays on the concrete.
+        let squeeze = min(1, way.width / 45)
+        let inner = 11 * squeeze
+        let pattern: [(from: Double, stripes: Int)] = [
+            (150, 3), (300, 0), (450, 2), (600, 2), (750, 1), (900, 1),
+        ]
+
+        var out: [Paint] = []
+        for (at, towards) in [(line[0], line[1]),
+                              (line[line.count - 1], line[line.count - 2])] {
+            let along = towards - at
+            guard simd_length(along) > 1e-9 else { continue }
+            let forward = simd_normalize(along)
+            let side = SIMD2(-forward.y, forward.x)
+
+            for mark in pattern {
+                // Nought stripes means the aiming point.
+                let long = mark.stripes == 0 ? 45.0 : 22.5
+                guard mark.from + long <= length / 2 else { break }
+                let start = at + forward * mark.from
+                let end = at + forward * (mark.from + long)
+
+                var offsets: [(Double, Double)] = []
+                if mark.stripes == 0 {
+                    offsets = [(inner + 4.5 * squeeze, 9 * squeeze)]
+                } else {
+                    for stripe in 0..<mark.stripes {
+                        offsets.append(((inner + 0.9 + Double(stripe) * 3.35) * squeeze,
+                                        1.8 * squeeze))
+                    }
+                }
+                for (out_, wide) in offsets {
+                    for sign in [-1.0, 1.0] {
+                        let shift = side * (out_ * sign)
+                        out.append(Paint(line: [frame.globe(start + shift),
+                                                frame.globe(end + shift)],
+                                         width: wide))
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /// Each end's number, where it is painted: just past the piano keys, facing down the
+    /// runway.
+    ///
+    /// Eighteen metres tall, which is the FAA's sixty feet, or less on a runway too narrow
+    /// to take that — the figures have to fit across it with room either side.
+    static func paintedNumbers(of way: Way, in frame: AirportFrame) -> [Painted] {
+        let line = way.directions.map(frame.plane)
+        guard line.count >= 2 else { return [] }
+        let height = min(18, way.width * 0.45)
+        guard height >= 4 else { return [] }
+
+        var out: [Painted] = []
+        for (number, threshold) in numbers(of: way) {
+            let at = frame.plane(threshold)
+            // Towards whichever end is not this one: into the runway.
+            let other = simd_distance(at, line[0]) < simd_distance(at, line[line.count - 1])
+                ? line[line.count - 1] : line[0]
+            let along = other - at
+            guard simd_length(along) > 1e-9 else { continue }
+            let forward = simd_normalize(along)
+            // Past the piano keys, which run from six metres to thirty-six, with six metres
+            // of black between them and the foot of the figures.
+            let middle = at + forward * (36 + 6 + height / 2)
+            out.append(Painted(text: number,
+                               centre: frame.globe(middle),
+                               ahead: frame.globe(middle + forward * 10),
+                               height: height))
+        }
+        return out
+    }
+
+    /// The centreline, held back from each threshold past the piano keys and the number.
+    ///
+    /// Twelve metres clear of the figures, which is roughly the FAA's forty feet; where no
+    /// number is painted, just past the piano keys. A runway too short to leave anything
+    /// between the two ends has no centreline.
+    static func centreline(of way: Way, in frame: AirportFrame) -> [SIMD3<Double>] {
+        let line = way.directions.map(frame.plane)
+        guard line.count >= 2 else { return way.directions }
+        let height = way.names.first?.height ?? 0
+        let clear = height > 0 ? 36 + 6 + height + 12 : 42
+        guard let from = trimmed(line, by: clear),
+              let both = trimmed(Array(from.reversed()), by: clear)
+        else { return [] }
+        return both.reversed().map(frame.globe)
+    }
+
+    /// A line with its first so many metres taken off, or nothing if that is all of it.
+    private static func trimmed(_ line: [SIMD2<Double>], by metres: Double) -> [SIMD2<Double>]? {
+        var left = metres
+        for index in 0..<(line.count - 1) {
+            let a = line[index], b = line[index + 1]
+            let step = simd_distance(a, b)
+            if step > left {
+                return [a + (b - a) * (left / step)] + Array(line[(index + 1)...])
+            }
+            left -= step
+        }
+        return nil
     }
 
     /// A runway's two numbers, each at the end it is painted on.
@@ -628,6 +786,7 @@ final class AirportLayoutStore: ObservableObject {
         }
 
         guard !(runways.isEmpty && taxiways.isEmpty && aprons.isEmpty) else { return nil }
+        runways = joined(runways)
 
         // Everything after this point is worked out on the field's own plane, so the plane
         // comes first — from what is mapped, which is the field.
@@ -653,12 +812,19 @@ final class AirportLayoutStore: ObservableObject {
         // The runway keeps its paint whether or not its tarmac is drawn: an outline is the
         // pavement, and the white lines and piano keys on top of it are a separate thing —
         // which is exactly how an AMDB separates a runway element from a runway marking.
-        let paved = runways.map { way in
-            AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
-                              cap: way.cap, surface: way.surface,
-                              paved: covered(way, runway: true),
-                              edges: AirportLayout.edges(of: way, in: frame),
-                              keys: AirportLayout.thresholdBars(of: way, in: frame))
+        let paved = runways.map { way -> AirportLayout.Way in
+            let named = AirportLayout.Way(ref: way.ref, width: way.width,
+                                          directions: way.directions, cap: way.cap,
+                                          surface: way.surface,
+                                          names: AirportLayout.paintedNumbers(of: way, in: frame))
+            return AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
+                                     cap: way.cap, surface: way.surface,
+                                     paved: covered(way, runway: true),
+                                     edges: AirportLayout.edges(of: way, in: frame),
+                                     keys: AirportLayout.thresholdBars(of: way, in: frame),
+                                     zones: AirportLayout.touchdownZones(of: way, in: frame),
+                                     names: named.names,
+                                     centreline: AirportLayout.centreline(of: named, in: frame))
         }
         let taxied = taxiways.map { way in
             AirportLayout.Way(ref: way.ref, width: way.width, directions: way.directions,
@@ -670,6 +836,69 @@ final class AirportLayoutStore: ObservableObject {
         return AirportLayout(icao: icao, runways: paved, taxiways: taxied,
                              aprons: aprons, pavement: pavement, stands: stands,
                              holds: holds, frame: frame, fetched: Date())
+    }
+
+    /// One runway, however many ways OpenStreetMap drew it as.
+    ///
+    /// A runway is very often mapped in pieces — Logan's 4R/22L is three, split where the
+    /// other runways cross it — and every piece carries the whole runway's ref. Taken one
+    /// at a time, each piece's ends looked like thresholds: piano keys and a touchdown zone
+    /// were painted at every join, in the middle of the runway, and the numbers twice.
+    ///
+    /// So the pieces of one ref are chained end to end first, by the node they share, and
+    /// everything that depends on where the thresholds are is worked out on the whole line.
+    /// Pieces that do not meet stay apart, since a runway with a gap in it is two runways
+    /// as far as the paint is concerned; ways with no ref are left as they are, because
+    /// nothing says which runway they belong to.
+    nonisolated static func joined(_ ways: [AirportLayout.Way]) -> [AirportLayout.Way] {
+        var byRef: [String: [AirportLayout.Way]] = [:]
+        var order: [String] = []
+        var loose: [AirportLayout.Way] = []
+        for way in ways {
+            guard !way.ref.isEmpty else { loose.append(way); continue }
+            if byRef[way.ref] == nil { order.append(way.ref) }
+            byRef[way.ref, default: []].append(way)
+        }
+
+        // The same node, give or take the arithmetic: about a centimetre on the ground.
+        func meet(_ a: SIMD3<Double>, _ b: SIMD3<Double>) -> Bool {
+            simd_distance_squared(a, b) < 2.5e-18
+        }
+
+        var out: [AirportLayout.Way] = []
+        for ref in order {
+            var pieces = byRef[ref] ?? []
+            while !pieces.isEmpty {
+                var chain = pieces.removeFirst().directions
+                var grew = true
+                while grew {
+                    grew = false
+                    for (index, piece) in pieces.enumerated() {
+                        let line = piece.directions
+                        guard let first = line.first, let last = line.last,
+                              let head = chain.first, let tail = chain.last else { continue }
+                        if meet(tail, first) {
+                            chain += line.dropFirst()
+                        } else if meet(tail, last) {
+                            chain += line.reversed().dropFirst()
+                        } else if meet(head, last) {
+                            chain = Array(line.dropLast()) + chain
+                        } else if meet(head, first) {
+                            chain = Array(line.reversed().dropLast()) + chain
+                        } else {
+                            continue
+                        }
+                        pieces.remove(at: index)
+                        grew = true
+                        break
+                    }
+                }
+                let widest = byRef[ref]?.map(\.width).max() ?? 0
+                out.append(AirportLayout.Way(ref: ref, width: widest, directions: chain,
+                                             cap: SphericalCap(chain), surface: .runway))
+            }
+        }
+        return out + loose
     }
 
     /// Lays a bar across the pavement at each holding position.
