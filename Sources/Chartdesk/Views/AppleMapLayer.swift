@@ -161,17 +161,24 @@ struct AppleMapLayer: NSViewRepresentable {
             moved(shown)
         }
 
-        /// Tell the renderer how big a screen point is, in the map's own units.
+        /// Tell the renderer how big a screen point is in the map's own units, and what
+        /// the map is showing.
         ///
-        /// Snapped to a per cent: the figure moves by a hair on every frame of a pan, and
-        /// setting it marks the overlay dirty. A per cent is past seeing and leaves a pan
-        /// costing nothing, while a zoom — which is the thing that used to make the
-        /// writing swell — lands on a new value and redraws once.
+        /// The scale is snapped to steps of three per cent, because setting a new one
+        /// redraws every tile. It used to be rounded to two decimal places, which is not
+        /// a per cent of anything: a map point per screen point is sixteen at two
+        /// kilometres across and sixteen thousand at a continent, so the steps were a
+        /// sixteenth of a per cent close in and nothing at all far out — every frame of a
+        /// zoom redrew everything. Three per cent is past seeing in a line's weight or a
+        /// letter's height, and a zoom now redraws a few dozen times rather than hundreds.
         func measure(_ mapView: MKMapView) {
             let across = mapView.bounds.width
             guard across > 0 else { return }
             let scale = mapView.visibleMapRect.width / Double(across)
-            chart.page = (scale * 100).rounded() / 100
+            guard scale > 0 else { return }
+            let step = log(1.03)
+            chart.page = exp((log(scale) / step).rounded() * step)
+            chart.view = mapView.visibleMapRect
         }
     }
 }

@@ -14,11 +14,19 @@ struct MapSheet {
     /// The panel with a few points of slack, so the edges a clip leaves behind fall outside
     /// anything the canvas actually draws.
     let panel: CGRect
+    /// Half a point on the screen, in whatever units this sheet draws in. Points closer
+    /// together than this are one point as far as a screen can tell, and are drawn as one.
+    ///
+    /// On the canvas that is half a unit. In map points it is not: at a view two
+    /// kilometres across a map point is a twentieth of a screen point, so a fixed half
+    /// would keep every point of every ring however far out the zoom.
+    let grain: Double
 
     init(camera: MapCamera, size: CGSize, padding: CGFloat = 4) {
         projection = camera.projection(in: size)
         self.size = size
         panel = CGRect(origin: .zero, size: size).insetBy(dx: -padding, dy: -padding)
+        grain = 0.5
     }
 
     /// For drawing inside MapKit, where the coordinate space is `MKMapPoint` itself.
@@ -27,13 +35,14 @@ struct MapSheet {
     /// and draws that, and MapKit applies the transform. The panel is that rectangle, so
     /// the same clipping that kept a continent from costing eighty thousand points on the
     /// canvas keeps it from costing them here.
-    init(mapRect: MKMapRect, padding: Double) {
+    init(mapRect: MKMapRect, padding: Double, mapPointsPerScreenPoint: Double = 0) {
         projection = MercatorProjection(mapPoints: CGSize(width: MKMapSize.world.width,
                                                           height: MKMapSize.world.height))
         size = CGSize(width: mapRect.width, height: mapRect.height)
         panel = CGRect(x: mapRect.minX, y: mapRect.minY,
                        width: mapRect.width, height: mapRect.height)
             .insetBy(dx: -padding, dy: -padding)
+        grain = 0.5 * mapPointsPerScreenPoint
     }
 
     /// Built from what the map view is actually showing, which is the only way an overlay
@@ -42,6 +51,7 @@ struct MapSheet {
         projection = MercatorProjection(rect: rect, in: size)
         self.size = size
         panel = CGRect(origin: .zero, size: size).insetBy(dx: -padding, dy: -padding)
+        grain = 0.5
     }
 
     func point(_ coordinate: Coordinate) -> CGPoint {
@@ -69,14 +79,63 @@ struct MapSheet {
     /// off the panel — and a clip hands back the edge of the panel where merely leaving out
     /// what you cannot see would hand back nothing at all.
     func path(ring: MapShape) -> Path {
-        var points = projection.visible(ring: ring.directions)
-        guard points.count > 2 else { return Path() }
+        path(ring: projection.visible(ring: ring.directions))
+    }
 
+    /// The same, for a ring already on the sheet — unwrapped, and perhaps moved a world
+    /// over to draw the part of it that is across the seam.
+    func path(ring points: [CGPoint]) -> Path {
+        var points = points
+        guard points.count > 2 else { return Path() }
         if !holds(points) {
             points = Self.clip(points, to: panel)
             guard points.count > 2 else { return Path() }
         }
-        return Self.path(points, closed: true)
+        return path(points, closed: true)
+    }
+
+    /// A line on the sheet as the pieces of it that reach the panel, each with how far
+    /// along the whole line it starts.
+    ///
+    /// For stroking. A ring clipped to the panel is right for a fill and wrong for a
+    /// dashed edge: the clipped ring starts wherever the clip happened to cut it, so each
+    /// tile began its dashes at a different place and the boundary broke up at every seam.
+    /// Measured along the whole line instead, a piece's dashes start where the whole
+    /// line's would at that point, in every tile.
+    func runs(_ points: [CGPoint], closed: Bool) -> [(path: Path, from: Double)] {
+        guard points.count > 1 else { return [] }
+        var out: [(path: Path, from: Double)] = []
+        var path = Path()
+        var drawing = false
+        var start = 0.0
+        var along = 0.0
+        var last = CGPoint.zero
+        let count = closed ? points.count + 1 : points.count
+
+        for index in 1..<count {
+            let before = points[index - 1]
+            let here = points[index % points.count]
+            let step = hypot(here.x - before.x, here.y - before.y)
+            defer { along += step }
+            guard touchesPanel(before, here) else {
+                if drawing { out.append((path, start)); path = Path(); drawing = false }
+                continue
+            }
+            if !drawing {
+                path.move(to: before)
+                drawing = true
+                start = along
+                last = before
+            }
+            // Skip what the screen cannot tell apart, but never the last point of a piece.
+            let final = index == count - 1
+            guard final || abs(here.x - last.x) >= grain || abs(here.y - last.y) >= grain
+            else { continue }
+            path.addLine(to: here)
+            last = here
+        }
+        if drawing { out.append((path, start)) }
+        return out
     }
 
     /// An open line — a border, a leg of a route, a meridian — as a path.
@@ -169,7 +228,7 @@ struct MapSheet {
                 drawing = true
                 last = before
             }
-            guard abs(here.x - last.x) >= 0.5 || abs(here.y - last.y) >= 0.5 else { continue }
+            guard abs(here.x - last.x) >= grain || abs(here.y - last.y) >= grain else { continue }
             path.addLine(to: here)
             last = here
         }
@@ -202,12 +261,12 @@ struct MapSheet {
     /// point of the one kept before it, so the line drawn stands in for it. This is what keeps
     /// a level of detail honest at the shallow end of its range, where its rings carry several
     /// times the detail that zoom can show.
-    private static func path(_ points: [CGPoint], closed: Bool) -> Path {
+    private func path(_ points: [CGPoint], closed: Bool) -> Path {
         var path = Path()
         var last = CGPoint.zero
         var kept = 0
         for point in points {
-            if kept > 0, abs(point.x - last.x) < 0.5, abs(point.y - last.y) < 0.5 { continue }
+            if kept > 0, abs(point.x - last.x) < grain, abs(point.y - last.y) < grain { continue }
             if kept == 0 {
                 path.move(to: point)
             } else {

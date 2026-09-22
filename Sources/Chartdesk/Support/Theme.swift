@@ -96,6 +96,12 @@ enum Theme {
     /// and every chart that draws one — the accent blue it used to be is the colour of the
     /// app's own furniture, and a route is not furniture.
     static let route            = rgb(0xE04FD4)
+    /// The SID and STAR legs of the route, in the orange the map's own caption promises.
+    static let procedure        = rgb(0xFF9F0A)
+    /// Names and markers that are not the flight's own. A fixed light grey rather than the
+    /// system's secondary label colour, because it is drawn off the main thread, where a
+    /// colour that depends on the appearance has no appearance to depend on.
+    static let mapSecondary     = NSColor(white: 0.86, alpha: 0.72)
 
     /// The four flight categories. Not a palette anyone gets to choose: green, blue, red and
     /// magenta are what every briefing map has meant by them for decades, and a chart using

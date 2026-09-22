@@ -150,38 +150,12 @@ struct RouteMapView: View {
         }
     }
 
-    /// A label wanting a place on the map. Airports ask first, so a fix never pushes an
-    /// airport's name off the map.
-    private struct Label {
-        let text: Text
-        /// A second line, with a rule between — how a chart writes a ceiling over a floor.
-        var under: Text?
-        /// The rule's colour, so it matches the figures rather than the furniture.
-        var ruleColour: Color?
-        /// Filled behind the text, the way a ground chart writes a taxiway's letter.
-        var box: Color?
-        /// And drawn round it.
-        var border: Color?
-        let at: CGPoint
-        let anchor: UnitPoint
-
-        init(text: Text, under: Text? = nil, ruleColour: Color? = nil, box: Color? = nil,
-             border: Color? = nil, at: CGPoint, anchor: UnitPoint) {
-            self.text = text
-            self.under = under
-            self.ruleColour = ruleColour
-            self.box = box
-            self.border = border
-            self.at = at
-            self.anchor = anchor
-        }
-    }
-
-    /// The air above and below the rule in a stacked label.
-    private static let ruleGap: CGFloat = 2
-
+    /// What is still drawn over the map rather than by it: the frontiers, the state lines
+    /// and the graticule. Lines with no writing on them, which lag the map by a frame
+    /// during a pan and have nothing to come loose from. Everything with a name on it is
+    /// MapKit's, in one pass, because two passes on two timetables cannot keep their
+    /// labels off each other.
     private func draw(in context: inout GraphicsContext, size: CGSize) {
-        var labels: [Label] = []
         // Against the map's own rectangle rather than a camera rebuilt from a centre and a
         // zoom. Reconstructing it would be close, and close is a runway beside its
         // photograph instead of on it.
@@ -209,265 +183,12 @@ struct RouteMapView: View {
         }
 
         graticule(in: &context, sheet: sheet)
-
-        groundLayout(in: &context, sheet: sheet, labels: &labels)
-        airspace(in: &context, sheet: sheet, labels: &labels)
-        runways(in: &context, sheet: sheet, labels: &labels)
-        places(in: &context, sheet: sheet, labels: &labels)
-
-        // Airports before fixes, so their labels win the space.
-        for airport in pinned {
-            marker(airport, in: &context, sheet: sheet, labels: &labels)
-        }
-        if !waypoints.isEmpty {
-            route(in: &context, sheet: sheet, labels: &labels)
-        }
-        place(labels, in: &context, size: size)
     }
-
-    /// The airport's ground plan: aprons, taxiways and runways, the way a ground chart
-    /// draws them.
-    ///
-    /// Under the airspace and over everything else, because it is the closest thing on the
-    /// sheet: by the time this draws, the view is a few kilometres across and the coastline
-    /// is a straight line somewhere off the edge.
-    private func groundLayout(in context: inout GraphicsContext, sheet: MapSheet,
-                              labels: inout [Label]) {
-        guard drawsGroundLayout else { return }
-        // Nothing here: the ground and its writing are both MapKit's now. A designator
-        // that lags the taxiway it names is a label pointing at the wrong concrete, so it
-        // went in with the tarmac rather than staying up here.
-    }
-
 
     /// True when the view is close enough for the ground layout. Always drawn at that range:
     /// this close in, the shape of the field is the map.
     private var drawsGroundLayout: Bool {
         metresAcross <= MapLayerRoom.layoutWithin
-    }
-
-    /// The layouts on the sheet, of those that have been fetched.
-    ///
-    /// Asked of the layouts rather than of the airport table, which is the cheap way round.
-    /// There are at most a few dozen layouts in hand and each already knows the circle it
-    /// covers, so this is a few dozen cap tests; going the other way meant a dot product
-    /// against all seventy-odd thousand airports on earth to find the handful that might
-    /// have one, twice a frame, at about six milliseconds a time.
-    ///
-    /// It is also the more truthful question. The old one asked which airport was nearest
-    /// the middle of the view; this asks which ground plans are actually on the screen.
-    private func nearbyLayouts(_ sheet: MapSheet) -> [AirportLayout] {
-        ground.layouts.values
-            .filter { sheet.mayShow($0.cap) }
-            .sorted { $0.icao < $1.icao }
-    }
-
-    /// Airspace, in the colours a chart uses: Class B solid blue, Class C magenta, Class D
-    /// blue and dashed, and prohibited, restricted and danger areas red — each ring labelled
-    /// with its ceiling over its floor.
-    ///
-    /// Drawn quietest first so the busier airspace reads over it, with the areas to keep out
-    /// of on top of everything, and filled faintly as well as outlined: a Class B is four or
-    /// five shelves stacked over one another and the fill is what shows which one you are
-    /// under.
-    private func airspace(in context: inout GraphicsContext, sheet: MapSheet,
-                          labels: inout [Label]) {
-        guard browser.showsAirspace, camera.worldWidth >= MapLayerRoom.airspaceFrom
-        else { return }
-        let rings = geography.airspace
-        let kinds = browser.airspaceClasses
-        guard !rings.isEmpty, !kinds.isEmpty else { return }
-
-        // The table arrives sorted quietest first, so one pass in order paints the busy
-        // airspace over the quiet without filtering by kind eight times over.
-        //
-        // A ring too small to read is left out rather than drawn as a speck: openAIP has
-        // four times the FAA's rings and most of them are aerodrome-sized, so at a wide view
-        // they are a wash of colour with no legible figure anywhere in it.
-        let least = MapLayerRoom.leastRadius
-        for space in rings where kinds.contains(space.klass) && sheet.mayShow(space.cap)
-            && space.cap.radius * sheet.projection.radius >= least {
-            let colour = Color(nsColor: Theme.airspace(space.klass))
-            let path = sheet.path(ring: MapShape(directions: space.directions,
-                                                 cap: space.cap))
-            guard !path.isEmpty else { continue }
-            context.fill(path, with: .color(colour.opacity(0.07)))
-            context.stroke(path, with: .color(colour), style: Self.stroke(of: space.klass))
-
-            // The ceiling and floor, out towards the ring's own edge.
-            let where_ = space.labelAt
-            guard sheet.projection.faces(where_.direction) else { continue }
-            let at = sheet.point(where_)
-            guard at.x > 0, at.x < sheet.size.width, at.y > 0, at.y < sheet.size.height
-            else { continue }
-            labels.append(Label(text: Text(space.ceilingLabel)
-                                    .font(.ngSmallMono)
-                                    .foregroundStyle(colour),
-                                under: Text(space.floorLabel)
-                                    .font(.ngSmallMono)
-                                    .foregroundStyle(colour),
-                                ruleColour: colour,
-                                at: at, anchor: .center))
-        }
-    }
-
-    /// Weight and dash per kind, following the chart: solid where entry is by clearance,
-    /// dashed where the boundary is advisory or the area is only sometimes active.
-    private static func stroke(of klass: AirspaceClass) -> StrokeStyle {
-        switch klass {
-        case .a: return StrokeStyle(lineWidth: 2)
-        case .b: return StrokeStyle(lineWidth: 2.2)
-        case .c: return StrokeStyle(lineWidth: 2)
-        case .d: return StrokeStyle(lineWidth: 1.8, dash: [5, 3])
-        case .e: return StrokeStyle(lineWidth: 1.5, dash: [2, 3])
-        case .prohibited: return StrokeStyle(lineWidth: 2.4)
-        case .restricted: return StrokeStyle(lineWidth: 2.1)
-        case .danger: return StrokeStyle(lineWidth: 2, dash: [6, 3])
-        }
-    }
-
-    /// The names of towns and cities, as many as there is room for.
-    ///
-    /// Asked for in rank order — Natural Earth's own, 0 for the places that belong on a world
-    /// map — so the declutterer gives the space to the ones that matter, and anything that
-    /// will not fit simply does not appear.
-    private func places(in context: inout GraphicsContext, sheet: MapSheet,
-                        labels: inout [Label]) {
-        guard browser.showsCityNames, !appleDrawsPlaces, !geography.cities.isEmpty
-        else { return }
-        let deepest = MapLayerRoom.cityRank(degreesAcross: degreesAcross)
-        let colour = Color(nsColor: Theme.place)
-
-        for city in geography.cities where city.rank <= deepest {
-            guard sheet.projection.faces(city.direction) else { continue }
-            let at = sheet.point(city.coordinate)
-            guard at.x > -20, at.x < sheet.size.width + 20,
-                  at.y > -10, at.y < sheet.size.height + 10 else { continue }
-
-            let dot = CGRect(x: at.x - 1.5, y: at.y - 1.5, width: 3, height: 3)
-            context.fill(Path(ellipseIn: dot), with: .color(colour.opacity(0.8)))
-            labels.append(Label(text: Text(city.name).font(.ngSmall).foregroundStyle(colour),
-                                at: CGPoint(x: at.x + 4, y: at.y),
-                                anchor: .leading))
-        }
-    }
-
-    /// Runway tarmac, once a runway is more than a few points long.
-    ///
-    /// The last level of detail there is: closer in than this a coastline is a straight line
-    /// and a border is nowhere near, and what tells you where you are looking is the shape of
-    /// the field. Idents go on only once a strip is long enough to hang one off.
-    private func runways(in context: inout GraphicsContext, sheet: MapSheet,
-                         labels: inout [Label]) {
-        guard camera.showsRunways else { return }
-
-        // Where the fetched layout covers this field, it draws the runways instead: it has
-        // their real outline, their markings and their width, against a straight band drawn
-        // between two thresholds. The bundled table still draws every other airport on
-        // earth, which is what it is for.
-        let drawnByLayout = drawsGroundLayout ? nearbyLayouts(sheet).map(\.cap) : []
-
-        let colour = Color(nsColor: Theme.runway)
-        let named = camera.worldWidth >= 500_000
-        // Feet across, in points. The globe is drawn to one scale at the middle of the view,
-        // so this is the same arithmetic wherever on Earth the runway is — which under
-        // Mercator it was not.
-        let perFoot = 0.3048 / 6_371_000 * camera.radius
-
-        for runway in geography.runways where sheet.mayShow(runway.cap) {
-            if drawnByLayout.contains(where: {
-                simd_dot($0.centre, runway.cap.centre) > cos($0.radius)
-            }) {
-                continue
-            }
-            let low = sheet.point(runway.low)
-            let high = sheet.point(runway.high)
-            let across = max(1.2, Double(runway.widthFeet) * perFoot)
-
-            var path = Path()
-            path.move(to: low)
-            path.addLine(to: high)
-            context.stroke(path, with: .color(colour),
-                           style: StrokeStyle(lineWidth: across, lineCap: .butt))
-
-            let run = hypot(low.x - high.x, low.y - high.y)
-            if named, run > 24, !runway.ident.isEmpty {
-                // Just off the threshold, on the runway's own line, the way a plate has it.
-                let at = CGPoint(x: low.x + (low.x - high.x) / run * 10,
-                                 y: low.y + (low.y - high.y) / run * 10)
-                labels.append(Label(text: Text(runway.ident)
-                                        .font(.ngSmallMono)
-                                        .foregroundStyle(colour),
-                                    at: at, anchor: .center))
-            }
-        }
-    }
-
-    /// Draws labels in the order asked for, skipping any that would land on one already there.
-    ///
-    /// Without this the route reads as gibberish the moment two fixes are close together: at a
-    /// continent's width "SUDDS" and "LYSTR" overlapped into "SUDLYSTR".
-    private func place(_ labels: [Label], in context: inout GraphicsContext, size: CGSize) {
-        var taken: [CGRect] = []
-        for label in labels {
-            let resolved = context.resolve(label.text)
-            let room = CGSize(width: 200, height: 40)
-            let topSize = resolved.measure(in: room)
-
-            // A second line sits under a rule, and the two together are what has to be
-            // measured for space — kept apart from the first line's own height, which is what
-            // the rule is positioned from. Using the combined height for both put the rule
-            // and the floor on top of one another.
-            var below: (text: GraphicsContext.ResolvedText, size: CGSize)?
-            if let under = label.under {
-                let resolvedBelow = context.resolve(under)
-                below = (resolvedBelow, resolvedBelow.measure(in: room))
-            }
-
-            let measured = below.map {
-                CGSize(width: max(topSize.width, $0.size.width),
-                       height: topSize.height + Self.ruleGap * 2 + $0.size.height)
-            } ?? topSize
-            var frame = CGRect(origin: label.at, size: measured)
-            frame.origin.x -= measured.width * label.anchor.x
-            frame.origin.y -= measured.height * label.anchor.y
-            // A couple of points of air, or neighbours merely touch instead of overlapping.
-            let padded = frame.insetBy(dx: -2, dy: -1)
-
-            guard frame.maxX > 0, frame.minX < size.width,
-                  frame.maxY > 0, frame.minY < size.height,
-                  !taken.contains(where: { $0.intersects(padded) })
-            else { continue }
-
-            taken.append(padded)
-            if let box = label.box {
-                let around = frame.insetBy(dx: -2.5, dy: -1.5)
-                let shape = Path(roundedRect: around, cornerRadius: 2)
-                context.fill(shape, with: .color(box))
-                if let border = label.border {
-                    context.stroke(shape, with: .color(border), lineWidth: 0.8)
-                }
-            }
-            guard let below = below else {
-                context.draw(resolved, at: label.at, anchor: label.anchor)
-                continue
-            }
-
-            // Ceiling over floor with a rule between, the way a chart writes it: the rule sits
-            // a hair under the ceiling and the floor a hair under the rule.
-            let middle = frame.midX
-            context.draw(resolved, at: CGPoint(x: middle, y: frame.minY), anchor: .top)
-
-            let ruleY = frame.minY + topSize.height + Self.ruleGap
-            var rule = Path()
-            rule.move(to: CGPoint(x: middle - measured.width / 2, y: ruleY))
-            rule.addLine(to: CGPoint(x: middle + measured.width / 2, y: ruleY))
-            context.stroke(rule, with: label.ruleColour.map { .color($0) } ?? .color(.secondary),
-                           lineWidth: 0.8)
-
-            context.draw(below.text, at: CGPoint(x: middle, y: ruleY + Self.ruleGap),
-                         anchor: .top)
-        }
     }
 
     /// Meridians and parallels every 30°, faint. Without them a dark globe has no sense of
@@ -503,73 +224,6 @@ struct RouteMapView: View {
         for line in Self.graticuleLines {
             context.stroke(sheet.path(line: line), with: .color(colour), lineWidth: 0.5)
         }
-    }
-
-    private func route(in context: inout GraphicsContext, sheet: MapSheet,
-                       labels: inout [Label]) {
-        // Two passes so the enroute line and the procedure legs each read as one colour
-        // rather than alternating down the route.
-        for procedure in [false, true] {
-            let colour = procedure ? Color.orange : Color(nsColor: Theme.route)
-            let style = StrokeStyle(lineWidth: procedure ? 2.5 : 2,
-                                    lineCap: .round, lineJoin: .round)
-            for (index, waypoint) in waypoints.enumerated() where index > 0 {
-                let previous = waypoints[index - 1]
-                guard waypoint.isProcedure == procedure else { continue }
-                // A great circle, which on a globe is simply the way the aeroplane goes.
-                let arc = Spherical.arc(from: Coordinate(latitude: previous.latitude,
-                                                         longitude: previous.longitude),
-                                        to: Coordinate(latitude: waypoint.latitude,
-                                                       longitude: waypoint.longitude))
-                let path = sheet.path(line: arc)
-                guard !path.isEmpty else { continue }
-                context.stroke(path, with: .color(colour), style: style)
-            }
-        }
-
-        // Fixes, with their names once there is room for them.
-        let labelled = degreesAcross < 40
-        for waypoint in waypoints where !waypoint.isAirport {
-            let coordinate = Coordinate(latitude: waypoint.latitude,
-                                        longitude: waypoint.longitude)
-            guard sheet.projection.faces(coordinate.direction) else { continue }
-            let point = sheet.point(coordinate)
-            let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
-            context.fill(Path(ellipseIn: dot),
-                         with: .color(waypoint.isProcedure ? Color.orange
-                                                           : Color(nsColor: Theme.route)))
-            if labelled {
-                labels.append(Label(text: Text(waypoint.ident)
-                                        .font(.ngSmall)
-                                        .foregroundStyle(.secondary),
-                                    at: CGPoint(x: point.x, y: point.y - 9),
-                                    anchor: .bottom))
-            }
-        }
-    }
-
-    private func marker(_ airport: MapAirport, in context: inout GraphicsContext,
-                        sheet: MapSheet, labels: inout [Label]) {
-        // Round the back of the globe, and there is nothing to draw — which is a thing a
-        // sphere can say and a sheet could not.
-        guard sheet.projection.faces(airport.coordinate.direction) else { return }
-        let point = sheet.point(airport.coordinate)
-        guard point.x > -40, point.x < sheet.size.width + 40,
-              point.y > -20, point.y < sheet.size.height + 20 else { return }
-
-        let onRoute = plan?.airfields.contains { $0.icao == airport.icao } ?? false
-        let colour = onRoute ? Color(nsColor: Theme.route) : Color.secondary
-        let box = CGRect(x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7)
-        context.fill(Path(ellipseIn: box), with: .color(colour))
-        context.stroke(Path(ellipseIn: box.insetBy(dx: -2, dy: -2)),
-                       with: .color(colour.opacity(0.5)), lineWidth: 1)
-
-        labels.append(Label(text: Text(airport.icao)
-                                .font(.ngSmallBold)
-                                .foregroundStyle(onRoute ? Color(nsColor: Theme.route)
-                                                         : Color.secondary),
-                            at: CGPoint(x: point.x, y: point.y + 8),
-                            anchor: .top))
     }
 
     /// Asks for whichever layer tables are switched on.
@@ -723,15 +377,22 @@ struct RouteMapView: View {
         return found
     }
 
-    /// What MapKit should draw for us, inside its own pass.
+    /// What MapKit should draw for us, inside its own pass: the ground, the airspace, the
+    /// runways, the towns, the airports and the route — everything with writing on it.
     ///
-    /// Only the ground: it is the layer registered to a photograph, so it is the one where
-    /// being a frame behind shows as a taxiway off the tarmac. The rest is still drawn on
-    /// the canvas above, where a frame of lag on a place name costs nothing.
+    /// None of the zoom thresholds are applied here. The renderer knows the zoom exactly,
+    /// on the frame it is drawing, where this would be a frame behind it.
     private var chartFrame: ChartFrame {
         ChartFrame(layouts: drawsGroundLayout ? held : [],
                    showsGroundLayout: drawsGroundLayout,
-                   showsStands: camera.worldWidth >= MapLayerRoom.standsFrom)
+                   showsStands: camera.worldWidth >= MapLayerRoom.standsFrom,
+                   airspace: geography.airspace,
+                   airspaceKinds: browser.showsAirspace ? browser.airspaceClasses : [],
+                   runways: geography.runways,
+                   cities: browser.showsCityNames && !appleDrawsPlaces ? geography.cities : [],
+                   waypoints: waypoints,
+                   airports: pinned,
+                   onRoute: Set((plan?.airfields ?? []).map { $0.icao.uppercased() }))
     }
 
     /// Every layout in hand. The renderer culls them itself against whatever rectangle

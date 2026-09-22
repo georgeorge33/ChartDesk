@@ -28,8 +28,12 @@ struct ChartContext {
         cg.fillPath()
     }
 
+    /// `phase` is how far into the dash pattern the line starts, for a line drawn in pieces
+    /// that has to read as one: each tile strokes its own piece of an airspace boundary,
+    /// and without it every piece would start its dashes afresh at the tile's edge.
     func stroke(_ path: Path, _ colour: NSColor, width: Double,
-                dash: [Double] = [], cap: CGLineCap = .butt, join: CGLineJoin = .miter) {
+                dash: [Double] = [], phase: Double = 0,
+                cap: CGLineCap = .butt, join: CGLineJoin = .miter) {
         guard !path.isEmpty, width > 0 else { return }
         cg.saveGState()
         cg.addPath(path.cgPath)
@@ -40,10 +44,25 @@ struct ChartContext {
         if dash.isEmpty {
             cg.setLineDash(phase: 0, lengths: [])
         } else {
-            cg.setLineDash(phase: 0, lengths: dash.map { CGFloat($0) })
+            cg.setLineDash(phase: phase, lengths: dash.map { CGFloat($0) })
         }
         cg.strokePath()
         cg.restoreGState()
+    }
+
+    /// A dot that stays the same size on the screen, `radius` in points.
+    func dot(at centre: CGPoint, radius: Double, _ colour: NSColor) {
+        let r = screen(radius)
+        cg.setFillColor(colour.cgColor)
+        cg.fillEllipse(in: CGRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2))
+    }
+
+    /// A ring round a point, `radius` and `width` in points.
+    func circle(at centre: CGPoint, radius: Double, width: Double, _ colour: NSColor) {
+        let r = screen(radius)
+        cg.setStrokeColor(colour.cgColor)
+        cg.setLineWidth(screen(width))
+        cg.strokeEllipse(in: CGRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2))
     }
 
     // MARK: - Writing
@@ -52,72 +71,115 @@ struct ChartContext {
     /// the screen however far in the map is.
     struct Label {
         let text: String
+        /// A second line under a rule, the way a chart writes a ceiling over a floor.
+        var under: String? = nil
         var size: Double = 11
-        var bold: Bool = true
+        var weight: NSFont.Weight = .bold
+        /// Figures in the monospaced face, so that a ceiling sits square over its floor.
+        var mono = false
         var colour: NSColor
         /// Filled behind it, the way a ground chart writes a taxiway's letter.
-        var box: NSColor?
+        var box: NSColor? = nil
         /// And drawn round that.
-        var border: NSColor?
+        var border: NSColor? = nil
+        /// A dark edge round the letters themselves, for writing with no box behind it —
+        /// which over a photograph is otherwise grey on grey.
+        var halo: NSColor? = nil
         /// Where it goes, in map points.
         let at: CGPoint
+        /// Which point of the writing sits on `at`, as a fraction of its width and height:
+        /// the middle by default, (0.5, 0) for the middle of its top edge, (0, 0.5) for its
+        /// left end.
+        var anchor = CGPoint(x: 0.5, y: 0.5)
+        /// How far from `at` that point is, in points on the screen — so a fix's name sits
+        /// the same distance above its dot however far in you are.
+        var nudge = CGVector.zero
+        /// How far apart, in points on the screen, two of these saying the same thing must
+        /// be. A taxiway's letter repeated along it is how a chart reads; three inside a
+        /// hundred metres is OpenStreetMap's way of splitting a taxiway showing through.
+        var spacing: Double? = nil
     }
 
-    /// Measured once per string and size. The same two dozen designators are drawn every
-    /// frame, and shaping them is the expensive half of writing them.
-    private static let measured = NSCache<NSString, NSValue>()
-
-    private func font(_ label: Label) -> NSFont {
-        let points = label.size * mapPointsPerScreenPoint
-        return label.bold ? NSFont.boldSystemFont(ofSize: points)
-                          : NSFont.systemFont(ofSize: points)
-    }
-
-    /// The line, and how wide and how tall the writing itself is.
+    /// A line of writing, shaped once at the size it is read at on the screen.
     ///
-    /// Tall means cap height, not ascent plus descent. A designator is a capital letter or
-    /// a number, so the descender space is always empty, and a box built to include it sits
-    /// the letter visibly high in its own chip. Cap height is the box the letter actually
-    /// fills, which is what makes it look centred.
-    private func line(_ label: Label) -> (CTLine, CGSize) {
-        let font = font(label)
-        let attributed = NSAttributedString(string: label.text, attributes: [
-            .font: font, .foregroundColor: label.colour,
+    /// Shaped in screen points and drawn under a scale, rather than shaped afresh in map
+    /// points at every zoom: the map-point size changed on every step of a zoom, so every
+    /// step shaped every label again, and airspace alone is thousands of them. The colour
+    /// comes from the context, so one shaped line serves every colour it is drawn in.
+    private final class Shaped {
+        let line: CTLine
+        /// Width and cap height, in screen points.
+        let size: CGSize
+        init(line: CTLine, size: CGSize) { self.line = line; self.size = size }
+    }
+
+    private static let shapedLines = NSCache<NSString, Shaped>()
+
+    private static func shaped(_ text: String, size: Double, weight: NSFont.Weight,
+                               mono: Bool) -> Shaped {
+        let key = "\(text)|\(size)|\(weight.rawValue)|\(mono)" as NSString
+        if let held = shapedLines.object(forKey: key) { return held }
+        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+                        : NSFont.systemFont(ofSize: size, weight: weight)
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: font,
+            NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
         ])
-        let made = CTLineCreateWithAttributedString(attributed)
-        let key = "\(label.text)|\(label.bold)|\(font.pointSize)" as NSString
-        if let held = Self.measured.object(forKey: key) {
-            return (made, held.sizeValue)
+        let line = CTLineCreateWithAttributedString(attributed)
+        let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+        // Cap height, not ascent plus descent. A designator is capitals and figures, so
+        // the descender space is always empty, and a box built to include it sits the
+        // letter visibly high in its own chip.
+        let made = Shaped(line: line, size: CGSize(width: width, height: font.capHeight))
+        shapedLines.setObject(made, forKey: key)
+        return made
+    }
+
+    /// The gap either side of the rule in a stacked label, in points.
+    private static let ruleGap = 2.5
+
+    /// The writing's own rectangle — the letters, not the chip round them — and its lines.
+    private func layout(_ label: Label) -> (rect: CGRect, top: Shaped, bottom: Shaped?) {
+        let top = Self.shaped(label.text, size: label.size, weight: label.weight,
+                              mono: label.mono)
+        let bottom = label.under.map {
+            Self.shaped($0, size: label.size, weight: label.weight, mono: label.mono)
         }
-        let width = CTLineGetTypographicBounds(made, nil, nil, nil)
-        let size = CGSize(width: width, height: font.capHeight)
-        Self.measured.setObject(NSValue(size: size), forKey: key)
-        return (made, size)
+        var width = top.size.width, height = top.size.height
+        if let bottom {
+            width = max(width, bottom.size.width)
+            height += Self.ruleGap * 2 + bottom.size.height
+        }
+        let size = CGSize(width: screen(width), height: screen(height))
+        let origin = CGPoint(
+            x: label.at.x + screen(label.nudge.dx) - size.width * label.anchor.x,
+            y: label.at.y + screen(label.nudge.dy) - size.height * label.anchor.y)
+        return (CGRect(origin: origin, size: size), top, bottom)
     }
 
     /// The chip a label occupies: the writing, plus the room around it.
     ///
     /// Room enough to read. A letter pressed against the edge of its own box is hard work
     /// over a photograph, where the box is the only thing separating it from a taxiway, an
-    /// aeroplane, or a threshold's worth of white paint.
-    private func chip(_ label: Label, around writing: CGSize) -> CGRect {
-        CGRect(x: label.at.x - writing.width / 2, y: label.at.y - writing.height / 2,
-               width: writing.width, height: writing.height)
-            .insetBy(dx: -screen(4), dy: -screen(3.5))
+    /// aeroplane, or a threshold's worth of white paint. Writing with no box keeps only
+    /// enough for its halo.
+    private func chip(_ label: Label, around writing: CGRect) -> CGRect {
+        label.box == nil
+            ? writing.insetBy(dx: -screen(1.5), dy: -screen(1.5))
+            : writing.insetBy(dx: -screen(4), dy: -screen(3.5))
     }
 
     /// What a label would occupy, for deciding whether two of them collide. The chip and
     /// not the letter: the chip is what you can see.
     func bounds(of label: Label) -> CGRect {
-        let (_, writing) = line(label)
-        return chip(label, around: writing)
+        chip(label, around: layout(label).rect)
     }
 
     func draw(_ label: Label) {
-        let (made, writing) = line(label)
-        let box = chip(label, around: writing)
+        let (writing, top, bottom) = layout(label)
 
         if let colour = label.box {
+            let box = chip(label, around: writing)
             let shape = CGPath(roundedRect: box, cornerWidth: screen(3),
                                cornerHeight: screen(3), transform: nil)
             cg.addPath(shape)
@@ -131,40 +193,64 @@ struct ChartContext {
             }
         }
 
-        // Core Text draws with y upwards and this context has y running south, so the
-        // writing is flipped back about its own baseline rather than the whole world being
-        // turned over — which would take the shapes with it.
-        //
-        // The baseline sits on the bottom of the cap box, which is where a capital's feet
-        // are by definition. No fudge factor: the old one was a guess at the descent and
-        // left every label a fraction high.
+        // Each line's baseline on the bottom of its own cap box, which is by definition
+        // where a capital's feet are.
+        let first = writing.minY + screen(top.size.height)
+        write(top, centredOn: writing.midX, baseline: first, label)
+        guard let bottom else { return }
+
+        // Ceiling over floor with a rule between, the way a chart writes it.
+        let ruleY = first + screen(Self.ruleGap)
+        var rule = Path()
+        rule.move(to: CGPoint(x: writing.minX, y: ruleY))
+        rule.addLine(to: CGPoint(x: writing.maxX, y: ruleY))
+        if let halo = label.halo {
+            stroke(rule, halo, width: screen(2.6), cap: .round)
+        }
+        stroke(rule, label.colour, width: screen(0.8))
+        write(bottom, centredOn: writing.midX, baseline: writing.maxY, label)
+    }
+
+    /// One line, drawn under a scale so that it comes out at its size on the screen.
+    ///
+    /// Core Text draws with y upwards and this context has y running south, so the line is
+    /// flipped back about its own baseline rather than the whole world being turned over —
+    /// which would take the shapes with it.
+    private func write(_ line: Shaped, centredOn middle: Double, baseline: Double,
+                       _ label: Label) {
         cg.saveGState()
         cg.setShouldAntialias(true)
         cg.setAllowsFontSmoothing(true)
         cg.setShouldSmoothFonts(true)
         cg.textMatrix = .identity
-        cg.translateBy(x: box.midX - writing.width / 2,
-                       y: label.at.y + writing.height / 2)
-        cg.scaleBy(x: 1, y: -1)
+        cg.translateBy(x: middle - screen(line.size.width) / 2, y: baseline)
+        cg.scaleBy(x: mapPointsPerScreenPoint, y: -mapPointsPerScreenPoint)
         cg.textPosition = .zero
-        CTLineDraw(made, cg)
+        if let halo = label.halo {
+            // The halo first, as a stroke round the letters in the halo's colour: in text
+            // space now, so the width is in points on the screen.
+            cg.setTextDrawingMode(.stroke)
+            cg.setLineWidth(2.4)
+            cg.setLineJoin(.round)
+            cg.setStrokeColor(halo.cgColor)
+            CTLineDraw(line.line, cg)
+            cg.setTextDrawingMode(.fill)
+            // Drawing a line moves the pen to its end. Without going back, the letters
+            // were drawn a word to the right of their own halo.
+            cg.textPosition = .zero
+        }
+        cg.setFillColor(label.colour.cgColor)
+        CTLineDraw(line.line, cg)
         cg.restoreGState()
     }
 
     // MARK: - Paint
 
-    /// Figures for painting on the ground, shaped once at a reference size. Their colour
-    /// comes from the context, so one shaped line serves every colour it is drawn in.
+    /// Figures for painting on the ground, shaped once at a reference size — the size is
+    /// the ground's business, not the screen's — with their colour from the context.
     private static let paints = NSCache<NSString, Shaped>()
 
-    private final class Shaped {
-        let line: CTLine
-        /// Width and cap height, at the reference size.
-        let size: CGSize
-        init(line: CTLine, size: CGSize) { self.line = line; self.size = size }
-    }
-
-    private static func shaped(_ text: String) -> Shaped {
+    private static func painted(_ text: String) -> Shaped {
         if let held = paints.object(forKey: text as NSString) { return held }
         // Narrow and heavy, the way runway figures are painted: tall enough to read from
         // a cockpit on the approach, narrow enough that three of them fit across.
@@ -199,7 +285,7 @@ struct ChartContext {
         let top = CGVector(dx: up.dx / length, dy: up.dy / length)
         let across = CGVector(dx: -top.dy, dy: top.dx)
 
-        let made = Self.shaped(text)
+        let made = Self.painted(text)
         let unit = capHeight / made.size.height
         let origin = CGPoint(
             x: centre.x - (across.dx * made.size.width + top.dx * made.size.height) * unit / 2,
@@ -220,7 +306,7 @@ struct ChartContext {
     /// The box painted figures cover, square to the page, for keeping labels off them.
     func paintedBounds(_ text: String, centre: CGPoint, facing up: CGVector,
                        capHeight: Double) -> CGRect {
-        let made = Self.shaped(text)
+        let made = Self.painted(text)
         let unit = capHeight / made.size.height
         let length = max(hypot(up.dx, up.dy), 1e-9)
         let top = CGVector(dx: up.dx / length, dy: up.dy / length)
