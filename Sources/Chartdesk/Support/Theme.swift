@@ -63,9 +63,10 @@ enum Theme {
     static let runwaySurface   = rgb(0x26282C)
     static let runwayMarking   = rgb(0xF2F4F7)
     static let taxiLine        = rgb(0xE8C33A)
-    /// The bar you hold short at, and the stand you park on. Magenta is what a ground chart
-    /// paints a holding position in.
-    static let holdShort       = rgb(0xE05AC8)
+    /// The bar you hold short at, and its name. Red, the way a ground chart draws a
+    /// holding position: it is the one line on the airport you must not cross without
+    /// being told to, and red is the colour that says so.
+    static let holdShort       = rgb(0xE5383B)
     static let stand           = rgb(0xBFD0E0)
 
     /// The colour a kind of airspace is drawn in, so the map and the Layers panel cannot
