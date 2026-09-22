@@ -23,6 +23,34 @@ import MapKit
 enum RenderProbe {
 
     static func runIfAsked() {
+        // Every cached layout parsed and counted, for checking a change to the parser
+        // against all of them at once.
+        if ProcessInfo.processInfo.environment["CHARTDESK_PARSE_ALL"] != nil {
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: AirportLayoutStore.directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            where file.pathExtension == "json" {
+                let icao = file.deletingPathExtension().lastPathComponent
+                guard let data = try? Data(contentsOf: file),
+                      let layout = AirportLayoutStore.parse(data, icao: icao) else {
+                    print("\(icao): did not parse"); continue
+                }
+                let displaced = layout.ends.filter { $0.kind == .displaced }.count
+                let pads = layout.ends.count - displaced
+                let unnamed = layout.runways.filter { $0.names.isEmpty }.map { $0.ref.isEmpty ? "?" : $0.ref }
+                print("\(icao): \(layout.runways.count) runways, \(displaced) displaced, "
+                      + "\(pads) pads, \(AirportLayoutStore.isComplete(data) ? "complete" : "older")"
+                      + (unnamed.isEmpty ? "" : ", unnamed: \(unnamed.joined(separator: " "))"))
+            }
+            exit(0)
+        }
+        // The top-up's query for one airport, printed exactly as it would be sent.
+        if let icao = ProcessInfo.processInfo.environment["CHARTDESK_ENDS_QUERY"] {
+            let where_ = MainActor.assumeIsolated { WorldData.airport(icao)?.coordinate }
+            print(AirportLayoutStore.endsQuery(icao: icao.uppercased(),
+                                               at: where_ ?? Coordinate(latitude: 0, longitude: 0)))
+            exit(0)
+        }
         guard let spec = ProcessInfo.processInfo.environment["CHARTDESK_RENDER"] else { return }
         let parts = spec.split(separator: " ").map(String.init)
         guard parts.count >= 3, let across = Double(parts[1]) else {
@@ -50,7 +78,20 @@ enum RenderProbe {
         let environment = ProcessInfo.processInfo.environment
         var layout: AirportLayout?
         if icao != "-" {
-            guard let data = try? Data(contentsOf: AirportLayoutStore.file(for: icao)),
+            // CHARTDESK_RENDER_EXTRA is another Overpass answer to fold in, in memory
+            // only — for trying out what a top-up would add without writing the cache.
+            var cached = try? Data(contentsOf: AirportLayoutStore.file(for: icao))
+            if let extra = environment["CHARTDESK_RENDER_EXTRA"],
+               let more = try? Data(contentsOf: URL(fileURLWithPath: extra)),
+               let base = cached,
+               var top = try? JSONSerialization.jsonObject(with: base) as? [String: Any],
+               let added = (try? JSONSerialization.jsonObject(with: more) as? [String: Any])?["elements"]
+                   as? [[String: Any]] {
+                top["elements"] = ((top["elements"] as? [[String: Any]]) ?? []) + added
+                cached = try? JSONSerialization.data(withJSONObject: top)
+                print("folded in \(added.count) more elements from \(extra)")
+            }
+            guard let data = cached,
                   let parsed = AirportLayoutStore.parse(data, icao: icao) else {
                 FileHandle.standardError.write("no cached layout for \(icao)\n".data(using: .utf8)!)
                 return false
@@ -68,6 +109,12 @@ enum RenderProbe {
                   + "\(Int(way.width))m wide, ends \(ends.joined(separator: " → ")), "
                   + "\(way.keys.count) keys, \(way.zones.count) zones, "
                   + "names \(way.names.map(\.text))")
+        }
+        for end in layout?.ends ?? [] {
+            let middle = Coordinate(end.cap.centre)
+            print(String(format: "end %@ at %.5f,%.5f: %d marks",
+                         end.kind == .pad ? "pad" : "displaced", middle.latitude,
+                         middle.longitude, end.marks.count))
         }
 
         let view = CGSize(width: 1100, height: 700)
