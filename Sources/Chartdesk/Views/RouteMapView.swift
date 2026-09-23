@@ -101,6 +101,15 @@ struct RouteMapView: View {
             // The first layout is the first chance to frame the route rather than the world.
             if !didFit, newSize.width > 0 {
                 didFit = true
+                #if DEBUG
+                if let look = RenderProbe.openAt {
+                    userMoved = true
+                    let ground = 40_075_017 * cos(look.centre.latitude * .pi / 180)
+                    show(MapCamera(centre: look.centre,
+                                   worldWidth: newSize.width * ground / look.metres))
+                    return
+                }
+                #endif
                 fitRoute()
             }
         }

@@ -16,11 +16,21 @@ struct ContentView: View {
     /// The splash, up until the first scan is done and a readable minimum has passed. Two
     /// pieces of state rather than one so whichever finishes second dismisses it.
     @State private var isStarting = true
+
+    /// Past the welcome screen to the map with no library at all, for the debug hook that
+    /// opens on it. With no library there is nothing to import into, so nothing is moved.
+    private var opensOnMap: Bool {
+        #if DEBUG
+        return RenderProbe.openAt != nil
+        #else
+        return false
+        #endif
+    }
     @State private var minimumShown = false
 
     var body: some View {
         Group {
-            if library.hasLibrary {
+            if library.hasLibrary || opensOnMap {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
                     SidebarView()
                         .navigationSplitViewColumnWidth(min: 200, ideal: 244, max: 360)

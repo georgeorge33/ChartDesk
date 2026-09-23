@@ -22,6 +22,29 @@ import MapKit
 /// out is what the tiles would show, seams included.
 enum RenderProbe {
 
+    /// `CHARTDESK_OPEN_MAP="lat,lon metres"`: open on the route map looking there, that
+    /// many metres across, instead of on the flight — for seeing what the live MapKit
+    /// pipeline draws without clicking through the app to get there.
+    static let openAt: (centre: Coordinate, metres: Double)? = {
+        guard let spec = ProcessInfo.processInfo.environment["CHARTDESK_OPEN_MAP"] else {
+            return nil
+        }
+        let parts = spec.split(separator: " ")
+        guard parts.count == 2, let metres = Double(parts[1]) else { return nil }
+        let figures = parts[0].split(separator: ",").compactMap { Double($0) }
+        guard figures.count == 2 else { return nil }
+        return (Coordinate(latitude: figures[0], longitude: figures[1]), metres)
+    }()
+
+    /// `CHARTDESK_ZOOM_TEST`: a few seconds after opening, zoom in by half again, a step a
+    /// frame the way a gesture does, so that what follows the map during motion can be
+    /// looked at without anyone's hand on the mouse.
+    static let zoomsItself = ProcessInfo.processInfo.environment["CHARTDESK_ZOOM_TEST"] != nil
+
+    /// `CHARTDESK_LOG_TILES`: say, once for each zoom, what MapKit hands the renderer — the
+    /// zoom scale, the true scale, and how many pixels of tile a screen point gets.
+    static let logsTiles = ProcessInfo.processInfo.environment["CHARTDESK_LOG_TILES"] != nil
+
     static func runIfAsked() {
         // Every cached layout parsed and counted, for checking a change to the parser
         // against all of them at once.
@@ -215,6 +238,13 @@ enum RenderProbe {
                 x += tile
             }
             y += tile
+        }
+
+        // The writing, which the app places as annotation views drawn at the screen's own
+        // resolution: drawn here the same way, once, over the tiles.
+        if let placed = renderer.placedLabels() {
+            let chart = ChartContext(cg: context, mapPointsPerScreenPoint: placed.scale)
+            for label in placed.labels { chart.draw(label) }
         }
 
         guard let image = context.makeImage(),

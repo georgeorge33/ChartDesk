@@ -115,6 +115,10 @@ final class BrowserState: ObservableObject {
         // ones was chosen, Apple's map is what is in its place.
         let saved = defaults.string(forKey: DefaultsKey.baseMap) ?? ""
         baseMap = BaseMap(rawValue: saved) ?? .appleMap
+        #if DEBUG
+        // Straight to the map, for looking at what MapKit draws without clicking through.
+        if RenderProbe.openAt != nil { sidebarSelection = .map }
+        #endif
         // An absent preference means the default set; an empty one means none, which is a
         // thing you can ask for by turning all six off.
         if let saved = defaults.string(forKey: DefaultsKey.airspaceClasses) {
