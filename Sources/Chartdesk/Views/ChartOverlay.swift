@@ -422,13 +422,30 @@ final class ChartRenderer: MKOverlayRenderer {
             // "700 AGL to FL600" on almost every ring, and tagged along all of them would
             // bury everything else.
             for ring in rings.reversed() where ring.space.klass != .e {
-                for spot in tagSpots(on: ringPoints(ring.space, projection), scale: scale)
-                where interesting(spot.at) {
-                    wanted.append(ChartContext.Label(
+                let points = thinned(ringPoints(ring.space, projection), grain: scale)
+                func tag(at point: CGPoint, along path: [CGPoint]?) -> ChartContext.Label {
+                    ChartContext.Label(
                         text: ring.space.tag, size: 10, weight: .semibold,
                         colour: NSColor(white: 0.96, alpha: 1),
                         box: NSColor.black.withAlphaComponent(0.85), border: ring.colour,
-                        at: spot.at, spacing: 400, angle: spot.angle))
+                        at: point, spacing: 400, path: path)
+                }
+                // The chip's own size, square to the page, and the band it becomes when it
+                // is laid along the ring.
+                let straight = tag(at: .zero, along: nil)
+                let chip = chart.bounds(of: straight)
+                let half = CGSize(width: chip.width / 2, height: chip.height / 2)
+                let band = chart.band(of: straight)
+                // How much of the line the writing needs, and how far it sits clear of the
+                // ring's own line and the glow either side of it.
+                let run = chip.width - chart.screen(4)
+                let clear = chart.screen(ring.glowWidth / 2 + 2)
+                let spots = tagSpots(on: points, scale: scale, run: run, band: band,
+                                     clear: clear, half: half,
+                                     middle: projection.point(ring.space.cap.centre),
+                                     wanted: interesting)
+                for spot in spots {
+                    wanted.append(tag(at: spot.at, along: spot.path))
                 }
             }
         }
@@ -591,24 +608,57 @@ final class ChartRenderer: MKOverlayRenderer {
         return points
     }
 
-    /// Where a ring's tags go: along its boundary, one every so many points of its length
-    /// on the screen, each turned to run with the line there and never upside down.
+    /// Where a ring's tags go: laid along a line set in from its boundary, curving with it,
+    /// one every so many points of its length on the screen — inside the airspace the tag
+    /// names, clear of the ring's line and its glow, and reading left to right whichever
+    /// way round the ring was drawn.
     ///
     /// Repeated rather than placed once, so that wherever the ring crosses the view there
     /// is likely to be a tag on it — the declutter drops the ones that land on something
     /// — and placed by the ring's own length from its own first point, so the same tags
     /// come back in the same places however the map was panned to get there.
-    private static func tagSpots(on points: [CGPoint], scale: Double)
-    -> [(at: CGPoint, angle: Double)] {
+    ///
+    /// Inside is found from the way round the ring runs, not assumed: the table has rings
+    /// drawn both ways. A place is only used where the band fits inside the ring along its
+    /// whole length and the line is gentle enough to read along — a set-in line round a
+    /// tight corner doubles back on itself, and writing bent through more than about
+    /// seventy degrees is not writing any more. It is tried set in further once, and
+    /// otherwise left out.
+    ///
+    /// A small ring gets its tag offered at several places round its edge, and at its
+    /// middle square to the page as a last resort. Offered once, the one place was as often
+    /// as not under a Class B's tag, which wins, and the ring went without; the tags'
+    /// spacing keeps just the first of them that finds room.
+    ///
+    /// `wanted` says whether a place is worth the trouble: most of a big ring is nowhere
+    /// near the view, and a curved line and its fit are the dear part of all of this, so a
+    /// place outside the region is passed over before either is worked out.
+    private static func tagSpots(on points: [CGPoint], scale: Double, run: Double,
+                                 band: Double, clear: Double, half: CGSize, middle: CGPoint,
+                                 wanted: (CGPoint) -> Bool)
+    -> [(at: CGPoint, path: [CGPoint]?)] {
         guard points.count > 2 else { return [] }
         var lengths = [0.0]
         lengths.reserveCapacity(points.count + 1)
+        var winding = 0.0
         for index in 1...points.count {
             let a = points[index - 1], b = points[index % points.count]
             lengths.append(lengths[index - 1] + hypot(b.x - a.x, b.y - a.y))
+            winding += Double(a.x * b.y - b.x * a.y)
         }
         let total = lengths[lengths.count - 1]
         guard total > 0 else { return [] }
+        // With y running down the page, a ring that sums positive runs clockwise on it,
+        // and its inside is on the right of the way it runs.
+        let clockwise = winding > 0
+
+        // Whether the ring is big enough to write along at all, before any line is built
+        // to find out: its length gives the radius of a circle as long, and a tag bent
+        // round that, set in, through more than about seventy degrees cannot be read.
+        // Most of the rings in a busy view are that small, and each was costing four
+        // curved lines and a dozen fits to learn it.
+        let roomy = total / (2 * Double.pi) - band / 2 - clear
+        let curves = roomy > 0 && run / roomy < 1.2
 
         func point(_ distance: Double) -> CGPoint {
             var d = distance.truncatingRemainder(dividingBy: total)
@@ -624,22 +674,162 @@ final class ChartRenderer: MKOverlayRenderer {
             return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
         }
 
-        let step = 640 * scale
-        // The way the line runs, taken over a couple of dozen points either side, so a
-        // tag on a kink in the boundary follows the ring rather than the kink.
-        let reach = 24 * scale
-        var out: [(CGPoint, Double)] = []
-        var along = min(160 * scale, total / 2)
-        while along < total {
-            let before = point(along - reach), after = point(along + reach)
-            var angle = atan2(after.y - before.y, after.x - before.x)
-            // Left to right on the page, whichever way round the ring was drawn.
-            let quarter = Double.pi / 2
-            if angle > quarter { angle -= Double.pi } else if angle < -quarter { angle += Double.pi }
-            out.append((point(along), angle))
-            along += step
+        // The ring's point that far along it, moved in towards its inside: the way the
+        // ring runs taken over a few points either side, so a kink does not throw it.
+        let reach = 8 * scale
+        func setIn(_ distance: Double, by inset: Double) -> CGPoint? {
+            let a = point(distance - reach), b = point(distance + reach)
+            let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+            let length = hypot(dx, dy)
+            guard length > 0 else { return nil }
+            let tx = dx / length, ty = dy / length
+            let nx = clockwise ? -ty : ty
+            let ny = clockwise ? tx : -tx
+            let here = point(distance)
+            return CGPoint(x: Double(here.x) + nx * inset, y: Double(here.y) + ny * inset)
+        }
+
+        // The set-in line either side of a place on the ring, long enough for the writing,
+        // left to right on the page.
+        func line(at distance: Double, by inset: Double) -> [CGPoint]? {
+            guard let centre = setIn(distance, by: inset) else { return nil }
+            let stride = 2 * scale
+            var ahead: [CGPoint] = [], behind: [CGPoint] = []
+            let ways: [Double] = [1, -1]
+            for way in ways {
+                var gone = 0.0, last = centre, arc = distance, steps = 0
+                while gone < run / 2, steps < 800 {
+                    arc += way * stride
+                    steps += 1
+                    guard let next = setIn(arc, by: inset) else { return nil }
+                    gone += Double(hypot(next.x - last.x, next.y - last.y))
+                    if way > 0 { ahead.append(next) } else { behind.append(next) }
+                    last = next
+                }
+            }
+            var path = Array(behind.reversed()) + [centre] + ahead
+            if path[path.count - 1].x < path[0].x { path.reverse() }
+            return path
+        }
+
+        // Gentle enough to read along: never doubling back, and bent through less than
+        // about seventy degrees end to end.
+        func readable(_ path: [CGPoint]) -> Bool {
+            guard path.count > 2 else { return true }
+            var turned = 0.0
+            for index in 1..<(path.count - 1) {
+                let ax = Double(path[index].x - path[index - 1].x)
+                let ay = Double(path[index].y - path[index - 1].y)
+                let bx = Double(path[index + 1].x - path[index].x)
+                let by = Double(path[index + 1].y - path[index].y)
+                let dot = ax * bx + ay * by
+                if dot <= 0 { return false }
+                turned += abs(atan2(ax * by - ay * bx, dot))
+            }
+            return turned < 1.2
+        }
+
+        // The band inside the ring all along it: both its edges, every few points, and its
+        // round ends.
+        func inside(_ path: [CGPoint]) -> Bool {
+            let edge = band / 2
+            var index = 0
+            while index < path.count {
+                let a = path[max(index - 1, 0)], b = path[min(index + 1, path.count - 1)]
+                let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+                let length = hypot(dx, dy)
+                if length > 0 {
+                    let nx = -dy / length, ny = dx / length
+                    let sides: [Double] = [1, -1]
+                    for side in sides {
+                        let probe = CGPoint(x: Double(path[index].x) + nx * edge * side,
+                                            y: Double(path[index].y) + ny * edge * side)
+                        if !contains(points, probe) { return false }
+                    }
+                }
+                index += 8
+            }
+            let first = path[0], second = path[1]
+            let last = path[path.count - 1], before = path[path.count - 2]
+            let ends: [(CGPoint, CGPoint)] = [(first, second), (last, before)]
+            for (end, next) in ends {
+                let dx = Double(end.x - next.x), dy = Double(end.y - next.y)
+                let length = hypot(dx, dy)
+                guard length > 0 else { continue }
+                let probe = CGPoint(x: Double(end.x) + dx / length * edge,
+                                    y: Double(end.y) + dy / length * edge)
+                if !contains(points, probe) { return false }
+            }
+            return true
+        }
+
+        // Every 640 points round a big ring; at least four times round a small one.
+        let step = min(640 * scale, total / 4)
+        let insets: [Double] = [band / 2 + clear, (band / 2 + clear) * 1.8]
+        var out: [(CGPoint, [CGPoint]?)] = []
+        var along = min(160 * scale, step / 2)
+        while curves, along < total {
+            defer { along += step }
+            guard wanted(point(along)) else { continue }
+            for inset in insets {
+                if let path = line(at: along, by: inset), path.count > 1,
+                   readable(path), inside(path) {
+                    out.append((path[path.count / 2], path))
+                    break
+                }
+            }
+        }
+        if total < 1_280 * scale, wanted(middle),
+           fits(half, at: middle, angle: 0, inside: points) {
+            out.append((middle, nil))
         }
         return out
+    }
+
+    /// A ring with points closer together than `grain` dropped, the last kept each time.
+    private static func thinned(_ points: [CGPoint], grain: Double) -> [CGPoint] {
+        guard let first = points.first else { return [] }
+        var out = [first]
+        out.reserveCapacity(points.count)
+        var last = first
+        for point in points.dropFirst()
+        where abs(Double(point.x - last.x)) >= grain || abs(Double(point.y - last.y)) >= grain {
+            out.append(point)
+            last = point
+        }
+        return out
+    }
+
+    /// Whether a chip of this half-size, centred here and turned so, lies wholly inside
+    /// the ring: all four of its corners in it.
+    private static func fits(_ half: CGSize, at centre: CGPoint, angle: Double,
+                             inside ring: [CGPoint]) -> Bool {
+        let ux = cos(angle), uy = sin(angle)
+        let w = Double(half.width), h = Double(half.height)
+        let cx = Double(centre.x), cy = Double(centre.y)
+        let signs: [(Double, Double)] = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        for (along, across) in signs {
+            let x = cx + ux * w * along - uy * h * across
+            let y = cy + uy * w * along + ux * h * across
+            if !contains(ring, CGPoint(x: x, y: y)) { return false }
+        }
+        return true
+    }
+
+    /// Whether a point is inside a ring, by counting how many of its edges a line from the
+    /// point to the right crosses.
+    private static func contains(_ ring: [CGPoint], _ point: CGPoint) -> Bool {
+        var inside = false
+        var j = ring.count - 1
+        for i in 0..<ring.count {
+            let a = ring[i], b = ring[j]
+            if (a.y > point.y) != (b.y > point.y) {
+                let x = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
+                if point.x < x { inside.toggle() }
+            }
+            j = i
+        }
+        return inside
     }
 
     private static func runway(_ strip: Strip, in chart: ChartContext, sheet: MapSheet) {

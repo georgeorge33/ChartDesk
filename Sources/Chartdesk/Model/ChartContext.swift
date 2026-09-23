@@ -109,9 +109,12 @@ struct ChartContext {
         /// be. A taxiway's letter repeated along it is how a chart reads; three inside a
         /// hundred metres is OpenStreetMap's way of splitting a taxiway showing through.
         var spacing: Double? = nil
-        /// Turned about its anchor, in radians, clockwise on the page: for writing laid
-        /// along a line, like an airspace tag on its boundary.
+        /// Turned about its anchor, in radians, clockwise on the page.
         var angle: Double = 0
+        /// Laid along this line instead of straight: the middle of the writing's height
+        /// follows it, in map points, from the writing's left end to its right. For an
+        /// airspace tag that curves with its ring, chip and all.
+        var path: [CGPoint]? = nil
     }
 
     /// A line of writing, shaped once at the size it is read at on the screen.
@@ -124,7 +127,44 @@ struct ChartContext {
         let line: CTLine
         /// Width and cap height, in screen points.
         let size: CGSize
-        init(line: CTLine, size: CGSize) { self.line = line; self.size = size }
+        /// The line's glyphs, run by run, with where each sits along the baseline and how
+        /// far it advances: for setting the writing along a curve a glyph at a time.
+        let glyphs: [Glyph]
+
+        struct Glyph {
+            let font: CTFont
+            let glyph: CGGlyph
+            /// Along the baseline from the line's start, and the glyph's advance.
+            let x: Double
+            let advance: Double
+        }
+
+        init(line: CTLine, size: CGSize) {
+            self.line = line
+            self.size = size
+            var glyphs: [Glyph] = []
+            for run in (CTLineGetGlyphRuns(line) as? [CTRun]) ?? [] {
+                let count = CTRunGetGlyphCount(run)
+                guard count > 0,
+                      let value = (CTRunGetAttributes(run) as NSDictionary)[kCTFontAttributeName as String],
+                      CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+                else { continue }
+                let font = value as! CTFont
+                var ids = [CGGlyph](repeating: 0, count: count)
+                var positions = [CGPoint](repeating: .zero, count: count)
+                var advances = [CGSize](repeating: .zero, count: count)
+                let all = CFRange(location: 0, length: 0)
+                CTRunGetGlyphs(run, all, &ids)
+                CTRunGetPositions(run, all, &positions)
+                CTRunGetAdvances(run, all, &advances)
+                for index in 0..<count {
+                    glyphs.append(Glyph(font: font, glyph: ids[index],
+                                        x: Double(positions[index].x),
+                                        advance: Double(advances[index].width)))
+                }
+            }
+            self.glyphs = glyphs
+        }
     }
 
     private static let shapedLines = NSCache<NSString, Shaped>()
@@ -187,6 +227,17 @@ struct ChartContext {
     /// not the letter: the chip is what you can see. A turned label claims the square box
     /// round its turned chip, which is more room than it covers and never less.
     func bounds(of label: Label) -> CGRect {
+        if let path = label.path, path.count > 1 {
+            // The line, with half the band's height all round: the round ends included.
+            let reach = band(of: label) / 2 + screen(1)
+            var minX = path[0].x, maxX = path[0].x, minY = path[0].y, maxY = path[0].y
+            for point in path.dropFirst() {
+                minX = min(minX, point.x); maxX = max(maxX, point.x)
+                minY = min(minY, point.y); maxY = max(maxY, point.y)
+            }
+            return CGRect(x: minX - reach, y: minY - reach,
+                          width: maxX - minX + reach * 2, height: maxY - minY + reach * 2)
+        }
         let box = chip(label, around: layout(label).rect)
         guard label.angle != 0 else { return box }
         let pivot = Self.pivot(of: label, in: self)
@@ -202,7 +253,19 @@ struct ChartContext {
                 y: label.at.y + context.screen(label.nudge.dy))
     }
 
+    /// How tall the chip is round a label's writing, in map points: its cap height and the
+    /// room above and below it.
+    func band(of label: Label) -> Double {
+        let top = Self.shaped(label.text, size: label.size, weight: label.weight,
+                              mono: label.mono)
+        return screen(top.size.height + 7)
+    }
+
     func draw(_ label: Label) {
+        if let path = label.path, path.count > 1 {
+            drawAlong(path, label)
+            return
+        }
         guard label.angle == 0 else {
             // Laid out square to the page and then turned as a whole about its anchor,
             // chip, rule and all.
@@ -356,5 +419,75 @@ struct ChartContext {
         let reachY = abs(top.dx) * halfAcross + abs(top.dy) * halfUp
         return CGRect(x: centre.x - reachX, y: centre.y - reachY,
                       width: reachX * 2, height: reachY * 2)
+    }
+
+    // MARK: - Writing along a line
+
+    /// A label laid along a line: the chip as a band stroked along it with round ends, its
+    /// border a band a little wider underneath, and the writing a glyph at a time, each
+    /// turned to the line where its middle falls and centred on it top to bottom.
+    private func drawAlong(_ path: [CGPoint], _ label: Label) {
+        let shaped = Self.shaped(label.text, size: label.size, weight: label.weight,
+                                 mono: label.mono)
+        var line = Path()
+        line.move(to: path[0])
+        for point in path.dropFirst() { line.addLine(to: point) }
+        let band = band(of: label)
+        if let border = label.border {
+            stroke(line, border, width: band + screen(2), cap: .round, join: .round)
+        }
+        if let box = label.box {
+            stroke(line, box, width: band, cap: .round, join: .round)
+        }
+
+        var lengths = [0.0]
+        lengths.reserveCapacity(path.count)
+        for index in 1..<path.count {
+            let a = path[index - 1], b = path[index]
+            lengths.append(lengths[index - 1] + Double(hypot(b.x - a.x, b.y - a.y)))
+        }
+        let total = lengths[lengths.count - 1]
+        guard total > 0 else { return }
+
+        // A point that far along the line and the way it runs there; past either end, on
+        // along the end's own direction.
+        func along(_ distance: Double) -> (point: CGPoint, x: Double, y: Double) {
+            var index = 1
+            while index < path.count - 1, lengths[index] < distance { index += 1 }
+            let a = path[index - 1], b = path[index]
+            let span = lengths[index] - lengths[index - 1]
+            let x = span > 0 ? Double(b.x - a.x) / span : 1
+            let y = span > 0 ? Double(b.y - a.y) / span : 0
+            let t = distance - lengths[index - 1]
+            return (CGPoint(x: Double(a.x) + x * t, y: Double(a.y) + y * t), x, y)
+        }
+
+        let unit = mapPointsPerScreenPoint
+        let start = (total - screen(shaped.size.width)) / 2
+        let half = screen(shaped.size.height) / 2
+        cg.saveGState()
+        cg.setShouldAntialias(true)
+        cg.setAllowsFontSmoothing(true)
+        cg.setShouldSmoothFonts(true)
+        cg.textMatrix = .identity
+        cg.setFillColor(label.colour.cgColor)
+        for glyph in shaped.glyphs {
+            let advance = screen(glyph.advance)
+            let middle = along(start + screen(glyph.x) + advance / 2)
+            // Up, for the writing, is a right angle anticlockwise on the page from the way
+            // the line runs — with y running down, that is (y, -x).
+            let upX = middle.y, upY = -middle.x
+            let originX = Double(middle.point.x) - middle.x * advance / 2 - upX * half
+            let originY = Double(middle.point.y) - middle.y * advance / 2 - upY * half
+            cg.saveGState()
+            cg.concatenate(CGAffineTransform(a: middle.x * unit, b: middle.y * unit,
+                                             c: upX * unit, d: upY * unit,
+                                             tx: originX, ty: originY))
+            var id = glyph.glyph
+            var at = CGPoint.zero
+            CTFontDrawGlyphs(glyph.font, &id, &at, 1, cg)
+            cg.restoreGState()
+        }
+        cg.restoreGState()
     }
 }
