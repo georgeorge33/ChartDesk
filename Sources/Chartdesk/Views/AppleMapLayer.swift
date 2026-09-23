@@ -62,11 +62,16 @@ struct AppleMapLayer: NSViewRepresentable {
         // The view has a size by now, which it did not when it was made, so this is where
         // the renderer first learns how big a point on the screen is.
         context.coordinator.measure(view)
+        #if DEBUG
+        context.coordinator.zoomTest(view)
+        #endif
         // Only when it would draw differently: setting it marks the overlay dirty, and the
         // map view calls update on every frame it moves.
         if context.coordinator.stamp != chart.stamp {
             context.coordinator.stamp = chart.stamp
             context.coordinator.chart.frame = chart
+            // And the labels for it: the ask in `measure` was made against the old frame.
+            context.coordinator.refreshLabels(view)
         }
         // Only when something else moved it. Writing back the rectangle the map just told
         // us about would fight the gesture that produced it.
@@ -143,6 +148,112 @@ struct AppleMapLayer: NSViewRepresentable {
             chart
         }
 
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard let label = annotation as? ChartLabelAnnotation else { return nil }
+            let view = (mapView.dequeueReusableAnnotationView(withIdentifier: ChartLabelView.reuse)
+                        as? ChartLabelView)
+                ?? ChartLabelView(annotation: label, reuseIdentifier: ChartLabelView.reuse)
+            view.annotation = label
+            view.show(label)
+            return view
+        }
+
+        #if DEBUG
+        private var zoomTested = false
+
+        /// Zooms the map in by half again over about four seconds, a frame at a time, with
+        /// nothing but the map view doing it — for watching what follows the map in motion.
+        func zoomTest(_ mapView: MKMapView) {
+            guard RenderProbe.zoomsItself, !zoomTested, mapView.bounds.width > 0 else { return }
+            zoomTested = true
+            let start = mapView.visibleMapRect
+            let began = Date()
+            Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak mapView] timer in
+                MainActor.assumeIsolated {
+                    guard let mapView else { timer.invalidate(); return }
+                    // Held still for the first three seconds, so the start can be seen, then
+                    // four seconds of zoom, measured by the clock rather than counted.
+                    let elapsed = -began.timeIntervalSinceNow
+                    guard elapsed > 3 else { return }
+                    let t = min((elapsed - 3) / 4, 1)
+                    let shrink = 1 - 0.5 * t
+                    let rect = MKMapRect(x: start.midX - start.width * shrink / 2,
+                                         y: start.midY - start.height * shrink / 2,
+                                         width: start.width * shrink,
+                                         height: start.height * shrink)
+                    mapView.setVisibleMapRect(rect, animated: false)
+                    if t >= 1 { timer.invalidate() }
+                }
+            }
+        }
+        #endif
+
+        // MARK: - Writing
+
+        /// The labels on the map now, by key, and which settled frame they came from.
+        private var placed: [String: ChartLabelAnnotation] = [:]
+        private var placedFrom = ""
+        private var asking = false
+        private var askAgain = false
+        private let labeller = DispatchQueue(label: "chartdesk.labels", qos: .userInitiated)
+
+        /// Asks the renderer for the labels at the map's current zoom, off the main thread,
+        /// and puts them on the map when they come back.
+        ///
+        /// One ask at a time. This is called on every frame the map moves, and at a zoom
+        /// it has settled before the answer is a cache lookup; an ask made while one is out
+        /// is folded into a single one more when it lands, so the labels finish on the
+        /// frame the map finished on.
+        func refreshLabels(_ mapView: MKMapView) {
+            guard !asking else { askAgain = true; return }
+            asking = true
+            let renderer = chart
+            labeller.async { [weak self, weak mapView] in
+                let found = renderer.placedLabels()
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.asking = false
+                    if let found, let mapView, found.key != self.placedFrom {
+                        self.placedFrom = found.key
+                        self.apply(found.labels, scale: found.scale, to: mapView)
+                    }
+                    if self.askAgain, let mapView {
+                        self.askAgain = false
+                        self.refreshLabels(mapView)
+                    }
+                }
+            }
+        }
+
+        /// The labels put on the map: those still there moved and redrawn, those gone
+        /// taken off, and the new ones added.
+        private func apply(_ labels: [ChartContext.Label], scale: Double, to mapView: MKMapView) {
+            var next: [String: ChartLabelAnnotation] = [:]
+            var added: [ChartLabelAnnotation] = []
+            var gone = placed
+            for label in labels {
+                let base = ChartLabelAnnotation.key(for: label)
+                var key = base
+                var count = 1
+                while next[key] != nil {
+                    count += 1
+                    key = "\(base)#\(count)"
+                }
+                if let kept = gone.removeValue(forKey: key) {
+                    kept.update(label, scale: scale)
+                    (mapView.view(for: kept) as? ChartLabelView)?.show(kept)
+                    next[key] = kept
+                } else {
+                    let made = ChartLabelAnnotation(label, scale: scale, key: key)
+                    next[key] = made
+                    added.append(made)
+                }
+            }
+            if !gone.isEmpty { mapView.removeAnnotations(Array(gone.values)) }
+            if !added.isEmpty { mapView.addAnnotations(added) }
+            placed = next
+        }
+
         /// Every frame of a pan or a zoom, not just the end of one. That is the whole point
         /// — the layers over the map have to move with it rather than catch up afterwards.
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
@@ -171,6 +282,7 @@ struct AppleMapLayer: NSViewRepresentable {
             let step = log(1.03)
             chart.page = exp((log(scale) / step).rounded() * step)
             chart.view = mapView.visibleMapRect
+            refreshLabels(mapView)
         }
     }
 }

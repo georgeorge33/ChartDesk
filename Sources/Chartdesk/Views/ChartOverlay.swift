@@ -143,6 +143,15 @@ final class ChartRenderer: MKOverlayRenderer {
         let sheet = MapSheet(mapRect: mapRect, padding: 64 * scale,
                              mapPointsPerScreenPoint: scale)
         let work = settle(frame, scale: scale, view: view, chart: chart)
+        #if DEBUG
+        if RenderProbe.logsTiles {
+            let pixelsPerMapPoint = hypot(Double(context.ctm.a), Double(context.ctm.b))
+            let line = String(format: "tile zoomScale %.6g page %.4g ctm %.4g px/pt %.3f scaleFactor %.1f",
+                              Double(zoomScale), page, pixelsPerMapPoint,
+                              pixelsPerMapPoint * scale, Double(contentScaleFactor))
+            FileHandle.standardError.write((line + "\n").data(using: .utf8)!)
+        }
+        #endif
 
         // Bottom to top. The ground under the airspace, because by the time it draws the
         // view is a few kilometres across and the airspace is a tint over the whole field;
@@ -174,10 +183,29 @@ final class ChartRenderer: MKOverlayRenderer {
         for fix in work.fixes where near.contains(fix.point) {
             chart.dot(at: fix.point, radius: 2.5, fix.procedure ? Theme.procedure : Theme.route)
         }
-        for placed in work.writing where near.intersects(placed.room) {
-            if let label = placed.label { chart.draw(label) }
-        }
+        // No writing: that is `placedLabels()`, and annotation views, which are drawn at
+        // the screen's resolution rather than the tile's.
     }
+
+    /// The labels that won their room at the current zoom and region, for the map view to
+    /// place as annotations.
+    ///
+    /// Settled the same way and from the same cache as the tiles, on whichever thread
+    /// asks — so a label and the geometry it names are worked out from one frame and one
+    /// scale, and asking again at the same zoom costs a lock and a string.
+    func placedLabels() -> (key: String, labels: [ChartContext.Label], scale: Double)? {
+        let (frame, page, view) = lock.withLock { (self.current, self.scale, self.shown) }
+        guard page > 0 else { return nil }
+        let chart = ChartContext(cg: Self.measuring, mapPointsPerScreenPoint: page)
+        let work = settle(frame, scale: page, view: view, chart: chart)
+        return (work.key, work.writing.compactMap(\.label), page)
+    }
+
+    /// A context to measure labels in, never drawn to.
+    private static let measuring: CGContext = CGContext(
+        data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 
     // MARK: - Settling a frame
 
