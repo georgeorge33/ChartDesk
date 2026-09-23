@@ -117,14 +117,15 @@ struct AirspaceLimit: Equatable {
     let feet: Int
     let datum: Datum
 
-    /// The way a chart writes it: hundreds of feet, SFC at the ground, FL where it is one.
-    var label: String {
+    /// The way a tag on the boundary writes it: feet in full, so that "2000-7000" reads
+    /// as a floor and a ceiling rather than as a sum.
+    var tag: String {
         switch datum {
         case .surface: return "SFC"
         case .unlimited: return "UNL"
         case .standard: return "FL\(feet / 100)"
-        case .aboveGround: return "\(feet / 100) AGL"
-        case .mean: return "\(feet / 100)"
+        case .aboveGround: return "\(feet) AGL"
+        case .mean: return "\(feet)"
         }
     }
 
@@ -175,23 +176,32 @@ struct MapAirspace {
     let directions: [SIMD3<Double>]
     let cap: SphericalCap
 
-    /// Hundreds of feet, the way a chart writes it: 70 over 20, or 70 over SFC.
-    var ceilingLabel: String { ceiling.label }
-    var floorLabel: String { floor.label }
-
-    /// Where to write the ceiling and floor.
+    /// What the tag on its boundary says: the class, then the floor and the ceiling.
+    /// "B: 2000-7000" for a shelf of Boston's Class B.
     ///
-    /// Not the middle of the ring. A Class B is several shelves about one airport, and every
-    /// one of them has its middle over the runway — so labelling them there stacks four
-    /// figures on one spot and a declutterer keeps one. Offset out towards each shelf's own
-    /// edge instead, which spreads them the way a chart does, each figure sitting in the ring
-    /// it belongs to.
-    var labelAt: Coordinate {
-        let middle = Coordinate(cap.centre)
-        let out = cap.radius * 180 / .pi * 0.72
-        return Coordinate(latitude: min(max(middle.latitude + out, -89), 89),
-                          longitude: middle.longitude)
+    /// Special-use areas have no class letter. They go by their own name where it is short
+    /// enough to be one — R-2508, EGD123 — and where it is a sentence, by the chart's own
+    /// prefix: R for restricted, P for prohibited. Danger is spelled out, because its
+    /// letter is Class D's.
+    var tag: String {
+        let what: String
+        if klass.isSpecialUse {
+            let short = name.trimmingCharacters(in: .whitespaces)
+            if !short.isEmpty, short.count <= 14 {
+                what = short
+            } else {
+                switch klass {
+                case .restricted: what = "R"
+                case .prohibited: what = "P"
+                default: what = klass.name
+                }
+            }
+        } else {
+            what = klass.rawValue
+        }
+        return "\(what): \(floor.tag)-\(ceiling.tag)"
     }
+
 }
 
 /// A town or city, with Natural Earth's own sense of how important it is.

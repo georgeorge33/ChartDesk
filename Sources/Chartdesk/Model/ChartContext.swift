@@ -109,6 +109,9 @@ struct ChartContext {
         /// be. A taxiway's letter repeated along it is how a chart reads; three inside a
         /// hundred metres is OpenStreetMap's way of splitting a taxiway showing through.
         var spacing: Double? = nil
+        /// Turned about its anchor, in radians, clockwise on the page: for writing laid
+        /// along a line, like an airspace tag on its boundary.
+        var angle: Double = 0
     }
 
     /// A line of writing, shaped once at the size it is read at on the screen.
@@ -181,12 +184,39 @@ struct ChartContext {
     }
 
     /// What a label would occupy, for deciding whether two of them collide. The chip and
-    /// not the letter: the chip is what you can see.
+    /// not the letter: the chip is what you can see. A turned label claims the square box
+    /// round its turned chip, which is more room than it covers and never less.
     func bounds(of label: Label) -> CGRect {
-        chip(label, around: layout(label).rect)
+        let box = chip(label, around: layout(label).rect)
+        guard label.angle != 0 else { return box }
+        let pivot = Self.pivot(of: label, in: self)
+        let turn = CGAffineTransform(translationX: pivot.x, y: pivot.y)
+            .rotated(by: label.angle)
+            .translatedBy(x: -pivot.x, y: -pivot.y)
+        return box.applying(turn)
+    }
+
+    /// The point a label turns about: where its anchor sits.
+    private static func pivot(of label: Label, in context: ChartContext) -> CGPoint {
+        CGPoint(x: label.at.x + context.screen(label.nudge.dx),
+                y: label.at.y + context.screen(label.nudge.dy))
     }
 
     func draw(_ label: Label) {
+        guard label.angle == 0 else {
+            // Laid out square to the page and then turned as a whole about its anchor,
+            // chip, rule and all.
+            let pivot = Self.pivot(of: label, in: self)
+            cg.saveGState()
+            cg.translateBy(x: pivot.x, y: pivot.y)
+            cg.rotate(by: label.angle)
+            cg.translateBy(x: -pivot.x, y: -pivot.y)
+            var square = label
+            square.angle = 0
+            draw(square)
+            cg.restoreGState()
+            return
+        }
         let (writing, top, bottom) = layout(label)
 
         if let colour = label.box {

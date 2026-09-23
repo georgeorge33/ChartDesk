@@ -211,6 +211,9 @@ final class ChartRenderer: MKOverlayRenderer {
         /// Points on the screen.
         let width: Double
         let dash: [Double]
+        /// The band of light either side of the line, and how strong.
+        let glow: Double
+        let glowWidth: Double
     }
 
     /// A runway from the bundled table: a straight band between its two thresholds.
@@ -409,15 +412,24 @@ final class ChartRenderer: MKOverlayRenderer {
                     bounds.offsetBy(dx: $0, dy: 0).intersects(region)
                 }) else { continue }
                 let style = stroke(of: space.klass)
-                let ring = Ring(space: space, bounds: bounds,
-                                colour: Theme.airspace(space.klass),
-                                width: style.width, dash: style.dash)
-                rings.append(ring)
-                let at = projection.point(space.labelAt.direction)
-                guard interesting(at) else { continue }
-                wanted.append(ChartContext.Label(
-                    text: space.ceilingLabel, under: space.floorLabel, size: 10.5,
-                    weight: .regular, mono: true, colour: ring.colour, halo: halo, at: at))
+                rings.append(Ring(space: space, bounds: bounds,
+                                  colour: Theme.airspace(space.klass),
+                                  width: style.width, dash: style.dash,
+                                  glow: style.glow, glowWidth: style.glowWidth))
+            }
+            // Tags on the boundaries, busiest airspace first so a Class B's floor is never
+            // pushed off by a Class D's. None for Class E, which is nearly everywhere, is
+            // "700 AGL to FL600" on almost every ring, and tagged along all of them would
+            // bury everything else.
+            for ring in rings.reversed() where ring.space.klass != .e {
+                for spot in tagSpots(on: ringPoints(ring.space, projection), scale: scale)
+                where interesting(spot.at) {
+                    wanted.append(ChartContext.Label(
+                        text: ring.space.tag, size: 10, weight: .semibold,
+                        colour: NSColor(white: 0.96, alpha: 1),
+                        box: NSColor.black.withAlphaComponent(0.85), border: ring.colour,
+                        at: spot.at, spacing: 400, angle: spot.angle))
+                }
             }
         }
 
@@ -501,16 +513,22 @@ final class ChartRenderer: MKOverlayRenderer {
 
     /// Weight and dash per kind, in points, following the chart: solid where entry is by
     /// clearance, dashed where the boundary is advisory or the area only sometimes active.
-    private static func stroke(of klass: AirspaceClass) -> (width: Double, dash: [Double]) {
+    ///
+    /// And a glow under each — a wide, faint band of the same colour either side of the
+    /// line, the way ForeFlight draws a Class B, which lets a boundary read over imagery
+    /// without filling the airspace in. Strongest for the airspace you need a clearance
+    /// for, faint for Class E, which is everywhere and would otherwise be a wash.
+    private static func stroke(of klass: AirspaceClass)
+    -> (width: Double, dash: [Double], glow: Double, glowWidth: Double) {
         switch klass {
-        case .a: return (2, [])
-        case .b: return (2.2, [])
-        case .c: return (2, [])
-        case .d: return (1.8, [5, 3])
-        case .e: return (1.5, [2, 3])
-        case .prohibited: return (2.4, [])
-        case .restricted: return (2.1, [])
-        case .danger: return (2, [6, 3])
+        case .a: return (2, [], 0.28, 7)
+        case .b: return (2.2, [], 0.3, 8)
+        case .c: return (2, [], 0.28, 7)
+        case .d: return (1.8, [5, 3], 0.2, 6)
+        case .e: return (1.5, [2, 3], 0.1, 5)
+        case .prohibited: return (2.4, [], 0.22, 7)
+        case .restricted: return (2.1, [], 0.22, 7)
+        case .danger: return (2, [6, 3], 0.2, 6)
         }
     }
 
@@ -537,26 +555,91 @@ final class ChartRenderer: MKOverlayRenderer {
     private static func airspace(_ ring: Ring, in chart: ChartContext, sheet: MapSheet) {
         let copies = shifts(of: ring.bounds, in: sheet)
         guard !copies.isEmpty else { return }
+        let points = ringPoints(ring.space, sheet.projection)
+        let dash = ring.dash.map { chart.screen($0) }
+        let period = dash.reduce(0, +)
+        let glow = ring.colour.withAlphaComponent(ring.glow)
+        for shift in copies {
+            let moved = shift == 0 ? points : points.map { CGPoint(x: $0.x + shift, y: $0.y) }
+            // Not filled. A fill stacked a tint per shelf, so the middle of a Class B was
+            // four layers of blue over the airport you were trying to look at.
+            let runs = sheet.runs(moved, closed: true)
+            for run in runs {
+                chart.stroke(run.path, glow, width: chart.screen(ring.glowWidth),
+                             cap: .round, join: .round)
+            }
+            for run in runs {
+                let phase = period > 0 ? run.from.truncatingRemainder(dividingBy: period) : 0
+                chart.stroke(run.path, ring.colour, width: chart.screen(ring.width),
+                             dash: dash, phase: phase, join: .round)
+            }
+        }
+    }
+
+    /// A ring on the sheet, unwrapped along its length from its first point — which may be
+    /// a world away from its middle when it straddles the seam, so it is brought back to
+    /// the side its box is on.
+    private static func ringPoints(_ space: MapAirspace,
+                                   _ projection: MercatorProjection) -> [CGPoint] {
         let world = MKMapSize.world.width
-        var points = sheet.projection.visible(ring: ring.space.directions)
-        // Unwrapped from its first point, which may be a world away from its middle when
-        // the ring straddles the seam; brought back to the side its box is on.
+        var points = projection.visible(ring: space.directions)
         if let first = points.first {
-            let middle = sheet.projection.point(ring.space.cap.centre).x
+            let middle = projection.point(space.cap.centre).x
             let off = ((middle - first.x) / world).rounded() * world
             if off != 0 { points = points.map { CGPoint(x: $0.x + off, y: $0.y) } }
         }
-        let dash = ring.dash.map { chart.screen($0) }
-        let period = dash.reduce(0, +)
-        for shift in copies {
-            let moved = shift == 0 ? points : points.map { CGPoint(x: $0.x + shift, y: $0.y) }
-            chart.fill(sheet.path(ring: moved), ring.colour.withAlphaComponent(0.07))
-            for run in sheet.runs(moved, closed: true) {
-                let phase = period > 0 ? run.from.truncatingRemainder(dividingBy: period) : 0
-                chart.stroke(run.path, ring.colour, width: chart.screen(ring.width),
-                             dash: dash, phase: phase)
-            }
+        return points
+    }
+
+    /// Where a ring's tags go: along its boundary, one every so many points of its length
+    /// on the screen, each turned to run with the line there and never upside down.
+    ///
+    /// Repeated rather than placed once, so that wherever the ring crosses the view there
+    /// is likely to be a tag on it — the declutter drops the ones that land on something
+    /// — and placed by the ring's own length from its own first point, so the same tags
+    /// come back in the same places however the map was panned to get there.
+    private static func tagSpots(on points: [CGPoint], scale: Double)
+    -> [(at: CGPoint, angle: Double)] {
+        guard points.count > 2 else { return [] }
+        var lengths = [0.0]
+        lengths.reserveCapacity(points.count + 1)
+        for index in 1...points.count {
+            let a = points[index - 1], b = points[index % points.count]
+            lengths.append(lengths[index - 1] + hypot(b.x - a.x, b.y - a.y))
         }
+        let total = lengths[lengths.count - 1]
+        guard total > 0 else { return [] }
+
+        func point(_ distance: Double) -> CGPoint {
+            var d = distance.truncatingRemainder(dividingBy: total)
+            if d < 0 { d += total }
+            var low = 0, high = lengths.count - 1
+            while high - low > 1 {
+                let mid = (low + high) / 2
+                if lengths[mid] <= d { low = mid } else { high = mid }
+            }
+            let a = points[low % points.count], b = points[high % points.count]
+            let span = lengths[high] - lengths[low]
+            let t = span > 0 ? (d - lengths[low]) / span : 0
+            return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+        }
+
+        let step = 640 * scale
+        // The way the line runs, taken over a couple of dozen points either side, so a
+        // tag on a kink in the boundary follows the ring rather than the kink.
+        let reach = 24 * scale
+        var out: [(CGPoint, Double)] = []
+        var along = min(160 * scale, total / 2)
+        while along < total {
+            let before = point(along - reach), after = point(along + reach)
+            var angle = atan2(after.y - before.y, after.x - before.x)
+            // Left to right on the page, whichever way round the ring was drawn.
+            let quarter = Double.pi / 2
+            if angle > quarter { angle -= Double.pi } else if angle < -quarter { angle += Double.pi }
+            out.append((point(along), angle))
+            along += step
+        }
+        return out
     }
 
     private static func runway(_ strip: Strip, in chart: ChartContext, sheet: MapSheet) {
