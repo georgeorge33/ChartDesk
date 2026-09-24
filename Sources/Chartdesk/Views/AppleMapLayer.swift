@@ -2,6 +2,22 @@ import AppKit
 import MapKit
 import SwiftUI
 
+/// Each label with the key it is known by from one zoom to the next, and a count after the
+/// key where two would otherwise share one.
+private func keyed(_ labels: [ChartContext.Label]) -> [(key: String, label: ChartContext.Label)] {
+    var seen = Set<String>()
+    return labels.map { label in
+        let base = label.key
+        var key = base
+        var count = 1
+        while !seen.insert(key).inserted {
+            count += 1
+            key = "\(base)#\(count)"
+        }
+        return (key, label)
+    }
+}
+
 /// A real `MKMapView` under the chart layers.
 ///
 /// This replaces a stack of machinery it is worth naming, because the reason for the change
@@ -64,6 +80,7 @@ struct AppleMapLayer: NSViewRepresentable {
         context.coordinator.measure(view)
         #if DEBUG
         context.coordinator.zoomTest(view)
+        context.coordinator.scrollTest(view)
         #endif
         // Only when it would draw differently: setting it marks the overlay dirty, and the
         // map view calls update on every frame it moves.
@@ -112,7 +129,12 @@ struct AppleMapLayer: NSViewRepresentable {
 
             let cursor = convert(event.locationInWindow, from: nil)
             guard bounds.contains(cursor) else { return }
+            zoom(by: factor, about: cursor)
+        }
 
+        /// Zooms by `factor` — in above one, out below — keeping whatever is under `cursor`
+        /// under it.
+        func zoom(by factor: Double, about cursor: CGPoint) {
             // Zoom about the middle, then slide back so that whatever was under the pointer
             // is under it again. Done by asking the map what is there before and after
             // rather than by arithmetic on the rectangle, because that way the view's own
@@ -186,16 +208,76 @@ struct AppleMapLayer: NSViewRepresentable {
                 }
             }
         }
+
+        /// Turns the wheel over the middle of the map, a notch on every frame the display
+        /// draws — in for two seconds and back out for two — and says how many frames the
+        /// display drew on time, which is what a smooth scroll is.
+        func scrollTest(_ mapView: MKMapView) {
+            guard RenderProbe.scrollsItself, !zoomTested,
+                  let zooming = mapView as? ZoomingMapView, mapView.bounds.width > 0 else { return }
+            zoomTested = true
+            let driver = ScrollDriver(zooming)
+            let link = zooming.displayLink(target: driver, selector: #selector(ScrollDriver.step(_:)))
+            link.add(to: .main, forMode: .common)
+        }
+
+        /// What the scroll test runs on: a display link's target has to be an object.
+        private final class ScrollDriver: NSObject {
+            private weak var view: ZoomingMapView?
+            private let began = CACurrentMediaTime()
+            private let ticks = RenderProbe.Ticks()
+
+            init(_ view: ZoomingMapView) { self.view = view }
+
+            @objc func step(_ link: CADisplayLink) {
+                MainActor.assumeIsolated {
+                    guard let view else { link.invalidate(); return }
+                    let phase = CACurrentMediaTime() - began - 3
+                    guard phase > 0 else { return }
+                    let frame = link.targetTimestamp - link.timestamp
+                    guard phase < 4 else {
+                        link.invalidate()
+                        ticks.report(annotations: view.annotations.count, frame: frame)
+                        return
+                    }
+                    ticks.tick(link.timestamp)
+                    // The same speed of zoom whatever the display's rate: about four times
+                    // closer a second, a fast flick of two fingers.
+                    let factor = pow(4.0, frame)
+                    let notch = CACurrentMediaTime()
+                    view.zoom(by: phase < 2 ? factor : 1 / factor,
+                              about: CGPoint(x: view.bounds.midX, y: view.bounds.midY))
+                    ticks.spent(CACurrentMediaTime() - notch)
+                }
+            }
+        }
         #endif
 
         // MARK: - Writing
 
-        /// The labels on the map now, by key, and which settled frame they came from.
+        /// The labels on the map now, by key, and what they were worked out from.
         private var placed: [String: ChartLabelAnnotation] = [:]
         private var placedFrom = ""
         private var asking = false
         private var askAgain = false
         private let labeller = DispatchQueue(label: "chartdesk.labels", qos: .userInitiated)
+
+        /// How far past the edge of the view labels are put on the map, in screen points:
+        /// far enough that a pan brings them in already there.
+        private static let margin = 256.0
+
+        /// The least time between two changes to the labels on the map, in seconds, and
+        /// when the last was made.
+        ///
+        /// A zoom settles a new frame of labels every few per cent, which is forty times a
+        /// second in a quick scroll, and each change to the views on the map has AppKit
+        /// work the window over again. MapKit moves the labels with the map on every frame
+        /// whatever this says, so all a change does mid-zoom is let one more label in or
+        /// take one out; fifteen times a second is as smooth to look at and leaves the
+        /// frames for the map. The last change always lands, as soon as it is allowed.
+        private static let interval = 1.0 / 15
+        private var lastPut = -Double.infinity
+        private var waiting = false
 
         /// Asks the renderer for the labels at the map's current zoom, off the main thread,
         /// and puts them on the map when they come back.
@@ -203,19 +285,30 @@ struct AppleMapLayer: NSViewRepresentable {
         /// One ask at a time. This is called on every frame the map moves, and at a zoom
         /// it has settled before the answer is a cache lookup; an ask made while one is out
         /// is folded into a single one more when it lands, so the labels finish on the
-        /// frame the map finished on.
+        /// frame the map finished on. Everything but the putting on the map is done off
+        /// the main thread: which labels are near the view, what each is known by, and
+        /// whether any of that differs from what is on the map already.
         func refreshLabels(_ mapView: MKMapView) {
             guard !asking else { askAgain = true; return }
             asking = true
             let renderer = chart
+            let margin = Self.margin
             labeller.async { [weak self, weak mapView] in
-                let found = renderer.placedLabels()
+                let found = renderer.placedLabels(margin: margin)
+                let labels = found.map { keyed($0.labels) } ?? []
+                let signature = found.map { "\($0.key)|" + labels.map(\.key).joined(separator: ",") }
                 Task { @MainActor in
                     guard let self else { return }
                     self.asking = false
-                    if let found, let mapView, found.key != self.placedFrom {
-                        self.placedFrom = found.key
-                        self.apply(found.labels, scale: found.scale, to: mapView)
+                    if let found, let signature, let mapView, signature != self.placedFrom {
+                        let wait = self.lastPut + Self.interval - CACurrentMediaTime()
+                        if wait <= 0 {
+                            self.lastPut = CACurrentMediaTime()
+                            self.placedFrom = signature
+                            self.apply(labels, scale: found.scale, to: mapView)
+                        } else {
+                            self.askLater(mapView, after: wait)
+                        }
                     }
                     if self.askAgain, let mapView {
                         self.askAgain = false
@@ -225,23 +318,42 @@ struct AppleMapLayer: NSViewRepresentable {
             }
         }
 
-        /// The labels put on the map: those still there moved and redrawn, those gone
-        /// taken off, and the new ones added.
-        private func apply(_ labels: [ChartContext.Label], scale: Double, to mapView: MKMapView) {
+        /// Asks again once it is time, for whatever is on the map by then. One at a time:
+        /// an ask made while one is waiting would only find the same.
+        private func askLater(_ mapView: MKMapView, after wait: Double) {
+            guard !waiting else { return }
+            waiting = true
+            Task { @MainActor [weak self, weak mapView] in
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                guard let self else { return }
+                self.waiting = false
+                if let mapView { self.refreshLabels(mapView) }
+            }
+        }
+
+        /// The labels put on the map: those gone taken off, the new ones added, and those
+        /// still there left alone unless they have changed.
+        ///
+        /// Most of them have not. A label is laid out in screen points, so a taxiway's
+        /// letter at the next step of a zoom is the same letter in the same chip at the same
+        /// map point, and MapKit moves it with the map without being asked. Redrawing every
+        /// one of them on every step was a hundred views drawn afresh for nothing, many
+        /// times a second. What does change is writing laid along an airspace boundary,
+        /// whose curve on the screen changes with the zoom.
+        private func apply(_ labels: [(key: String, label: ChartContext.Label)], scale: Double,
+                           to mapView: MKMapView) {
             var next: [String: ChartLabelAnnotation] = [:]
             var added: [ChartLabelAnnotation] = []
+            var changed = 0
             var gone = placed
-            for label in labels {
-                let base = ChartLabelAnnotation.key(for: label)
-                var key = base
-                var count = 1
-                while next[key] != nil {
-                    count += 1
-                    key = "\(base)#\(count)"
-                }
+            for (key, label) in labels {
                 if let kept = gone.removeValue(forKey: key) {
-                    kept.update(label, scale: scale)
-                    (mapView.view(for: kept) as? ChartLabelView)?.show(kept)
+                    // Kept at the scale it was laid out at, which draws it the same.
+                    if !kept.stands(for: label, at: scale) {
+                        kept.update(label, scale: scale)
+                        (mapView.view(for: kept) as? ChartLabelView)?.show(kept)
+                        changed += 1
+                    }
                     next[key] = kept
                 } else {
                     let made = ChartLabelAnnotation(label, scale: scale, key: key)
@@ -252,6 +364,10 @@ struct AppleMapLayer: NSViewRepresentable {
             if !gone.isEmpty { mapView.removeAnnotations(Array(gone.values)) }
             if !added.isEmpty { mapView.addAnnotations(added) }
             placed = next
+            #if DEBUG
+            RenderProbe.churn.record(labels: labels.count, changed: changed,
+                                     added: added.count, removed: gone.count)
+            #endif
         }
 
         /// Every frame of a pan or a zoom, not just the end of one. That is the whole point

@@ -41,6 +41,71 @@ enum RenderProbe {
     /// looked at without anyone's hand on the mouse.
     static let zoomsItself = ProcessInfo.processInfo.environment["CHARTDESK_ZOOM_TEST"] != nil
 
+    /// `CHARTDESK_SCROLL_TEST`: a few seconds after opening, turn the wheel in and back out
+    /// again, timing it.
+    static let scrollsItself = ProcessInfo.processInfo.environment["CHARTDESK_SCROLL_TEST"] != nil
+
+    /// What the labels did while the map moved: how many times they were put on it, and
+    /// how many of them were left alone, changed, added and taken off.
+    @MainActor static var churn = Churn()
+
+    struct Churn {
+        private var updates = 0, labels = 0, changed = 0, added = 0, removed = 0
+
+        mutating func record(labels: Int, changed: Int, added: Int, removed: Int) {
+            updates += 1
+            self.labels += labels
+            self.changed += changed
+            self.added += added
+            self.removed += removed
+        }
+
+        var summary: String {
+            "labels: \(updates) updates of \(updates > 0 ? labels / updates : 0) on average; "
+                + "\(labels - changed - added) left alone, \(changed) changed, "
+                + "\(added) added, \(removed) taken off"
+        }
+    }
+
+    /// How long the main thread took to come back between frames of a test, and how much
+    /// of that the map's own zoom call took.
+    final class Ticks: @unchecked Sendable {
+        private var last: Double?
+        private var gaps: [Double] = []
+        private var calls: [Double] = []
+
+        func tick(_ now: Double) {
+            if let last { gaps.append((now - last) * 1000) }
+            last = now
+        }
+
+        func spent(_ seconds: Double) { calls.append(seconds * 1000) }
+
+        @MainActor
+        func report(annotations: Int, frame: Double) {
+            func line(_ name: String, _ values: [Double]) -> String {
+                let sorted = values.sorted()
+                guard !sorted.isEmpty else { return "\(name): none" }
+                let mean = sorted.reduce(0, +) / Double(sorted.count)
+                return String(format: "%@: %d, mean %.1f ms, median %.1f, p95 %.1f, max %.1f",
+                              name, sorted.count, mean, sorted[sorted.count / 2],
+                              sorted[min(sorted.count - 1, sorted.count * 95 / 100)],
+                              sorted.last!)
+            }
+            let budget = frame * 1000
+            let late = gaps.filter { $0 > budget * 1.5 }.count
+            let missed = gaps.reduce(0) { $0 + max(Int(($1 / budget).rounded()) - 1, 0) }
+            let text = [line("gaps between notches", gaps),
+                        line("time in the zoom call", calls),
+                        String(format: "display frame %.1f ms; %d of %d notches late, %d frames missed; ",
+                               budget, late, gaps.count, missed)
+                            + "annotations on the map: \(annotations)",
+                        RenderProbe.churn.summary]
+                .map { "scroll test " + $0 }.joined(separator: "\n")
+            FileHandle.standardError.write((text + "\n").data(using: .utf8)!)
+        }
+    }
+
     /// `CHARTDESK_LOG_TILES`: say, once for each zoom, what MapKit hands the renderer — the
     /// zoom scale, the true scale, and how many pixels of tile a screen point gets.
     static let logsTiles = ProcessInfo.processInfo.environment["CHARTDESK_LOG_TILES"] != nil
@@ -242,7 +307,7 @@ enum RenderProbe {
 
         // The writing, which the app places as annotation views drawn at the screen's own
         // resolution: drawn here the same way, once, over the tiles.
-        if let placed = renderer.placedLabels() {
+        if let placed = renderer.placedLabels(margin: 0) {
             let chart = ChartContext(cg: context, mapPointsPerScreenPoint: placed.scale)
             for label in placed.labels { chart.draw(label) }
         }

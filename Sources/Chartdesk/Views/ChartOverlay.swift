@@ -193,22 +193,41 @@ final class ChartRenderer: MKOverlayRenderer {
         for fix in work.fixes where near.contains(fix.point) {
             chart.dot(at: fix.point, radius: 2.5, fix.procedure ? Theme.procedure : Theme.route)
         }
-        // No writing: that is `placedLabels()`, and annotation views, which are drawn at
+        // No writing: that is `placedLabels(margin:)`, and annotation views, drawn at
         // the screen's resolution rather than the tile's.
     }
 
     /// The labels that won their room at the current zoom and region, for the map view to
-    /// place as annotations.
+    /// place as annotations: those within `margin` screen points of the view, or all of
+    /// them when there is no view.
     ///
     /// Settled the same way and from the same cache as the tiles, on whichever thread
     /// asks — so a label and the geometry it names are worked out from one frame and one
     /// scale, and asking again at the same zoom costs a lock and a string.
-    func placedLabels() -> (key: String, labels: [ChartContext.Label], scale: Double)? {
+    ///
+    /// Only those near the view, because the region they are settled in is the view grown
+    /// by its own size on every side, and nine in ten of the labels in it are nowhere near
+    /// the screen. Every one of those was an annotation for MapKit to keep track of and to
+    /// be told about on every step of a zoom. The rest are still settled, so a label at the
+    /// edge of the screen still gives way to one just past it.
+    func placedLabels(margin: Double) -> (key: String, labels: [ChartContext.Label], scale: Double)? {
         let (frame, page, view) = lock.withLock { (self.current, self.scale, self.shown) }
         guard page > 0 else { return nil }
         let chart = ChartContext(cg: Self.measuring, mapPointsPerScreenPoint: page)
         let work = settle(frame, scale: page, view: view, chart: chart)
-        return (work.key, work.writing.compactMap(\.label), page)
+        guard !view.isNull else { return (work.key, work.writing.compactMap(\.label), page) }
+        let near = CGRect(x: view.minX, y: view.minY, width: view.width, height: view.height)
+            .insetBy(dx: -margin * page, dy: -margin * page)
+        let world = MKMapSize.world.width
+        let copies: [Double] = [0, world, -world]
+        let labels = work.writing.compactMap { placed -> ChartContext.Label? in
+            guard let label = placed.label else { return nil }
+            let close = copies.contains(where: {
+                near.intersects(placed.room.offsetBy(dx: $0, dy: 0))
+            })
+            return close ? label : nil
+        }
+        return (work.key, labels, page)
     }
 
     /// A context to measure labels in, never drawn to.
@@ -244,6 +263,8 @@ final class ChartRenderer: MKOverlayRenderer {
     /// A ring of airspace that is big enough to draw at this zoom, and a box round it.
     private struct Ring {
         let space: MapAirspace
+        /// Where it is in the frame's table, which is what its tags are known by.
+        let number: Int
         let bounds: CGRect
         let colour: NSColor
         /// Points on the screen.
@@ -426,13 +447,15 @@ final class ChartRenderer: MKOverlayRenderer {
 
                 let run = hypot(low.x - high.x, low.y - high.y)
                 guard idents, run > chart.screen(24), !runway.ident.isEmpty else { continue }
-                // Just off the threshold, on the runway's own line, the way a plate has it.
-                let off = chart.screen(10) / run
+                // Just off the threshold, on the runway's own line, the way a plate has it:
+                // at the threshold and pushed off it in screen points, rather than at a map
+                // point worked out from the zoom, so it is the same label at every zoom and
+                // is left where it is rather than taken off and put back on every step.
                 wanted.append(ChartContext.Label(
                     text: runway.ident, size: 10.5, weight: .regular, mono: true,
-                    colour: Theme.runway, halo: halo,
-                    at: CGPoint(x: low.x + (low.x - high.x) * off,
-                                y: low.y + (low.y - high.y) * off)))
+                    colour: Theme.runway, halo: halo, at: low,
+                    nudge: CGVector(dx: (low.x - high.x) / run * 10,
+                                    dy: (low.y - high.y) / run * 10)))
             }
         }
 
@@ -442,7 +465,8 @@ final class ChartRenderer: MKOverlayRenderer {
         var rings: [Ring] = []
         if !frame.airspaceKinds.isEmpty, worldWidth >= MapLayerRoom.airspaceFrom {
             let perRadian = worldWidth / (2 * .pi)
-            for space in frame.airspace where frame.airspaceKinds.contains(space.klass)
+            for (number, space) in frame.airspace.enumerated()
+            where frame.airspaceKinds.contains(space.klass)
                 && space.cap.radius * perRadian >= MapLayerRoom.leastRadius {
                 let bounds = projection.bounds(of: space.cap)
                 // Only what could land in a tile. Tiles are only ever drawn inside the
@@ -453,7 +477,7 @@ final class ChartRenderer: MKOverlayRenderer {
                     bounds.offsetBy(dx: $0, dy: 0).intersects(region)
                 }) else { continue }
                 let style = stroke(of: space.klass)
-                rings.append(Ring(space: space, bounds: bounds,
+                rings.append(Ring(space: space, number: number, bounds: bounds,
                                   colour: Theme.airspace(space.klass),
                                   width: style.width, dash: style.dash,
                                   glow: style.glow, glowWidth: style.glowWidth))
@@ -464,12 +488,14 @@ final class ChartRenderer: MKOverlayRenderer {
             // bury everything else.
             for ring in rings.reversed() where ring.space.klass != .e {
                 let points = thinned(ringPoints(ring.space, projection), grain: scale)
-                func tag(at point: CGPoint, along path: [CGPoint]?) -> ChartContext.Label {
+                func tag(at point: CGPoint, along path: [CGPoint]?,
+                         place: Int = 0) -> ChartContext.Label {
                     ChartContext.Label(
                         text: ring.space.tag, size: 10, weight: .semibold,
                         colour: NSColor(white: 0.96, alpha: 1),
                         box: NSColor.black.withAlphaComponent(0.85), border: ring.colour,
-                        at: point, spacing: 400, path: path)
+                        at: point, spacing: 400, path: path,
+                        identity: "\(ring.number).\(place)")
                 }
                 // The chip's own size, square to the page, and the band it becomes when it
                 // is laid along the ring.
@@ -486,7 +512,7 @@ final class ChartRenderer: MKOverlayRenderer {
                                      middle: projection.point(ring.space.cap.centre),
                                      wanted: interesting)
                 for spot in spots {
-                    wanted.append(tag(at: spot.at, along: spot.path))
+                    wanted.append(tag(at: spot.at, along: spot.path, place: spot.place))
                 }
             }
         }
@@ -650,14 +676,21 @@ final class ChartRenderer: MKOverlayRenderer {
     }
 
     /// Where a ring's tags go: laid along a line set in from its boundary, curving with it,
-    /// one every so many points of its length on the screen — inside the airspace the tag
-    /// names, clear of the ring's line and its glow, and reading left to right whichever
-    /// way round the ring was drawn.
+    /// at even shares of the way round it — inside the airspace the tag names, clear of
+    /// the ring's line and its glow, and reading left to right whichever way round the ring
+    /// was drawn.
     ///
     /// Repeated rather than placed once, so that wherever the ring crosses the view there
     /// is likely to be a tag on it — the declutter drops the ones that land on something
-    /// — and placed by the ring's own length from its own first point, so the same tags
-    /// come back in the same places however the map was panned to get there.
+    /// — and placed by shares of the ring's own length from its own first point, so the
+    /// same tags come back in the same places however the map was panned to get there.
+    ///
+    /// Four places round a small ring, and twice as many each time the ring doubles on the
+    /// screen, so that none are more than 800 points apart. Every place at one zoom is a
+    /// place at the next zoom in as well, so a tag stays where it is on its ring while the
+    /// map zooms and is known by where that is. They were every 640 points of the screen
+    /// once, which slid the tags round their rings on every step of a zoom — sixty points a
+    /// step, three places along — and had every one of them drawn again.
     ///
     /// Inside is found from the way round the ring runs, not assumed: the table has rings
     /// drawn both ways. A place is only used where the band fits inside the ring along its
@@ -677,7 +710,7 @@ final class ChartRenderer: MKOverlayRenderer {
     private static func tagSpots(on points: [CGPoint], scale: Double, run: Double,
                                  band: Double, clear: Double, half: CGSize, middle: CGPoint,
                                  wanted: (CGPoint) -> Bool)
-    -> [(at: CGPoint, path: [CGPoint]?)] {
+    -> [(at: CGPoint, path: [CGPoint]?, place: Int)] {
         guard points.count > 2 else { return [] }
         var lengths = [0.0]
         lengths.reserveCapacity(points.count + 1)
@@ -804,25 +837,28 @@ final class ChartRenderer: MKOverlayRenderer {
             return true
         }
 
-        // Every 640 points round a big ring; at least four times round a small one.
-        let step = min(640 * scale, total / 4)
+        // An eighth of the way round, and even shares of the ring from there. Each place is
+        // known by where it falls among the finest shares there could be, which is the
+        // same number whichever zoom it was found at.
+        let finest = 1 << 20
+        var count = 4
+        while total / Double(count) > 800 * scale, count < finest { count *= 2 }
         let insets: [Double] = [band / 2 + clear, (band / 2 + clear) * 1.8]
-        var out: [(CGPoint, [CGPoint]?)] = []
-        var along = min(160 * scale, step / 2)
-        while curves, along < total {
-            defer { along += step }
+        var out: [(CGPoint, [CGPoint]?, Int)] = []
+        for share in 0..<(curves ? count : 0) {
+            let along = total * (0.125 + Double(share) / Double(count))
             guard wanted(point(along)) else { continue }
             for inset in insets {
                 if let path = line(at: along, by: inset), path.count > 1,
                    readable(path), inside(path) {
-                    out.append((path[path.count / 2], path))
+                    out.append((path[path.count / 2], path, share * (finest / count)))
                     break
                 }
             }
         }
         if total < 1_280 * scale, wanted(middle),
            fits(half, at: middle, angle: 0, inside: points) {
-            out.append((middle, nil))
+            out.append((middle, nil, -1))
         }
         return out
     }

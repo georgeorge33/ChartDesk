@@ -31,6 +31,27 @@ final class ChartLabelAnnotation: NSObject, MKAnnotation {
         coordinate = MKMapPoint(x: Double(label.at.x), y: Double(label.at.y)).coordinate
     }
 
+    /// Whether what is on the map already will do for `label`, laid out at `scale`.
+    ///
+    /// The same label will. So will the same tag along an airspace boundary laid out at a
+    /// zoom within a tenth of this one, a few points from where it was: such a tag is laid
+    /// out afresh at every step of a zoom, to follow the ring's curve as it grows on the
+    /// screen, but over a tenth of a zoom the curve and the tag's place move by about a
+    /// point, and drawing it again for that on every step was most of what a scroll over
+    /// airspace cost.
+    func stands(for label: ChartContext.Label, at scale: Double) -> Bool {
+        if self.label == label { return true }
+        guard label.path != nil, self.label.path != nil, self.scale > 0, scale > 0 else {
+            return false
+        }
+        var same = self.label
+        same.at = label.at
+        same.path = label.path
+        guard same == label, abs(log(scale / self.scale)) < log(1.1) else { return false }
+        let moved = hypot(label.at.x - self.label.at.x, label.at.y - self.label.at.y)
+        return moved / scale < 3
+    }
+
     func update(_ label: ChartContext.Label, scale: Double) {
         self.label = label
         self.scale = scale
@@ -40,19 +61,23 @@ final class ChartLabelAnnotation: NSObject, MKAnnotation {
         }
     }
 
+}
+
+extension ChartContext.Label {
+
     /// Which label this is from one zoom to the next, so a label that is still there is
-    /// moved and redrawn rather than taken away and put back, which flickers.
+    /// moved and redrawn rather than taken away and put back.
     ///
     /// Most labels sit at a point that does not change with the zoom — a taxiway's middle,
-    /// an airport, a fix — and are known by their writing and that point. A tag laid along
-    /// an airspace boundary is set in by so many screen points, so its point creeps as the
-    /// zoom changes; it is known by its writing and a coarse cell instead. Two tags saying
-    /// the same thing are always hundreds of points apart, so they never share one.
-    static func key(for label: ChartContext.Label) -> String {
-        if label.path != nil {
-            return "\(label.text)~\(Int((label.at.x / 4096).rounded())),\(Int((label.at.y / 4096).rounded()))"
-        }
-        return "\(label.text)@\(Int(label.at.x.rounded())),\(Int(label.at.y.rounded()))"
+    /// an airport, a fix — and are known by their writing and that point. A tag along an
+    /// airspace boundary is known by the identity the renderer gave it, its ring and its
+    /// place round it, because its own point creeps with the zoom. It was known by a coarse
+    /// cell of the map once, which a creeping tag left on nearly every step of a zoom:
+    /// measured, nineteen in twenty labels put on the map during a scroll were tags taken
+    /// off and put back.
+    var key: String {
+        if let identity { return "\(text)~\(identity)" }
+        return "\(text)@\(Int(at.x.rounded())),\(Int(at.y.rounded()))"
     }
 }
 
@@ -83,9 +108,38 @@ final class ChartLabelView: MKAnnotationView {
         // not MapKit's.
         displayPriority = .required
         collisionMode = .none
+        // Drawn when it changes and at no other time.
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
 
     required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    /// A plain layer of its own, rather than the one AppKit makes.
+    ///
+    /// AppKit's draws the view again every time it moves, and MapKit moves every label on
+    /// every frame the map moves: measured during a scroll, twenty-odd labels drawn afresh
+    /// on each frame, which halved the frames the map managed. A plain layer keeps what was
+    /// drawn into it and is moved as it is.
+    override func makeBackingLayer() -> CALayer { CALayer() }
+
+    /// On whole pixels, always. What a plain layer keeps is only as sharp as where it
+    /// lands, and between two pixels it is blended across both — the very blur this view
+    /// exists to avoid. MapKit puts it wherever the map says, to a fraction of a point, so
+    /// the fraction is taken off here: a quarter of a point at most, which nobody sees.
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(onPixels(newOrigin))
+    }
+
+    override var frame: NSRect {
+        get { super.frame }
+        set { super.frame = NSRect(origin: onPixels(newValue.origin), size: newValue.size) }
+    }
+
+    private func onPixels(_ point: NSPoint) -> NSPoint {
+        let pixels = window?.backingScaleFactor ?? 2
+        return NSPoint(x: (point.x * pixels).rounded() / pixels,
+                       y: (point.y * pixels).rounded() / pixels)
+    }
 
     /// Down the page, as the map points the label is laid out in are.
     override var isFlipped: Bool { true }
@@ -95,21 +149,23 @@ final class ChartLabelView: MKAnnotationView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func show(_ annotation: ChartLabelAnnotation) {
-        label = annotation.label
+        let shown = annotation.label
+        label = shown
         scale = annotation.scale
-        let label = annotation.label
         let chart = ChartContext(cg: Self.measuring, mapPointsPerScreenPoint: scale)
-        let box = chart.bounds(of: label)
+        let box = chart.bounds(of: shown)
         // The label's box about its anchor, in screen points, with a point of room for
         // antialiasing at the edges.
-        let around = CGRect(x: (box.minX - label.at.x) / scale, y: (box.minY - label.at.y) / scale,
+        let around = CGRect(x: (box.minX - shown.at.x) / scale, y: (box.minY - shown.at.y) / scale,
                             width: box.width / scale, height: box.height / scale)
             .insetBy(dx: -1, dy: -1)
-        frame = CGRect(origin: frame.origin, size: around.size)
+        // Whole points, so that on whole pixels the picture is pixel for pixel.
+        let size = CGSize(width: ceil(around.width), height: ceil(around.height))
+        frame = CGRect(origin: frame.origin, size: size)
         anchor = CGPoint(x: -around.minX, y: -around.minY)
         // MapKit puts the view's middle on the coordinate; the anchor is where the label
         // wants to be, so the view is moved by the distance from one to the other.
-        centerOffset = CGPoint(x: around.midX, y: around.midY)
+        centerOffset = CGPoint(x: size.width / 2 - anchor.x, y: size.height / 2 - anchor.y)
         needsDisplay = true
     }
 

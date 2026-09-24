@@ -80,7 +80,10 @@ struct ChartContext {
 
     /// One piece of writing on the chart, in the sizes a chart uses: a few points tall on
     /// the screen however far in the map is.
-    struct Label {
+    ///
+    /// Equatable so that a label still on the map at the next zoom, saying the same thing
+    /// in the same place, can be left alone rather than drawn again.
+    struct Label: Equatable {
         let text: String
         /// A second line under a rule, the way a chart writes a ceiling over a floor.
         var under: String? = nil
@@ -97,7 +100,7 @@ struct ChartContext {
         /// which over a photograph is otherwise grey on grey.
         var halo: NSColor? = nil
         /// Where it goes, in map points.
-        let at: CGPoint
+        var at: CGPoint
         /// Which point of the writing sits on `at`, as a fraction of its width and height:
         /// the middle by default, (0.5, 0) for the middle of its top edge, (0, 0.5) for its
         /// left end.
@@ -115,6 +118,12 @@ struct ChartContext {
         /// follows it, in map points, from the writing's left end to its right. For an
         /// airspace tag that curves with its ring, chip and all.
         var path: [CGPoint]? = nil
+        /// Which label this is from one zoom to the next, where its place does not say.
+        /// Most labels sit at a map point that the zoom never moves; a tag along an
+        /// airspace boundary is set in from its ring by so many points of the screen, so
+        /// its map point creeps with the zoom, and it is known by its ring and its place
+        /// round it instead.
+        var identity: String? = nil
     }
 
     /// A line of writing, shaped once at the size it is read at on the screen.
