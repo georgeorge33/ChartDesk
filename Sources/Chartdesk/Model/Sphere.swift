@@ -40,6 +40,12 @@ struct SphericalCap {
     /// deepest tier that is 380,000 of them saved at load.
     let cosRadius: Double
     let sinRadius: Double
+    /// The box round it on a Mercator world one unit wide: the middle, and how far out
+    /// from it the box reaches. Worked out once, because it does not change and the map
+    /// asks for thousands of these on every frame — the state lines alone were four
+    /// trigonometric functions apiece, sixty times a second, a tenth of the main thread's
+    /// time during a scroll.
+    let mercator: (x: Double, y: Double, reach: Double)
 
     var radius: Double { acos(min(max(cosRadius, -1), 1)) }
 
@@ -57,5 +63,17 @@ struct SphericalCap {
         centre = middle
         cosRadius = closest
         sinRadius = (1 - closest * closest).squareRoot()
+
+        // Mercator stretches towards the poles by 1/cos φ, so the reach is worked out at
+        // the cap's own poleward edge — the widest that stretch gets anywhere in it — which
+        // makes the box an over-estimate and never an under-estimate. A cull that is too
+        // eager is a continent that vanishes; one that is too generous costs a clip that
+        // finds nothing.
+        let place = Coordinate(middle)
+        let radians = acos(min(max(closest, -1), 1))
+        let poleward = min(abs(place.latitude) + radians * 180 / .pi, MercatorProjection.limit)
+        mercator = (x: MercatorProjection.worldX(place.longitude, 1),
+                    y: MercatorProjection.worldY(place.latitude, 1),
+                    reach: radians / (2 * .pi) / max(cos(poleward * .pi / 180), 0.02))
     }
 }

@@ -149,21 +149,16 @@ struct MercatorProjection {
     /// Always: a flat map has no far side to hide anything on.
     func couldFace(_ cap: SphericalCap) -> Bool { true }
 
-    /// A box that certainly contains the shape, cheaply and generously.
-    ///
-    /// Mercator stretches towards the poles by 1/cos φ, so the box is worked out at the
-    /// cap's own northern edge — the widest that stretch gets anywhere in it — which makes
-    /// this an over-estimate and never an under-estimate. A cull that is too eager is a
-    /// continent that vanishes; one that is too generous costs a clip that finds nothing.
+    /// A box that certainly contains the shape, cheaply and generously: the cap's own box
+    /// on a world one unit wide, which it worked out when it was made, brought to this
+    /// zoom. Arithmetic, not trigonometry, because this is asked of every shape in a table
+    /// on every frame.
     func bounds(of cap: SphericalCap) -> CGRect {
-        let middle = place(Coordinate(cap.centre))
-        let radians = cap.radius
-        let degrees = radians * 180 / .pi
-        let north = min(abs(Coordinate(cap.centre).latitude) + degrees, Self.limit)
-        let stretch = 1 / max(cos(north * .pi / 180), 0.02)
-        let reach = radians / (2 * .pi) * worldWidth * stretch
-        return CGRect(x: middle.x - reach, y: middle.y - reach,
-                      width: reach * 2, height: reach * 2)
+        let box = cap.mercator
+        let x = nearestCopy(of: box.x * worldWidth - originX)
+        let y = box.y * worldWidth - originY
+        let reach = box.reach * worldWidth
+        return CGRect(x: x - reach, y: y - reach, width: reach * 2, height: reach * 2)
     }
 
     // MARK: - Shapes
