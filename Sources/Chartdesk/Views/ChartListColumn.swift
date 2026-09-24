@@ -1,8 +1,69 @@
+import AppKit
 import SwiftUI
 
 private struct PinnedGroup: Identifiable {
     let id: String
     let charts: [Chart]
+}
+
+/// The charts the middle column lists, in the order it lists them — which is the order the
+/// arrow keys and Previous and Next Chart step through, so the next chart is the one under
+/// this one on the screen. It was the airport's charts in their own order once, which with a
+/// runway planned or a filter typed was a different list from the one being looked at.
+@MainActor
+enum ChartListing {
+
+    static func charts(library: ChartLibrary, browser: BrowserState,
+                       flight: FlightPlanStore) -> [Chart] {
+        let listed: [Chart]
+        if browser.sidebarSelection == .pinned {
+            listed = byAirport(library.pinnedCharts)
+        } else if let airport = library.airport(code: browser.sidebarSelection?.airportCode) {
+            listed = prioritised(airport.chartList(in: browser.category),
+                                 runway: flight.plannedRunway(at: airport.code))
+        } else {
+            return []
+        }
+        let query = browser.chartQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return listed }
+        // Folded once here rather than per chart.
+        let folded = SearchKey.fold(query)
+        return listed.filter { $0.matches(foldedQuery: folded) }
+    }
+
+    /// Floats the plates for the planned runway to the top, keeping the existing order within
+    /// each group. Eleven approaches at a big field is a lot to read through when the flight
+    /// plan already says which one you want.
+    private static func prioritised(_ list: [Chart], runway planned: String?) -> [Chart] {
+        guard let planned else { return list }
+        let matching = list.filter { $0.serves(runway: planned) }
+        guard !matching.isEmpty, matching.count < list.count else { return list }
+        return matching + list.filter { !$0.serves(runway: planned) }
+    }
+
+    /// Pinned charts together by airport, the airports in the order their first chart was
+    /// pinned — the way the pinned list sections them.
+    private static func byAirport(_ list: [Chart]) -> [Chart] {
+        var order: [String] = []
+        var buckets: [String: [Chart]] = [:]
+        for chart in list {
+            if buckets[chart.airportCode] == nil { order.append(chart.airportCode) }
+            buckets[chart.airportCode, default: []].append(chart)
+        }
+        return order.flatMap { buckets[$0] ?? [] }
+    }
+
+    /// The chart `delta` rows from the selected one, stopping at either end; the first when
+    /// none is selected.
+    static func step(_ delta: Int, in list: [Chart], from selected: String?) -> String? {
+        guard !list.isEmpty else { return nil }
+        guard let selected, let index = list.firstIndex(where: { $0.id == selected }) else {
+            return list.first?.id
+        }
+        let target = index + delta
+        guard list.indices.contains(target) else { return nil }
+        return list[target].id
+    }
 }
 
 struct ChartListColumn: View {
@@ -27,34 +88,14 @@ struct ChartListColumn: View {
         browser.sidebarSelection == .map
     }
 
-    private var baseCharts: [Chart] {
-        if isPinnedList { return library.pinnedCharts }
-        guard let airport = selectedAirport else { return [] }
-        return prioritised(airport.chartList(in: browser.category))
-    }
-
     /// The runway SimBrief planned here, if this airport is in the loaded flight.
     private var plannedRunway: String? {
         guard let code = selectedAirport?.code else { return nil }
         return flight.plannedRunway(at: code)
     }
 
-    /// Floats the plates for the planned runway to the top, keeping the existing order within
-    /// each group. Eleven approaches at a big field is a lot to read through when the flight
-    /// plan already says which one you want.
-    private func prioritised(_ list: [Chart]) -> [Chart] {
-        guard let planned = plannedRunway else { return list }
-        let matching = list.filter { $0.serves(runway: planned) }
-        guard !matching.isEmpty, matching.count < list.count else { return list }
-        return matching + list.filter { !$0.serves(runway: planned) }
-    }
-
     private var charts: [Chart] {
-        let query = browser.chartQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return baseCharts }
-        // Folded once here rather than per chart.
-        let folded = SearchKey.fold(query)
-        return baseCharts.filter { $0.matches(foldedQuery: folded) }
+        ChartListing.charts(library: library, browser: browser, flight: flight)
     }
 
     private var pinnedGroups: [PinnedGroup] {
@@ -243,28 +284,44 @@ struct ChartListColumn: View {
     // MARK: - List
 
     private var list: some View {
-        List(selection: $browser.selectedChartID) {
-            if isPinnedList {
-                ForEach(pinnedGroups) { group in
-                    Section(group.id) {
-                        ForEach(group.charts) { chart in
-                            row(for: chart, showsAirport: false)
+        ScrollViewReader { scroller in
+            List(selection: $browser.selectedChartID) {
+                if isPinnedList {
+                    ForEach(pinnedGroups) { group in
+                        Section(group.id) {
+                            ForEach(group.charts) { chart in
+                                row(for: chart, showsAirport: false)
+                            }
                         }
                     }
-                }
-            } else {
-                ForEach(charts) { chart in
-                    row(for: chart, showsAirport: false)
+                } else {
+                    ForEach(charts) { chart in
+                        row(for: chart, showsAirport: false)
+                    }
                 }
             }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(ArrowKeys { delta in step(delta) })
+            // The chart the keys land on is kept in view, the least scroll that shows it.
+            .onChange(of: browser.selectedChartID) { _, selected in
+                guard let selected else { return }
+                scroller.scrollTo(selected)
+            }
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
+    }
+
+    /// Up or down the list by one.
+    private func step(_ delta: Int) {
+        if let next = ChartListing.step(delta, in: charts, from: browser.selectedChartID) {
+            browser.selectedChartID = next
+        }
     }
 
     private func row(for chart: Chart, showsAirport: Bool) -> some View {
         ChartRow(chart: chart,
                  showsAirport: showsAirport,
+                 isSelected: chart.id == browser.selectedChartID,
                  isPinned: library.isPinned(chart),
                  servesPlannedRunway: plannedRunway.map { chart.serves(runway: $0) } ?? false) {
             library.togglePin(chart)
@@ -351,12 +408,17 @@ struct ChartListColumn: View {
 private struct ChartRow: View {
     let chart: Chart
     let showsAirport: Bool
+    /// The chart open beside the list, which is marked down its left edge.
+    let isSelected: Bool
     let isPinned: Bool
     /// Matches the runway the flight plan named, so the badge stands out from the rest.
     let servesPlannedRunway: Bool
     let togglePin: () -> Void
 
     @State private var isHovering = false
+    /// Raised when the list has the keyboard and paints the selected row in the accent
+    /// colour, which on a Mac set to green would swallow a green edge.
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         HStack(spacing: 9) {
@@ -416,9 +478,63 @@ private struct ChartRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+        // The chart that is open, green down its left edge, whether or not the list has the
+        // keyboard — without it, the selection is a grey row among grey rows.
+        .overlay(alignment: .leading) {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(prominence == .increased ? Color.white : Color(nsColor: .systemGreen))
+                    .frame(width: 3)
+                    .padding(.vertical, -1)
+                    .offset(x: -4)
+            }
+        }
         .onHover { hovering in
             isHovering = hovering
         }
+    }
+}
+
+/// ↑ and ↓ for the chart list, whatever was clicked last.
+///
+/// SwiftUI's list moves its selection with the arrows once it has the keyboard, and it does
+/// not take the keyboard when a row is clicked: the click opens the chart and leaves the window
+/// itself as first responder, and so does a click on the chart, so the arrows went nowhere.
+/// This takes them when nothing else has the keyboard and steps the list. Anything that does
+/// have it keeps its arrows — a search field, the sidebar's list, a mark being typed.
+private struct ArrowKeys: NSViewRepresentable {
+
+    let step: (Int) -> Void
+
+    func makeNSView(context: Context) -> Catcher { Catcher() }
+
+    func updateNSView(_ view: Catcher, context: Context) { view.step = step }
+
+    final class Catcher: NSView {
+        var step: ((Int) -> Void)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let host = self.window, event.window === host,
+                      host.firstResponder === host,
+                      event.modifierFlags.intersection([.command, .option, .control, .shift])
+                          .isEmpty
+                else { return event }
+                switch event.keyCode {
+                case 125: self.step?(1)
+                case 126: self.step?(-1)
+                default: return event
+                }
+                return nil
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

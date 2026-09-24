@@ -32,10 +32,9 @@ struct ChartdeskCommands: Commands {
         library.chart(id: browser.selectedChartID)
     }
 
+    /// What the chart list shows, in its order.
     private var currentList: [Chart] {
-        if browser.sidebarSelection == .pinned { return library.pinnedCharts }
-        guard let airport = library.airport(code: browser.sidebarSelection?.airportCode) else { return [] }
-        return airport.chartList(in: browser.category)
+        ChartListing.charts(library: library, browser: browser, flight: flight)
     }
 
     var body: some Commands {
@@ -274,18 +273,9 @@ struct ChartdeskCommands: Commands {
     }
 
     private func step(_ delta: Int) {
-        let list = currentList
-        guard !list.isEmpty else { return }
-
-        guard let identifier = browser.selectedChartID,
-              let index = list.firstIndex(where: { $0.id == identifier }) else {
-            browser.selectedChartID = list.first?.id
-            return
+        if let next = ChartListing.step(delta, in: currentList, from: browser.selectedChartID) {
+            browser.selectedChartID = next
         }
-
-        let target = index + delta
-        guard target >= 0, target < list.count else { return }
-        browser.selectedChartID = list[target].id
     }
 }
 
