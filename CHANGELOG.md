@@ -1,5 +1,90 @@
 # Changelog
 
+## 1.2.0
+
+**Apple's map, and the chart drawn into it**
+
+- **The map is a real MapKit map view** — Apple's own Map, with roads, places and relief,
+  or its Satellite imagery — so it pans and zooms the way the Maps app does: drag to pan,
+  pinch or turn the wheel to zoom about the pointer, **Fit** to frame the flight. It needs
+  the network every time, because Apple does not permit an app to keep a copy of what it
+  draws, and it replaces the drawn and topographic maps: whichever you had chosen, you get
+  Apple's Map. Your charts still need no network.
+- **Everything with writing on it is drawn by MapKit too**, in the same pass as the map —
+  the ground plans, the airspace, the route, the runways and the towns — so none of it
+  trails the map while you move it. Frontiers, state lines and town names are drawn over
+  the imagery, which has none of its own, and held back over Apple's Map, which does.
+- **The writing is sharp and stays a readable size.** Labels are drawn at the screen's own
+  resolution and the same few points tall however far in you are, and so are the lines. One
+  declutter decides every label on the map, in order of what matters: airports, then the
+  route's fixes, the writing on the ground, runway idents, the airspace, and last the towns.
+- **Search for an airport with the map open and the map goes there**, framing the whole
+  field: an ICAO code the moment it is typed in full, or on Return the best match by code or
+  name, from every airport the map knows rather than only those you have charts for. BOS is
+  Logan, London is Heathrow.
+- **The flight plan is magenta**, which is what a planned track is on every chart that
+  draws one; SID and STAR legs stay orange. A route over the antimeridian is one line.
+
+**The airport's own ground**
+
+- **Runways, taxiways, holding positions and stands** from OpenStreetMap, drawn the way a
+  ground chart draws them, from twenty kilometres across and at every field on the sheet:
+  yellow taxiway centrelines drawn as curves, each designator in a yellow box; holding
+  positions as red bars with their names; stand numbers at the closest zoom. Taxilanes into
+  the stands carry no line and no letter, because they are not somewhere you are told to go.
+- **A runway is painted like one**: a dark band with white edges, piano keys, the touchdown
+  zone and aiming point in the FAA's pattern on runways big enough to carry them, each end's
+  number painted across its threshold facing the aeroplane landing on it, and a broken
+  centreline that stops short of the numbers. Displaced thresholds carry arrows pointing at
+  the threshold, a row of arrowheads and a bar; stopways and blast pads carry yellow
+  chevrons.
+- **Fetched on the way down**, from sixty kilometres across, biggest field first and your
+  flight's own airfields before anything else, one at a time from OpenStreetMap's Overpass
+  service, and kept on this Mac for good. A layout kept before stopways were asked for is
+  topped up with them the first time you look at it.
+- **Window ▸ Debug ▸ Airport Layouts** lists every ground plan on this Mac — its runways,
+  taxiways, stands and holding positions, how big it is and when it arrived — and can throw
+  them all away, behind a confirmation. Performance has moved into the same menu.
+- Seaplane bases' water runways are left out, of the ground plans and the bundled runways
+  both: drawn as tarmac, they put a grey strip down the middle of Lake Hood.
+
+**Airspace drawn the way ForeFlight draws it**
+
+- **Each boundary is a bright line over a faint glow** of its own colour, and the airspace
+  inside is no longer filled, so the middle of a Class B is no longer four layers of blue
+  over the airport you were trying to look at.
+- **A tag just inside each ring says what it is**, floor to ceiling in feet — "B: 2000-7000",
+  "D: SFC-2600" — curving with the boundary and reading left to right, repeated round the
+  ring at fixed places so that it stays put while you zoom. Special-use areas go by their
+  own designator, and Class E, which is nearly everywhere, is not tagged.
+
+**Weather**
+
+- **A flight category beside the METAR**: a coloured dot and the letters — green VFR, blue
+  MVFR, red IFR, magenta LIFR — decided by the worse of ceiling and visibility.
+- **An ATIS comes decoded.** Under the full text, the information letter, time, wind,
+  visibility, cloud, temperature, dew point and altimeter in a column, read from an American
+  D-ATIS, a European one or plain English, with the pressure in both units. Anything the
+  decoder cannot read with confidence is left out rather than guessed.
+- **D-ATIS Unavailable** and **No VATSIM online** said plainly where there was a blank, and
+  the weather is fetched when you pick the airport rather than when you turn to its tab.
+
+**Charts**
+
+- **The planner downloader files parking, ground and facility charts under their codes** —
+  APC, AGC and AFC — however the planner titles them, and fetches once what two rows would
+  have saved to the same file.
+- **A chart whose name opens with an airport chart's code is an airport chart**, whatever
+  the rest of its name says: Milwaukee's AFC STARS SIDS is filed with the airport charts,
+  not the departures.
+
+**Also**
+
+- **The Recent airports section is gone** from the sidebar, which goes from Route Map to
+  Airports.
+- **A window restored bigger than the screen is pulled back onto it**, rather than coming
+  back with its title bar above the top of the screen where it cannot be dragged down.
+
 ## 1.2.0-rc.12
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
