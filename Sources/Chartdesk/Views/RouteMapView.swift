@@ -262,9 +262,13 @@ struct RouteMapView: View {
     /// written in, because a kilometre is a kilometre whatever size the window is.
     private var metresAcross: Double { degreesAcross * 111_000 }
 
+    /// The zoom buttons. Through `show`, because the map view goes where `mapRect` says: a
+    /// change to the camera alone was a readout that changed and a map that did not.
     private func zoom(by factor: CGFloat, around point: CGPoint?) {
         userMoved = true
-        camera.zoom(by: factor, around: point, in: size)
+        var wanted = camera
+        wanted.zoom(by: factor, around: point, in: size)
+        show(wanted)
     }
 
     /// Frames the flight, or the world when there is no flight loaded.

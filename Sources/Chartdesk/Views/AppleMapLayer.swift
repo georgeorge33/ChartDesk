@@ -99,6 +99,11 @@ struct AppleMapLayer: NSViewRepresentable {
         view.delegate = nil
         view.setVisibleMapRect(rect, animated: false)
         view.delegate = context.coordinator
+        // And measured again, for where it is looking now. The measure at the top of this
+        // update was of where it had been, and the delegate that would have said otherwise
+        // was detached — so a jump to an airport, or Fit, left the chart sized and its labels
+        // placed for the view it had come from until something else moved the map.
+        context.coordinator.measure(view)
     }
 
     private func apply(_ wanted: MKMapConfiguration, to view: MKMapView) {
