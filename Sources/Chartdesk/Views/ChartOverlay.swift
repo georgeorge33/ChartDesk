@@ -82,11 +82,21 @@ final class ChartRenderer: MKOverlayRenderer {
     /// Everything the renderer is told, behind one lock. Tiles are drawn on MapKit's own
     /// queue, several at a time, while the view writes from the main thread — and a frame
     /// is a dozen arrays, which read while being replaced is freed memory.
+    ///
+    /// Held to read these or write them and never for longer. The main thread takes it on
+    /// every frame the map moves, and a frame at a new zoom is tens of milliseconds to
+    /// work out; worked out under this lock, a scroll spent a third of its time waiting
+    /// for it, one notch after another.
     private let lock = NSLock()
     private var current = ChartFrame()
     private var scale: Double = 0
     private var shown = MKMapRect.null
-    private var settled: Settled?
+
+    /// The frames worked out lately, newest last, and the lock that has them worked out
+    /// one at a time. Never taken on the main thread: only the tiles and the labels
+    /// settle a frame, and both are off it.
+    private let working = NSLock()
+    private var settled: [Settled] = []
 
     var frame: ChartFrame {
         get { lock.withLock { current } }
@@ -278,15 +288,18 @@ final class ChartRenderer: MKOverlayRenderer {
 
     private func settle(_ frame: ChartFrame, scale: Double, view: MKMapRect,
                         chart: ChartContext) -> Settled {
-        lock.lock()
-        defer { lock.unlock() }
+        working.lock()
+        defer { working.unlock() }
         let region = Self.region(for: view, scale: scale,
-                                 keeping: settled?.scale == scale ? settled?.region : nil)
+                                 keeping: settled.last(where: { $0.scale == scale })?.region)
         let key = "\(frame.stamp)|\(scale)|\(region.minX),\(region.minY),\(region.width)"
-        if let settled, settled.key == key { return settled }
+        if let found = settled.first(where: { $0.key == key }) { return found }
         let made = Self.work(frame, scale: scale, view: view, region: region, key: key,
                              chart: chart)
-        settled = made
+        // A few rather than one: the labels and the tiles can be a step of a zoom apart,
+        // and a zoom that turns back comes through the same scales again.
+        settled.append(made)
+        if settled.count > 4 { settled.removeFirst() }
         return made
     }
 
