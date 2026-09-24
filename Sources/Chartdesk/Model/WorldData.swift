@@ -154,6 +154,45 @@ enum WorldData {
         return airports[icao.uppercased()]
     }
 
+    /// The airport a search means, out of every one the map knows rather than only those
+    /// with charts: the one with that code; a three-letter code as the American one with a
+    /// K in front, so BOS is Logan; and otherwise the biggest field whose name or town has
+    /// the words in it. Nil when nothing answers.
+    ///
+    /// Biggest by OurAirports' reckoning first, which leaves London with four large airports
+    /// and Paris with three; among those, the one with the most runway, which is Heathrow
+    /// and Charles de Gaulle. By code alone it was Luton and Le Bourget.
+    static func airport(searchingFor query: String) -> MapAirport? {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = text.uppercased()
+        guard !code.isEmpty else { return nil }
+        if let exact = airports[code] { return exact }
+        if code.count == 3, code.allSatisfy(\.isLetter), let american = airports["K" + code] {
+            return american
+        }
+        let folded = SearchKey.fold(text)
+        let found = airports.values.filter {
+            SearchKey.contains(SearchKey.fold($0.name), folded)
+                || SearchKey.contains(SearchKey.fold($0.town), folded)
+        }
+        // And by code last, so the same words always find the same field.
+        let runway = found.count > 1 ? runwayLength : [:]
+        return found.min {
+            ($0.size, -(runway[$0.icao] ?? 0), $0.icao) < ($1.size, -(runway[$1.icao] ?? 0), $1.icao)
+        }
+    }
+
+    /// Each airport's runways end to end, in metres: the nearest thing the tables have to
+    /// how much of an airport it is. Read the first time a search needs it.
+    private static let runwayLength: [String: Double] = {
+        var total: [String: Double] = [:]
+        for runway in loadRunways() {
+            let cosine = simd_dot(runway.low.direction, runway.high.direction)
+            total[runway.airport, default: 0] += acos(min(max(cosine, -1), 1)) * 6_371_000
+        }
+        return total
+    }()
+
     /// Reads one tier off disk, on `MapGeography`'s background queue rather than during a
     /// draw.
     ///

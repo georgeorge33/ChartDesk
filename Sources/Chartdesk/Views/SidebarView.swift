@@ -297,7 +297,22 @@ struct SidebarView: View {
         .padding(.vertical, 7)
     }
 
+    /// Return in the search field. With the map open it shows the airport on the map and
+    /// stays there — the first one listed if you have charts for it, and otherwise any
+    /// airport the map knows. Anywhere else it opens the first one listed.
     private func selectFirstMatch() {
+        if browser.sidebarSelection == .map {
+            // Nothing typed is nothing to find, rather than the first airport in the library.
+            guard !trimmedQuery.isEmpty else { return }
+            let listed = filteredAirports.lazy.compactMap { WorldData.airport($0.code) }.first
+            let exact = WorldData.airport(trimmedQuery)
+            if let airport = exact ?? listed ?? WorldData.airport(searchingFor: trimmedQuery) {
+                browser.showOnMap(airport)
+            } else {
+                NSSound.beep()
+            }
+            return
+        }
         guard let first = filteredAirports.first else { return }
         browser.sidebarSelection = .airport(first.code)
     }

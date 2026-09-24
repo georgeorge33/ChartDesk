@@ -147,6 +147,18 @@ struct RouteMapView: View {
         .onChange(of: camera.showsRunways) { _, shows in
             if shows { geography.requestRunways() }
         }
+        // The search field, while the map is open. Return sends the airport it found here;
+        // a whole code typed into it takes the map there without waiting for Return, since
+        // an ICAO code is already as exact as a search gets.
+        .onChange(of: browser.mapRequest) { _, request in
+            guard let request, let airport = WorldData.airport(request.airport) else { return }
+            go(to: airport)
+        }
+        .onChange(of: browser.airportQuery) { _, query in
+            let code = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard code.count >= 4, let airport = WorldData.airport(code) else { return }
+            go(to: airport)
+        }
         .onDisappear {
         }
     }
@@ -279,6 +291,26 @@ struct RouteMapView: View {
         guard size.width > 0 else { return }
         mapRect = MercatorProjection.rect(centre: wanted.centre,
                                           worldWidth: Double(wanted.worldWidth), in: size)
+    }
+
+    /// Frames an airport: all of its runways with room round them, or where the runway table
+    /// has not been read yet, as much ground as a field that size usually covers.
+    private func go(to airport: MapAirport) {
+        guard size.width > 0, size.height > 0 else { return }
+        let middle = airport.coordinate.direction
+        let reach = geography.runways
+            .filter { $0.airport == airport.icao }
+            .flatMap { [$0.low.direction, $0.high.direction] }
+            .map { acos(min(max(simd_dot(middle, $0), -1), 1)) * 6_371_000 }
+            .max()
+        let usual: [Double] = [6_000, 4_000, 2_500]
+        let span = max(reach.map { 2 * $0 + 800 } ?? usual[min(max(airport.size, 0), 2)], 1_500)
+        // Across the map's shorter side, so that the field fits that way too.
+        let metres = span * max(Double(size.width / size.height), 1)
+        let circumference = 40_075_017 * cos(airport.coordinate.latitude * .pi / 180)
+        userMoved = true
+        show(MapCamera(centre: airport.coordinate,
+                       worldWidth: CGFloat(Double(size.width) * circumference / metres)))
     }
 
     private func fitRoute() {

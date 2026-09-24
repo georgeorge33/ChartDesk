@@ -58,6 +58,19 @@ final class BrowserState: ObservableObject {
     @Published var chartQuery: String = ""
     @Published var rotation: Int = 0
 
+    /// An airport the map has been asked to show, from the search field. A new request each
+    /// time, so that asking for the same airport again takes the map back to it.
+    @Published private(set) var mapRequest: MapRequest?
+
+    struct MapRequest: Equatable {
+        let airport: String
+        let serial: Int
+    }
+
+    func showOnMap(_ airport: MapAirport) {
+        mapRequest = MapRequest(airport: airport.icao, serial: (mapRequest?.serial ?? 0) + 1)
+    }
+
     @Published var canvasBackground: CanvasBackground {
         didSet { UserDefaults.standard.set(canvasBackground.rawValue, forKey: DefaultsKey.canvasBackground) }
     }
