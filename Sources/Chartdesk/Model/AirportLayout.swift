@@ -200,17 +200,18 @@ struct AirportLayout {
         guard line.count >= 2 else { return [] }
         var bars: [[SIMD3<Double>]] = []
 
-        for (at, towards) in [(line[0], line[1]),
-                              (line[line.count - 1], line[line.count - 2])] {
-            let along = towards - at
-            guard simd_length(along) > 1e-9 else { continue }
-            let forward = simd_normalize(along)
-            let side = SIMD2(-forward.y, forward.x)
+        // From each threshold along the runway's own line, like everything else painted on it.
+        for inwards in [line, Array(line.reversed())] {
+            let (near, _) = walk(inwards, 6)
+            let (far, _) = walk(inwards, 36)
+            let run = far - near
+            guard simd_length(run) > 1e-9 else { continue }
+            let side = SIMD2(-run.y, run.x) / simd_length(run)
 
             for stripe in 0..<8 {
                 let across = (Double(stripe) - 3.5) / 8 * way.width * 0.8
-                bars.append([frame.globe(at + forward * 6 + side * across),
-                             frame.globe(at + forward * 36 + side * across)])
+                bars.append([frame.globe(near + side * across),
+                             frame.globe(far + side * across)])
             }
         }
         return bars
@@ -226,10 +227,17 @@ struct AirportLayout {
     /// Only where there is room for it: a runway narrower than thirty metres or shorter than
     /// twelve hundred is not a precision runway and does not carry the paint, and no stripe
     /// goes past the middle, where it would meet the other end's.
+    ///
+    /// Measured along the runway's own line from each threshold, and each stripe square to
+    /// the stretch of it the stripe covers. OpenStreetMap draws a runway through a node at
+    /// every taxiway that crosses it, and never quite straight: laid out along the first
+    /// stretch of the line instead, the pattern went wherever that stretch pointed, and ten
+    /// metres of it three degrees out put Burbank's aiming point thirty-seven metres off the
+    /// centreline. Four runways in ten were more than three metres off.
     static func touchdownZones(of way: Way, in frame: AirportFrame) -> [Paint] {
         let line = way.directions.map(frame.plane)
         guard line.count >= 2, way.width >= 30 else { return [] }
-        let length = simd_distance(line[0], line[line.count - 1])
+        let length = pathLength(line)
         guard length >= 1_200 else { return [] }
 
         // On a runway narrower than the forty-five metres the pattern is drawn for, the
@@ -241,19 +249,16 @@ struct AirportLayout {
         ]
 
         var out: [Paint] = []
-        for (at, towards) in [(line[0], line[1]),
-                              (line[line.count - 1], line[line.count - 2])] {
-            let along = towards - at
-            guard simd_length(along) > 1e-9 else { continue }
-            let forward = simd_normalize(along)
-            let side = SIMD2(-forward.y, forward.x)
-
+        for inwards in [line, Array(line.reversed())] {
             for mark in pattern {
                 // Nought stripes means the aiming point.
                 let long = mark.stripes == 0 ? 45.0 : 22.5
                 guard mark.from + long <= length / 2 else { break }
-                let start = at + forward * mark.from
-                let end = at + forward * (mark.from + long)
+                let (start, _) = walk(inwards, mark.from)
+                let (end, _) = walk(inwards, mark.from + long)
+                let run = end - start
+                guard simd_length(run) > 1e-9 else { continue }
+                let side = SIMD2(-run.y, run.x) / simd_length(run)
 
                 var offsets: [(Double, Double)] = []
                 if mark.stripes == 0 {
@@ -322,6 +327,29 @@ struct AirportLayout {
               let both = trimmed(Array(from.reversed()), by: clear)
         else { return [] }
         return both.reversed().map(frame.globe)
+    }
+
+    /// How long a line is, in metres along it.
+    fileprivate static func pathLength(_ line: [SIMD2<Double>]) -> Double {
+        zip(line, line.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) }
+    }
+
+    /// The point so many metres along a line from its start, and the way the line runs
+    /// there. Past the end, the end.
+    fileprivate static func walk(_ line: [SIMD2<Double>], _ metres: Double)
+    -> (SIMD2<Double>, SIMD2<Double>) {
+        var left = metres
+        for index in 0..<(line.count - 1) {
+            let a = line[index], b = line[index + 1]
+            let step = simd_distance(a, b)
+            guard step > 1e-9 else { continue }
+            let direction = (b - a) / step
+            if step >= left { return (a + direction * left, direction) }
+            left -= step
+        }
+        let last = line[line.count - 1], before = line[max(line.count - 2, 0)]
+        let run = simd_distance(before, last)
+        return (last, run > 1e-9 ? (last - before) / run : SIMD2(1, 0))
     }
 
     /// A line with its first so many metres taken off, or nothing if that is all of it.
@@ -1078,7 +1106,14 @@ final class AirportLayoutStore: ObservableObject {
                                      in frame: AirportFrame) -> AirportLayout.RunwayEnd {
         let ring = band(line, width: width).map(frame.globe)
         let threshold = line[line.count - 1]
-        let forward = simd_normalize(threshold - line[line.count - 2])
+        let back = Array(line.reversed())
+        let length = AirportLayout.pathLength(line)
+        // Square to the way the stretch runs over its last thirty metres into the threshold,
+        // not over its last segment, which can be a few metres long and a few degrees out.
+        let (behind, _) = AirportLayout.walk(back, min(30, length))
+        let run = threshold - behind
+        let forward = simd_length(run) > 1e-9 ? simd_normalize(run)
+                                              : simd_normalize(threshold - line[line.count - 2])
         let side = SIMD2(-forward.y, forward.x)
         let half = width / 2
         var marks: [AirportLayout.Paint] = []
@@ -1102,11 +1137,9 @@ final class AirportLayoutStore: ObservableObject {
 
         // Arrows down the middle, sixty metres apart, as long as there is room for a whole
         // one: a thirty-metre shaft and a head, pointing at the threshold.
-        let back = Array(line.reversed())
-        let length = pathLength(line)
         var tip = 30.0
         while tip + 30 <= length - 5 {
-            let (at, away) = walk(back, tip)
+            let (at, away) = AirportLayout.walk(back, tip)
             let towards = -away
             let across = SIMD2(-towards.y, towards.x)
             marks.append(AirportLayout.Paint(line: [frame.globe(at - towards * 30),
@@ -1129,11 +1162,11 @@ final class AirportLayoutStore: ObservableObject {
                                in frame: AirportFrame) -> AirportLayout.RunwayEnd {
         let ring = band(line, width: width).map(frame.globe)
         let half = width / 2
-        let length = pathLength(line)
+        let length = AirportLayout.pathLength(line)
         var marks: [AirportLayout.Paint] = []
         var apex = 15.0
         while apex < length {
-            let (at, outwards) = walk(line, apex)
+            let (at, outwards) = AirportLayout.walk(line, apex)
             let side = SIMD2(-outwards.y, outwards.x)
             for sign in [-1.0, 1.0] {
                 // Past the far end of a short pad, which the drawing clips to its concrete.
@@ -1163,28 +1196,6 @@ final class AirportLayoutStore: ObservableObject {
             right.append(at + sideways)
         }
         return left + right.reversed()
-    }
-
-    nonisolated private static func pathLength(_ line: [SIMD2<Double>]) -> Double {
-        zip(line, line.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) }
-    }
-
-    /// The point so many metres along a line from its start, and the way the line runs
-    /// there. Past the end, the end.
-    nonisolated private static func walk(_ line: [SIMD2<Double>], _ metres: Double)
-    -> (SIMD2<Double>, SIMD2<Double>) {
-        var left = metres
-        for index in 0..<(line.count - 1) {
-            let a = line[index], b = line[index + 1]
-            let step = simd_distance(a, b)
-            guard step > 1e-9 else { continue }
-            let direction = (b - a) / step
-            if step >= left { return (a + direction * left, direction) }
-            left -= step
-        }
-        let last = line[line.count - 1], before = line[max(line.count - 2, 0)]
-        let run = simd_distance(before, last)
-        return (last, run > 1e-9 ? (last - before) / run : SIMD2(1, 0))
     }
 
     /// Ways that meet end to end, chained into one line each, whatever their refs.
