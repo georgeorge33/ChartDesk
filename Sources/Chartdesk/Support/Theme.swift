@@ -25,6 +25,10 @@ enum Theme {
     /// Accent-coloured *text and glyphs*. `accent` is only 2.7:1 against the shell, so it
     /// fails as a foreground colour; this is 8.6:1.
     static let accentText       = rgb(0x30B8F0)
+    /// The open chart's row in the chart list: the green macOS paints a selected row with when
+    /// the accent colour is green — `selectedContentBackgroundColor`, dark — used whatever the
+    /// accent colour is.
+    static let chartSelection   = rgb(0x43932A)
     /// Backdrop behind a chart, and the sea on the map.
     static let canvas           = rgb(0x000810)
     /// Altitude and speed restrictions, which on an Airbus display are magenta and nothing
@@ -162,5 +166,6 @@ extension Color {
     static let ngSeparator   = Color(nsColor: Theme.separator)
     static let ngAccent      = Color(nsColor: Theme.accent)
     static let ngAccentText  = Color(nsColor: Theme.accentText)
+    static let ngChartSelection = Color(nsColor: Theme.chartSelection)
     static let ngWarning     = Color(nsColor: Theme.warning)
 }

@@ -302,6 +302,7 @@ struct ChartListColumn: View {
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
+            .background(PlainSelection(selected: browser.selectedChartID))
             .background(ArrowKeys { delta in step(delta) })
             // The chart the keys land on is kept in view, the least scroll that shows it.
             .onChange(of: browser.selectedChartID) { _, selected in
@@ -327,6 +328,13 @@ struct ChartListColumn: View {
             library.togglePin(chart)
         }
         .tag(chart.id)
+        // The open chart, green from end to end whether or not the list has the keyboard, in
+        // the shape the list's own highlight has.
+        .listRowBackground(chart.id == browser.selectedChartID
+                           ? RoundedRectangle(cornerRadius: 6, style: .continuous)
+                               .fill(Color.ngChartSelection)
+                               .padding(.horizontal, 10)
+                           : nil)
         .contextMenu {
             Button(library.isPinned(chart) ? "Unpin Chart" : "Pin Chart") {
                 library.togglePin(chart)
@@ -408,7 +416,7 @@ struct ChartListColumn: View {
 private struct ChartRow: View {
     let chart: Chart
     let showsAirport: Bool
-    /// The chart open beside the list, which is marked down its left edge.
+    /// The chart open beside the list, whose row is painted green and written on in white.
     let isSelected: Bool
     let isPinned: Bool
     /// Matches the runway the flight plan named, so the badge stands out from the rest.
@@ -416,19 +424,18 @@ private struct ChartRow: View {
     let togglePin: () -> Void
 
     @State private var isHovering = false
-    /// Raised when the list has the keyboard and paints the selected row in the accent
-    /// colour, which on a Mac set to green would swallow a green edge.
-    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: chart.category.symbolName)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.85))
+                                            : AnyShapeStyle(.secondary))
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(chart.title)
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
@@ -439,7 +446,8 @@ private struct ChartRow: View {
                     // Same tint as the tab it lives under, so a glance down the list reads
                     // as the same colour coding rather than two unrelated schemes.
                     Text(chart.category.shortName)
-                        .foregroundStyle(chart.category.tint)
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85)
+                                                    : chart.category.tint)
                     if let runway = chart.runway {
                         // A chip rather than a third word in a run of faint text: the
                         // designator is the thing you scan this list for, and "APP RWY 25L"
@@ -448,11 +456,13 @@ private struct ChartRow: View {
                         Text(runway)
                             .font(.ngSmallBold)
                             .monospacedDigit()
-                            .foregroundStyle(servesPlannedRunway ? Color.ngAccentText : Color.primary)
+                            .foregroundStyle(isSelected ? Color.white
+                                             : servesPlannedRunway ? Color.ngAccentText
+                                             : Color.primary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(servesPlannedRunway
-                                        ? Color.ngAccent.opacity(0.45)
+                            .background(isSelected ? Color.black.opacity(0.25)
+                                        : servesPlannedRunway ? Color.ngAccent.opacity(0.45)
                                         : Color.ngSeparator,
                                         in: RoundedRectangle(cornerRadius: 3, style: .continuous))
                             .help(servesPlannedRunway
@@ -461,7 +471,8 @@ private struct ChartRow: View {
                     }
                 }
                 .font(.ngSmall)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.white.opacity(0.85))
+                                            : AnyShapeStyle(.secondary))
                 .lineLimit(1)
             }
 
@@ -470,7 +481,8 @@ private struct ChartRow: View {
             if isPinned || isHovering {
                 Button(action: togglePin) {
                     Image(systemName: isPinned ? "star.fill" : "star")
-                        .foregroundStyle(isPinned ? Color.ngAccentText : Color.secondary)
+                        .foregroundStyle(isSelected ? Color.white
+                                         : isPinned ? Color.ngAccentText : Color.secondary)
                 }
                 .buttonStyle(.borderless)
                 .help(isPinned ? "Unpin chart" : "Pin chart")
@@ -478,20 +490,64 @@ private struct ChartRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        // The chart that is open, green down its left edge, whether or not the list has the
-        // keyboard — without it, the selection is a grey row among grey rows.
-        .overlay(alignment: .leading) {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                    .fill(prominence == .increased ? Color.white : Color(nsColor: .systemGreen))
-                    .frame(width: 3)
-                    .padding(.vertical, -1)
-                    .offset(x: -4)
-            }
-        }
         .onHover { hovering in
             isHovering = hovering
         }
+    }
+}
+
+/// The list's own selection highlight, switched off, so that the open chart's row can be
+/// painted green instead.
+///
+/// The list paints its selection in the accent colour only while it has the keyboard, and in
+/// grey the rest of the time — which after a click on a row is all of the time, since SwiftUI's
+/// list does not take the keyboard for a click. So the open chart sat in a grey row however
+/// the window was focused. SwiftUI has no way to change that grey, so the table under the list
+/// is asked to draw no highlight at all, and the row draws its own.
+private struct PlainSelection: NSViewRepresentable {
+
+    /// Only so that every change of chart comes through here: the table is made after this
+    /// view is, and SwiftUI makes a fresh one when the list is rebuilt for another airport,
+    /// so it is looked for again each time rather than once.
+    let selected: String?
+
+    func makeNSView(context: Context) -> Finder { Finder() }
+
+    func updateNSView(_ view: Finder, context: Context) { view.plain() }
+
+    final class Finder: NSView {
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Once the list has been laid out, which it has not been yet.
+            DispatchQueue.main.async { [weak self] in self?.plain() }
+        }
+
+        /// The table this sits behind, found by where it is: this view is the list's
+        /// background, so the table whose scroll view covers its middle is the list's own and
+        /// never the sidebar's.
+        func plain() {
+            guard let root = window?.contentView else { return }
+            let area = convert(bounds, to: nil)
+            let middle = NSPoint(x: area.midX, y: area.midY)
+            for table in Self.tables(in: root) {
+                let holder: NSView = table.enclosingScrollView ?? table
+                guard holder.convert(holder.bounds, to: nil).contains(middle) else { continue }
+                if table.selectionHighlightStyle != .none {
+                    table.selectionHighlightStyle = .none
+                }
+                return
+            }
+        }
+
+        private static func tables(in view: NSView) -> [NSTableView] {
+            var found: [NSTableView] = []
+            if let table = view as? NSTableView { found.append(table) }
+            for sub in view.subviews { found += tables(in: sub) }
+            return found
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 
