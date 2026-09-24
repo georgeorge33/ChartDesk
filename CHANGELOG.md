@@ -1,5 +1,55 @@
 # Changelog
 
+## 1.2.0-rc.12
+
+What this candidate adds to 1.1.0. Full release when it has been flown.
+
+**Airspace drawn the way ForeFlight draws it**
+
+- **Each boundary is a bright line over a faint glow of its own colour**, and the airspace
+  inside is no longer filled. The fill stacked a tint per shelf, so the middle of a Class B
+  was four layers of blue over the airport you were trying to look at. The glow is strongest
+  for the airspace you need a clearance for and faint for Class E.
+- **A tag inside each ring says what it is, floor to ceiling in feet** — "B: 2000-7000",
+  "B: SFC-7000", "D: SFC-2600" — in place of the ceiling-over-floor figures in the middle.
+  It sits just inside the airspace it names and curves with the boundary, reading left to
+  right, so on an edge two shelves share there is no doubt which one it means. Special-use
+  areas go by their own designator where they have one, R-2508, and by R or P otherwise;
+  danger areas are spelled out, because D is Class D's. Class E is not tagged: it is nearly
+  everywhere, and tagged along every ring it would bury the rest.
+- Tags repeat round a ring, so there is likely one wherever it crosses the view, at fixed
+  places round it — more of them as the ring grows on the screen — so they stay put while you
+  zoom and come back in the same places after a pan.
+
+**Sharp writing on the map**
+
+- **Taxiway letters, runway numbers, airspace tags and the rest of the labels are sharp.**
+  They were drawn into MapKit's map tiles, and MapKit as often as not settles on tiles with
+  barely a pixel to the screen point, so on a Retina screen every letter was smeared across
+  two. They are drawn by the Mac at the screen's own resolution now, and still move with the
+  map in the same frame. The numbers painted across a runway's threshold stay part of the
+  ground, and grow with it.
+- **Moving them is kept cheap.** Drawn this way at first, each label was drawn again on
+  every frame it moved, most of those handed to the map were off the screen, and the
+  airspace tags were taken off and put back on nearly every step of a zoom — and a quick
+  scroll-zoom over Boston's airspace on a 120 Hz display missed one frame in two. It misses
+  about one in four now, against one in ten with no labels at all.
+- **Scrolling does less work besides.** The main thread no longer waits while the chart is
+  worked out for a new zoom, which was a tenth of its time during a scroll, and the
+  frontiers and state lines over the imagery no longer cost another tenth to find: each
+  shape's place on the map is worked out once, not sixty times a second.
+
+**Charts filed under their codes**
+
+- **Parking, ground and facility charts are saved under their codes** by the planner
+  downloader, however the planner titles them: Airport Parking Chart West Apron is saved as
+  APC WEST APRON, and Airport Ground Chart AGC as AGC. Dublin's five parking charts and
+  Boston's six came through with their whole titles as their names. Two rows that come to
+  the same file are fetched once, and the sweep's total counts only what it will fetch.
+- **A chart whose name opens with an airport chart's code is an airport chart**, whatever
+  the rest of its name says: Milwaukee's AFC STARS SIDS is filed with the airport charts,
+  not the departures.
+
 ## 1.2.0-rc.11
 
 What this candidate adds to 1.1.0. Full release when it has been flown.
