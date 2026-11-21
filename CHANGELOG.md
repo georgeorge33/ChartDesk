@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0-rc.2
 
 - **Every airport has its name under its code**, in the sidebar and above the chart list:
   from the chart folder's own name if it has one, then from a list of every airfield and
