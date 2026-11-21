@@ -34,7 +34,13 @@ struct StartupScreen: View {
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
                     .padding(.top, 14)
 
-                if !version.isEmpty {
+                if Bundle.main.isTestCopy {
+                    // Purple, the same as the badge in the sidebar's corner.
+                    Text("Test version")
+                        .font(.ngSmall)
+                        .foregroundStyle(Color.purple)
+                        .padding(.top, 3)
+                } else if !version.isEmpty {
                     Text(version)
                         .font(.ngSmall)
                         .monospacedDigit()

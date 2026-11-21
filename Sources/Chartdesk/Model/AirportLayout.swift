@@ -646,7 +646,10 @@ final class AirportLayoutStore: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
-        return support.appendingPathComponent("Chartdesk/layouts", isDirectory: true)
+        // And the test copy keeps its own however it is opened: it is newer than the app you
+        // fly with, and takes away the old OpenStreetMap layouts that one may still be drawing.
+        let folder = Bundle.main.isTestCopy ? "Chartdesk Testbed/layouts" : "Chartdesk/layouts"
+        return support.appendingPathComponent(folder, isDirectory: true)
     }
 
     /// What this app fetched from OpenStreetMap before it had X-Plane's: the folder `v2`,

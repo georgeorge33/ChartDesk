@@ -240,12 +240,18 @@ struct WelcomeView: View {
         .background(Color.ngWindow)
         // The same corner the sidebar puts it in, for the one screen that has no sidebar.
         .overlay(alignment: .bottomLeading) {
-            Text(Bundle.main.appVersion)
-                .font(.ngSmall)
-                .monospacedDigit()
-                .foregroundStyle(Bundle.main.isCandidateBuild ? Color.orange : .secondary)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+            Group {
+                if Bundle.main.isTestCopy {
+                    TestCopyBadge()
+                } else {
+                    Text(Bundle.main.appVersion)
+                        .font(.ngSmall)
+                        .monospacedDigit()
+                        .foregroundStyle(Bundle.main.isCandidateBuild ? Color.orange : .secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
     }
 

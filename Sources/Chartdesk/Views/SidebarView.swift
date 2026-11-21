@@ -220,7 +220,9 @@ struct SidebarView: View {
     /// one. A final release says which one it is and otherwise keeps quiet.
     private var versionBar: some View {
         HStack(spacing: 8) {
-            if Bundle.main.isCandidateBuild {
+            if Bundle.main.isTestCopy {
+                TestCopyBadge()
+            } else if Bundle.main.isCandidateBuild {
                 Text(version)
                     .font(.ngSmallBold)
                     .monospacedDigit()
