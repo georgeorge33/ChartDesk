@@ -368,9 +368,9 @@ enum MapLayerRoom {
     /// And worth *fetching* three times sooner than that — sixty kilometres across, which
     /// is the point where it is clear which field you are coming down at.
     ///
-    /// Overpass takes a minute or two, so asking at the zoom where the layout would be drawn
-    /// means watching an empty airport while it arrives. Asking on the way down means it is
-    /// there when you get there.
+    /// The Gateway takes a second or two, and a queue of fields in view takes longer, so
+    /// asking at the zoom where the layout would be drawn means watching an empty airport
+    /// while it arrives. Asking on the way down means it is there when you get there.
     static let layoutFetchWithin: Double = 60_000
 
     /// And the stands, which are hundreds of numbers at a big field: only once the view is

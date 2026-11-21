@@ -58,17 +58,16 @@ struct AirportLayoutsView: View {
                         .help(row.loaded ? "Held by the map" : "On disk")
                     }
                     .width(78)
-                    // Ten columns at most: that is all a table's builder takes, so where each
-                    // layout came from goes beside the airport's name rather than in a column.
-                    TableColumn("Airport") { row in airportName(row) }.width(min: 220)
+                    TableColumn("Airport") { row in
+                        Text(row.name.isEmpty ? "—" : row.name)
+                            .foregroundStyle(row.name.isEmpty ? .tertiary : .primary)
+                    }
+                    .width(min: 160)
                     TableColumn("Taxiways") { row in figure(row.taxiways) }.width(68)
                     TableColumn("Runways") { row in figure(row.runways) }.width(62)
                     TableColumn("Stands") { row in figure(row.stands) }.width(56)
                     TableColumn("Holds") { row in figure(row.holds) }.width(52)
-                    // Drawn pavement rather than a centreline with a width tag: nearly always
-                    // nothing from OpenStreetMap, which is worth being able to see.
-                    TableColumn("Outlines") { row in sparse(row.outlines) }.width(64)
-                    // Painted lines, which only X-Plane's airport files have.
+                    TableColumn("Pavement") { row in sparse(row.outlines) }.width(70)
                     TableColumn("Paint") { row in sparse(row.markings) }.width(56)
                     TableColumn("Size") { row in
                         Text(Self.bytes(row.bytes))
@@ -104,8 +103,8 @@ struct AirportLayoutsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary)
                     .font(.ngSmallMedium)
-                Text("From the X-Plane Scenery Gateway, or OpenStreetMap where the Gateway "
-                     + "has nothing; one airport at a time, and kept once fetched.")
+                Text("From the X-Plane Scenery Gateway, one airport at a time, and kept "
+                     + "once fetched.")
                     .font(.ngSmall)
                     .foregroundStyle(.secondary)
             }
@@ -114,7 +113,7 @@ struct AirportLayoutsView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 150)
             Button("Reveal") {
-                NSWorkspace.shared.activateFileViewerSelecting([AirportLayoutStore.directory])
+                NSWorkspace.shared.activateFileViewerSelecting([XPlaneGateway.directory])
             }
             .help("Show the cache folder in the Finder")
             Button("Reread", action: read)
@@ -146,10 +145,8 @@ struct AirportLayoutsView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("\(airports.count) layouts and \(Self.bytes(totalBytes)) go from this Mac, "
-                 + "and the map stops drawing their taxiways. They are fetched again one at "
-                 + "a time as you zoom in on a field: a second or two each from the X-Plane "
-                 + "Gateway, and a minute or two each from OpenStreetMap — those took hours "
-                 + "to collect.")
+                 + "and the map stops drawing their taxiways until they are fetched again, "
+                 + "a second or two each, as you zoom in on a field.")
         }
     }
 
@@ -165,22 +162,8 @@ struct AirportLayoutsView: View {
         guard !airports.isEmpty else { return "Airport layouts" }
         let taxiways = airports.reduce(0) { $0 + $1.taxiways }
         let held = airports.filter(\.loaded).count
-        let xplane = airports.filter { $0.source == "X-Plane" }.count
-        return "\(airports.count) layouts (\(xplane) from X-Plane) · \(taxiways) taxiways · "
-            + "\(Self.bytes(totalBytes)) · \(held) held by the map"
-    }
-
-    /// The airport's name, and whose copy of its layout this is.
-    private func airportName(_ row: AirportLayoutSummary) -> some View {
-        HStack(spacing: 6) {
-            Text(row.name.isEmpty ? "—" : row.name)
-                .foregroundStyle(row.name.isEmpty ? .tertiary : .primary)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Text(row.source)
-                .font(.ngSmall)
-                .foregroundStyle(.secondary)
-        }
+        return "\(airports.count) airports · \(taxiways) taxiways · \(Self.bytes(totalBytes))"
+            + " · \(held) held by the map"
     }
 
     /// A count that is often nothing, shown as a dash when it is.

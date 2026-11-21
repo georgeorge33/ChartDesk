@@ -7,8 +7,7 @@ import simd
 /// field in X-Plane's own airport editor, Laminar Research's moderators check it, and the
 /// approved airports go out with the simulator and to anyone who asks the Gateway's API.
 /// A simulator has to draw the ground and taxi its traffic round it, so the file holds what a
-/// ground chart is made of and OpenStreetMap mostly does not: the pavement as outlines with
-/// their curves, every painted line with its style, the taxi routes with their names and
+/// ground chart is made of: the pavement as outlines with their curves, every painted line with its style, the taxi routes with their names and
 /// which stretches of them are inside a runway's protected area, and the stands.
 ///
 /// The format is `apt.dat`, a line of text per thing, each starting with a row code: 100 a
@@ -72,8 +71,8 @@ struct XPlaneAirport {
     var edges: [Edge] = []
     var stands: [Stand] = []
 
-    /// Worth drawing in place of OpenStreetMap: something on the ground besides the runways.
-    /// Thousands of the Gateway's small fields are a runway and nothing else.
+    /// Worth drawing: something on the ground besides the runways, which the bundled table
+    /// draws already. Thousands of the Gateway's small fields are a runway and nothing else.
     var isUsable: Bool {
         !runways.isEmpty && (!edges.isEmpty || !pavements.isEmpty || !lines.isEmpty)
     }
@@ -210,10 +209,10 @@ extension XPlaneAirport {
 
     /// Drawn the way the map draws an airport, or nil if there is nothing on its ground.
     ///
-    /// The runway is built from its two ends and drawn exactly as an OpenStreetMap one is —
-    /// the same piano keys, touchdown zone, numbers and centreline — with its displaced
-    /// thresholds and blast pads from the figures the file gives. Everything else is what the
-    /// file has and OpenStreetMap does not: the paint, the holds, the routes' names.
+    /// The runway is built from its two ends and painted the way a ground chart paints one —
+    /// piano keys, touchdown zone, numbers and centreline — with its displaced thresholds and
+    /// blast pads from the figures the file gives. Everything else is the file's own: the
+    /// paint, the holds, the routes' names, the stands.
     func layout(scenery: Int, fetched: Date) -> AirportLayout? {
         guard isUsable else { return nil }
         var anchors: [SIMD3<Double>] = []
@@ -234,13 +233,12 @@ extension XPlaneAirport {
         let painted = Self.markings(of: lines + pavements.flatMap { $0 }, in: frame)
         return AirportLayout(icao: icao, runways: ways,
                              taxiways: Self.taxiways(edges: edges, nodes: nodes),
-                             aprons: [],
                              pavement: Self.pavement(pavements, in: frame),
                              stands: Self.stands(stands),
                              holds: Self.holds(edges: edges, nodes: nodes,
                                                painted: painted.holds, in: frame),
-                             ends: ends, frame: frame, fetched: fetched,
-                             markings: painted.markings, source: .xPlane(scenery: scenery))
+                             ends: ends, markings: painted.markings, scenery: scenery,
+                             frame: frame, fetched: fetched)
     }
 
     /// What a line type number is painted as.
@@ -302,17 +300,17 @@ extension XPlaneAirport {
 
         var ends: [AirportLayout.RunwayEnd] = []
         if inFirst > 0.5 {
-            ends.append(AirportLayoutStore.displacedEnd([a, start], width: runway.width, in: frame))
+            ends.append(AirportLayout.displacedEnd([a, start], width: runway.width, in: frame))
         }
         if inSecond > 0.5 {
-            ends.append(AirportLayoutStore.displacedEnd([b, finish], width: runway.width, in: frame))
+            ends.append(AirportLayout.displacedEnd([b, finish], width: runway.width, in: frame))
         }
         if runway.first.pad > 0.5 {
-            ends.append(AirportLayoutStore.padEnd([a, a - along * runway.first.pad],
+            ends.append(AirportLayout.padEnd([a, a - along * runway.first.pad],
                                                   width: runway.width, in: frame))
         }
         if runway.second.pad > 0.5 {
-            ends.append(AirportLayoutStore.padEnd([b, b + along * runway.second.pad],
+            ends.append(AirportLayout.padEnd([b, b + along * runway.second.pad],
                                                   width: runway.width, in: frame))
         }
         return (way, ends)
@@ -558,7 +556,7 @@ extension XPlaneAirport {
     private static func holds(edges: [Edge], nodes: [Int: SIMD3<Double>],
                               painted: [[SIMD2<Double>]], in frame: AirportFrame) -> [AirportLayout.Hold] {
         var holds = painted.map { line in
-            AirportLayout.Hold(ref: "", direction: frame.globe(line[line.count / 2]),
+            AirportLayout.Hold(direction: frame.globe(line[line.count / 2]),
                                across: line.map(frame.globe))
         }
         var touching: [Int: [Int]] = [:]
@@ -579,7 +577,7 @@ extension XPlaneAirport {
             // Painted or lit already: the paint is where the line really is.
             if painted.contains(where: { distance(from: here, to: $0) < 30 }) { continue }
             let side = SIMD2(-run.y, run.x) / simd_length(run) * (width(of: edge.size) / 2)
-            holds.append(AirportLayout.Hold(ref: "", direction: at,
+            holds.append(AirportLayout.Hold(direction: at,
                                             across: [frame.globe(here - side),
                                                      frame.globe(here + side)]))
         }

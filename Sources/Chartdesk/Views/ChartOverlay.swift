@@ -62,10 +62,9 @@ struct ChartFrame {
     var stamp: String {
         [
             "\(showsGroundLayout)\(showsStands)",
-            // With how many ends each has, and whose copy it is: a layout topped up with its
-            // stopways, or replaced by X-Plane's, comes back under the same ICAO, and by the
-            // ICAO alone it would never be drawn again.
-            layouts.map { "\($0.icao):\($0.ends.count):\($0.source.tag)" }.joined(separator: ","),
+            // With which version of each it is: a newer version approved on the Gateway comes
+            // back under the same ICAO, and by the ICAO alone it would never be drawn again.
+            layouts.map { "\($0.icao):\($0.scenery)" }.joined(separator: ","),
             "\(airspace.count):\(airspace.first?.name ?? ""):\(airspace.last?.name ?? "")",
             airspaceKinds.map(\.rawValue).sorted().joined(),
             "\(runways.count):\(cities.count)",
@@ -943,7 +942,7 @@ final class ChartRenderer: MKOverlayRenderer {
     // MARK: - The ground
 
     /// The writing on the ground: taxiway designators, runway numbers at the ends they
-    /// belong to, the holding positions, and the stands closest in.
+    /// belong to, and the stands closest in.
     ///
     /// In here with the tarmac rather than on the canvas above it, because a designator
     /// that lags the taxiway it names is worse than no designator — it is a label pointing
@@ -954,7 +953,7 @@ final class ChartRenderer: MKOverlayRenderer {
                                       painted: inout [CGRect]) {
         for way in layout.taxiways where !way.ref.isEmpty && way.isMovementArea {
             guard let at = middle(of: way, sheet: sheet) else { continue }
-            found.append(ChartContext.Label(text: AirportLayout.designator(way.ref),
+            found.append(ChartContext.Label(text: way.ref,
                                             colour: Theme.taxiLine, box: .black,
                                             border: Theme.taxiLine, at: at, spacing: 160))
         }
@@ -984,12 +983,6 @@ final class ChartRenderer: MKOverlayRenderer {
                                                 border: NSColor.white.withAlphaComponent(0.7),
                                                 at: sheet.projection.point(at)))
             }
-        }
-        for hold in layout.holds where !hold.ref.isEmpty {
-            found.append(ChartContext.Label(text: hold.ref, colour: Theme.holdShort,
-                                            box: .black, border: Theme.holdShort,
-                                            at: sheet.projection.point(hold.direction),
-                                            spacing: 160))
         }
         guard stands else { return }
         for stand in layout.stands where !stand.ref.isEmpty {
@@ -1026,8 +1019,8 @@ final class ChartRenderer: MKOverlayRenderer {
         let wide = { (metres: Double) in metres * metre }
 
         // The taxiways get only their paint: both base maps are Apple's and both already
-        // have the taxiway tarmac in the picture. The aprons and the taxiway pavement are
-        // still parsed and still cached, and simply not filled.
+        // have the taxiway tarmac in the picture. The pavement's outlines are read and kept,
+        // and simply not filled.
         //
         // The runway is different, and is drawn the way a ground chart draws it: a solid
         // dark band the full width of the concrete, and on it, in white, the piano keys,

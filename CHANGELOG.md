@@ -4,12 +4,14 @@
 
 **Airport layouts from the X-Plane Scenery Gateway**
 
-- **The ground comes from X-Plane's airport database first**, the one X-Plane itself ships:
+- **The ground comes from X-Plane's airport database**, the one X-Plane itself ships:
   41,000 airports drawn by its community and checked by Laminar's moderators, free and open
   to anyone. An airport arrives in a second or two instead of the minute or two OpenStreetMap's
-  shared server takes, and with far more on it. OpenStreetMap is still asked wherever the
-  Gateway has nothing but runways, and an airport you already have from OpenStreetMap is
-  drawn from that copy at once and from the Gateway's as soon as it has arrived.
+  shared server took, and with far more on it.
+- **OpenStreetMap is gone.** A field the Gateway has nothing but runways for keeps the runways
+  from the bundled table, as it has from further out. The OpenStreetMap layouts already on
+  your Mac — twenty megabytes for a few dozen fields — are removed the first time this version
+  runs, and `Tools/make_layouts.py`, which fetched them in bulk, is gone too.
 - **The paint on the ground, line by line**: every centreline, lead-in to every gate, edge
   line and hold line, the way it is painted, in yellow, from about three kilometres across;
   closer in, the white of the service roads and the red safety lines round the gates too.
@@ -22,9 +24,8 @@
 - **Fetch Layouts for Your Airports**, in the Layers panel and in the Airport Layouts window:
   every airport you have charts for, and your flight's, fetched in one go, a second or two
   each, so the ground is there before you are.
-- **The map credits whoever drew the airports in view**: the X-Plane Scenery Gateway, whose
-  data is under the GPL, or OpenStreetMap contributors, whose credit had gone missing from
-  the map in 1.2.0. LICENSES.md says what each requires and where it is done.
+- **The map credits the X-Plane Scenery Gateway**, whose data is under the GPL, whenever one
+  of its airports is in view. LICENSES.md says what that requires and where it is done.
 
 **Charts**
 

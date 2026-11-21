@@ -455,8 +455,8 @@ struct MapCamera: Equatable {
     /// How far in and out the map will go, as the sphere's circumference in points.
     ///
     /// The far end is set by the finest thing there is to look at, not by an arbitrary number.
-    /// 80,000,000 points round the world is half a metre to the point: OpenStreetMap's
-    /// coastline is surveyed to about a metre and the runway ends are given to five decimals,
+    /// 80,000,000 points round the world is half a metre to the point: an airport's paint is
+    /// placed to a few centimetres and the runway ends are given to five decimals,
     /// so at that zoom the map is drawing everything it knows and a staircase would be the
     /// data's own, not the projection's. Closer than that there is nothing further to see.
     ///

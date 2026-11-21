@@ -13,8 +13,8 @@ time you zoom into that airport, or for every airport you have charts for with *
 for Your Airports** in the Layers panel. Beside each file is a note of which approved version it
 is and when it was last asked about. The Gateway is free and asks to be treated considerately,
 so the app asks for one airport at a time, keeps it for good, and asks about it again only a
-month later. Where the Gateway has nothing but runways for an airport, the app goes to
-OpenStreetMap instead (below).
+month later. Where the Gateway has nothing but runways for an airport, the map draws its
+runways from the bundled OurAirports table and nothing more.
 
 **Who:** drawn by the Gateway's volunteer artists in X-Plane's WorldEditor and checked by its
 moderators; the Gateway is run by Laminar Research, who make X-Plane.
@@ -33,29 +33,13 @@ which the Gateway's data is released under. Its copyright notices stay with it.
   credits whenever one of its airports is drawn, and the Layers panel names it beside the
   airport layout.
 
-## OpenStreetMap — ODbL 1.0
+## OpenStreetMap — no longer used
 
-**What:** `~/Library/Application Support/Chartdesk/layouts/v2/ICAO.json`: each airport's runways,
-taxiways and aprons, fetched from the [Overpass API](https://overpass-api.de/) the first time
-you zoom into an airport the X-Plane Gateway has nothing for, or ahead of time by
-`Tools/make_layouts.py`. Overpass is a free, shared, community-run service, so the app asks it
-for one airport at a time, writes the answer to disk, and never asks twice. An airport already
-fetched from here is still drawn from here until the Gateway has been asked about it.
-
-**Licence:** [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
-
-**What that requires of this app, and where it is done:**
-
-- **Attribution.** "© OpenStreetMap contributors" has to be shown wherever the data is drawn.
-  The map's credits carry it whenever one of its airports is in view, and the Layers panel
-  says the same beside the airport layout.
-- **Share-alike.** Those files are a Derived Database, so they are offered under ODbL too —
-  not under whatever terms the rest of this app carries. Take them and the same conditions
-  follow you.
-
-OpenStreetMap's coastline used to be here too, behind a drawn base map. That map is gone —
-both bases are Apple's now, and Apple draws its own coast — so the land tables and
-`Tools/make_coastline.py` went with it.
+Up to 1.2.0 the airport layouts came from OpenStreetMap, through the Overpass API, under the
+[Open Database License](https://opendatacommons.org/licenses/odbl/1-0/), and its coastline
+before that, behind a drawn base map. Neither is used now: the layouts are the X-Plane
+Gateway's (above) and both base maps are Apple's. The layouts that left on your Mac, in
+`layouts/v2`, are removed the first time this version runs.
 
 ## Natural Earth — public domain
 

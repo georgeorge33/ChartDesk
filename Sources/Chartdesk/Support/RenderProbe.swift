@@ -166,34 +166,11 @@ enum RenderProbe {
                 guard let data = try? Data(contentsOf: file),
                       let layout = XPlaneGateway.drawn(from: data, icao: icao, scenery: 0,
                                                        fetched: Date()) else {
-                    print("\(icao) (X-Plane): did not read"); continue
+                    print("\(icao): did not read"); continue
                 }
-                print("\(icao) (X-Plane, \(String(format: "%.0f ms", -started.timeIntervalSinceNow * 1000))): "
+                print("\(icao) (\(String(format: "%.0f ms", -started.timeIntervalSinceNow * 1000))): "
                       + describe(layout))
             }
-            let files = (try? FileManager.default.contentsOfDirectory(
-                at: AirportLayoutStore.directory, includingPropertiesForKeys: nil)) ?? []
-            for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-            where file.pathExtension == "json" {
-                let icao = file.deletingPathExtension().lastPathComponent
-                guard let data = try? Data(contentsOf: file),
-                      let layout = AirportLayoutStore.parse(data, icao: icao) else {
-                    print("\(icao): did not parse"); continue
-                }
-                let displaced = layout.ends.filter { $0.kind == .displaced }.count
-                let pads = layout.ends.count - displaced
-                let unnamed = layout.runways.filter { $0.names.isEmpty }.map { $0.ref.isEmpty ? "?" : $0.ref }
-                print("\(icao): \(layout.runways.count) runways, \(displaced) displaced, "
-                      + "\(pads) pads, \(AirportLayoutStore.isComplete(data) ? "complete" : "older")"
-                      + (unnamed.isEmpty ? "" : ", unnamed: \(unnamed.joined(separator: " "))"))
-            }
-            exit(0)
-        }
-        // The top-up's query for one airport, printed exactly as it would be sent.
-        if let icao = ProcessInfo.processInfo.environment["CHARTDESK_ENDS_QUERY"] {
-            let where_ = MainActor.assumeIsolated { WorldData.airport(icao)?.coordinate }
-            print(AirportLayoutStore.endsQuery(icao: icao.uppercased(),
-                                               at: where_ ?? Coordinate(latitude: 0, longitude: 0)))
             exit(0)
         }
         guard let spec = ProcessInfo.processInfo.environment["CHARTDESK_RENDER"] else { return }
@@ -252,7 +229,7 @@ enum RenderProbe {
     /// A layout counted up, in a line.
     private static func describe(_ layout: AirportLayout) -> String {
         let yellow = layout.markings.filter { $0.style.colour == .yellow }.count
-        return "\(layout.source.name), \(layout.runways.count) runways, "
+        return "\(layout.runways.count) runways, "
             + "\(layout.ends.count) displaced or pads, "
             + "\(layout.taxiways.filter(\.isMovementArea).count) named taxiway lines, "
             + "\(layout.pavement.count) pavement, \(layout.markings.count) painted lines "
@@ -265,9 +242,8 @@ enum RenderProbe {
                              light: Bool, at looking: Coordinate?) -> Bool {
         let environment = ProcessInfo.processInfo.environment
         var layout: AirportLayout?
-        // X-Plane's copy, the way the map prefers it: CHARTDESK_RENDER_DAT names an airport
-        // file to read directly, without the cache, and CHARTDESK_RENDER_SOURCE=osm skips
-        // X-Plane's copy for OpenStreetMap's.
+        // The copy on this Mac, or with CHARTDESK_RENDER_DAT an airport file read directly,
+        // without the cache.
         if icao != "-", let path = environment["CHARTDESK_RENDER_DAT"] {
             let started = Date()
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
@@ -279,30 +255,13 @@ enum RenderProbe {
             print(String(format: "read %@ in %.0f ms: ", path, -started.timeIntervalSinceNow * 1000)
                   + describe(made))
             layout = made
-        } else if icao != "-", environment["CHARTDESK_RENDER_SOURCE"] != "osm",
-                  let made = XPlaneGateway.cached(icao) {
-            print("X-Plane's copy: " + describe(made))
-            layout = made
         } else if icao != "-" {
-            // CHARTDESK_RENDER_EXTRA is another Overpass answer to fold in, in memory
-            // only — for trying out what a top-up would add without writing the cache.
-            var cached = try? Data(contentsOf: AirportLayoutStore.file(for: icao))
-            if let extra = environment["CHARTDESK_RENDER_EXTRA"],
-               let more = try? Data(contentsOf: URL(fileURLWithPath: extra)),
-               let base = cached,
-               var top = try? JSONSerialization.jsonObject(with: base) as? [String: Any],
-               let added = (try? JSONSerialization.jsonObject(with: more) as? [String: Any])?["elements"]
-                   as? [[String: Any]] {
-                top["elements"] = ((top["elements"] as? [[String: Any]]) ?? []) + added
-                cached = try? JSONSerialization.data(withJSONObject: top)
-                print("folded in \(added.count) more elements from \(extra)")
-            }
-            guard let data = cached,
-                  let parsed = AirportLayoutStore.parse(data, icao: icao) else {
-                FileHandle.standardError.write("no cached layout for \(icao)\n".data(using: .utf8)!)
+            guard let made = XPlaneGateway.cached(icao) else {
+                FileHandle.standardError.write("no layout on this Mac for \(icao)\n".data(using: .utf8)!)
                 return false
             }
-            layout = parsed
+            print("on this Mac: " + describe(made))
+            layout = made
         }
 
         // What the parser made of the runways, since that is where most of what can go

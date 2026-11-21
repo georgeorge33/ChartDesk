@@ -64,8 +64,7 @@ struct MapLayerPanel: View {
         if let stopped = last.stopped {
             return "Stopped after \(last.done) of \(last.total) (\(said)): \(stopped)."
         }
-        return "Done: \(said). The ones not on the Gateway come from OpenStreetMap when "
-            + "the map needs them."
+        return "Done: \(said). The ones not on the Gateway are drawn with their runways only."
     }
 
     var body: some View {
@@ -103,16 +102,15 @@ struct MapLayerPanel: View {
                 }
                 noteRow("Airport layout",
                         detail: "Runways, taxiways and the paint on them, stands and "
-                              + "holding positions, from the X-Plane Scenery Gateway — or "
-                              + "from OpenStreetMap, where the Gateway has nothing. Fetched "
-                              + "from about 60km across and drawn below 20km. Your flight's "
-                              + "own airfields are fetched whatever the map is showing.")
+                              + "holding positions, from the X-Plane Scenery Gateway. Fetched "
+                              + "from about 60km across and drawn below 20km; a field the "
+                              + "Gateway has nothing for keeps just its runways. Your "
+                              + "flight's own airfields are fetched whatever the map is "
+                              + "showing.")
                 if let fetching = ground.fetching {
                     Text("Fetching \(fetching)'s layout"
                          + (ground.waiting > 0 ? ", \(ground.waiting) more to go" : "")
-                         + "… One airport at a time, biggest first: a second or two each "
-                         + "from the Gateway, and a minute or two from OpenStreetMap's "
-                         + "shared server where the Gateway has none.")
+                         + "… One airport at a time, biggest first, a second or two each.")
                         .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)

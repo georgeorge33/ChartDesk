@@ -411,8 +411,8 @@ struct RouteMapView: View {
     ///
     /// Only for what is drawn: a credit for a layer that is switched off is noise, and a
     /// credit for one that is switched on but whose table is missing is a lie. Two of these
-    /// are required — OpenStreetMap's by ODbL, openAIP's by CC BY-NC — and the other two are
-    /// not, and are here because a map should say where it came from.
+    /// are owed — the X-Plane Gateway's under the GPL, openAIP's under CC BY-NC — and the
+    /// others are here because a map should say where it came from.
     private var credits: [String] {
         var found: [String] = []
         found.append("Natural Earth · borders and places")
@@ -420,20 +420,15 @@ struct RouteMapView: View {
            !browser.airspaceClasses.isEmpty, camera.worldWidth >= MapLayerRoom.airspaceFrom {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
         }
-        // Whoever drew the airports actually in view: the Gateway's are GPL and want their
-        // source named, and OpenStreetMap's licence requires its credit wherever its data
-        // is drawn.
+        // Whoever drew the airports actually in view: the Gateway's layouts are under the GPL
+        // and their source is named wherever they are drawn.
         if drawsGroundLayout {
             let looking = camera.centre.direction
             let reach = metresAcross / AirportFrame.earthRadius
-            let near = ground.layouts.values.filter { layout in
+            if ground.layouts.values.contains(where: { layout in
                 simd_dot(layout.cap.centre, looking) >= cos(min(reach + layout.cap.radius, .pi))
-            }
-            if near.contains(where: { $0.source.isXPlane }) {
+            }) {
                 found.append("X-Plane Scenery Gateway · airport layouts, GPL")
-            }
-            if near.contains(where: { !$0.source.isXPlane }) {
-                found.append("© OpenStreetMap contributors · airport layouts, ODbL")
             }
         }
         found.append("OurAirports · airports and runways")

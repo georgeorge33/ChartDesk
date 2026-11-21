@@ -110,7 +110,7 @@ struct ChartContext {
         var nudge = CGVector.zero
         /// How far apart, in points on the screen, two of these saying the same thing must
         /// be. A taxiway's letter repeated along it is how a chart reads; three inside a
-        /// hundred metres is OpenStreetMap's way of splitting a taxiway showing through.
+        /// hundred metres is a taxiway's pieces showing through.
         var spacing: Double? = nil
         /// Turned about its anchor, in radians, clockwise on the page.
         var angle: Double = 0
