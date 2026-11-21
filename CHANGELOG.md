@@ -7,10 +7,10 @@
   seaplane base in the world — forty-five thousand of them, a megabyte, bundled from
   OurAirports — and last from your SimBrief plan. Without the "Airport" on the end, so
   Logan is "Boston Logan International". The names can be searched for, too.
-- **An orange clock beside an airport's name when its charts are out of date** — when the
-  newest plate filed there is a LIDO cycle old, 28 days or more — in the sidebar and above the
-  chart list, so the airports to download again stand out without opening each one. The Info
-  tab still says how old.
+- **An orange clock when an airport's charts are out of date** — when the newest plate filed
+  there is a LIDO cycle old, 28 days or more — at the right of its row in the sidebar and
+  before its code above the chart list, so the airports to download again stand out without
+  opening each one. The Info tab still says how old.
 
 ## 1.3.0-rc.1
 

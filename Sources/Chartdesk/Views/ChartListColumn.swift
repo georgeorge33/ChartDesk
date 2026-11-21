@@ -232,32 +232,36 @@ struct ChartListColumn: View {
     /// Centred, with the airport's own name under its code — the identity of what you are
     /// looking at, rather than a line of statistics with the code buried in it.
     private var header: some View {
-        VStack(spacing: 1) {
-            Text(headerTitle)
-                .font(.system(size: 18, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                // Only this line keeps clear of the clock, so it stays centred in the column
-                // rather than in what is left of it. The lines below get the full width —
-                // reserving it for them truncated the warning to "No plate for plann…".
-                .padding(.horizontal, 64)
-
-            // With an orange clock beside it when the newest plate here is a cycle old: the
-            // Info tab says how old, and this says it before anyone thinks to look there.
-            let outOfDate = !isPinnedList && (selectedAirport?.chartsAreOutOfDate ?? false)
-            if let name = headerName, !name.isEmpty {
-                HStack(spacing: 4) {
-                    Text(name)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    if outOfDate, let airport = selectedAirport {
-                        OutOfDateClock(airport: airport)
-                    }
+        // An orange clock when the newest plate here is a cycle old: the Info tab says how
+        // old, and this says it before anyone thinks to look there.
+        let outOfDate = !isMap && !isPinnedList && (selectedAirport?.chartsAreOutOfDate ?? false)
+        return VStack(spacing: 1) {
+            HStack(spacing: 6) {
+                if outOfDate, let airport = selectedAirport {
+                    OutOfDateClock(airport: airport)
+                        .font(.system(size: 15, weight: .medium))
                 }
-                .font(.subheadline)
-            } else if outOfDate, let airport = selectedAirport {
-                OutOfDateClock(airport: airport)
+                Text(headerTitle)
+                    .font(.system(size: 18, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                // Its twin on the other side, unseen, so the code stays centred over the name.
+                if outOfDate, let airport = selectedAirport {
+                    OutOfDateClock(airport: airport)
+                        .font(.system(size: 15, weight: .medium))
+                        .hidden()
+                }
+            }
+            // Only this line keeps clear of the clock, so it stays centred in the column
+            // rather than in what is left of it. The lines below get the full width —
+            // reserving it for them truncated the warning to "No plate for plann…".
+            .padding(.horizontal, 64)
+
+            if let name = headerName, !name.isEmpty {
+                Text(name)
                     .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             // One line, not two: the warning replaces the plain "RWY 19R planned" rather than
