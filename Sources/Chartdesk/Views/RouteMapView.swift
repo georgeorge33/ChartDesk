@@ -120,9 +120,6 @@ struct RouteMapView: View {
             guard count > 1, !userMoved else { return }
             fitRoute()
         }
-        // The fields this flight uses are wanted whatever the map is showing: you are going
-        // to be on the ground at both ends of it.
-        .onChange(of: flight.plan?.airfields.map(\.icao) ?? []) { _, _ in keepFlightLayouts() }
         .onAppear {
             #if DEBUG
             if RenderProbe.showsLayers { showsLayers = true }
@@ -134,7 +131,6 @@ struct RouteMapView: View {
             if camera.showsRunways { geography.requestRunways() }
             openAIP.refresh()
             requestLayers()
-            keepFlightLayouts()
         }
         .onChange(of: browser.showsAirspace) { _, _ in requestLayers() }
         .onChange(of: browser.showsStateBorders) { _, _ in requestLayers() }
@@ -262,13 +258,6 @@ struct RouteMapView: View {
             ground.want(WorldData.airports(within: max(metresAcross / 2, 5_000),
                                            of: camera.centre))
         }
-    }
-
-    /// Holds on to the ground layouts for the flight's own airfields.
-    private func keepFlightLayouts() {
-        let fields = (plan?.airfields ?? []).compactMap { WorldData.airport($0.icao) }
-        guard !fields.isEmpty else { return }
-        ground.alwaysKeep(fields)
     }
 
     private var degreesAcross: Double { camera.degreesAcross(in: size) }

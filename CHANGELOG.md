@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0-rc.1
 
 **Airport layouts from the X-Plane Scenery Gateway**
 
@@ -21,6 +21,10 @@
   where X-Plane's own controllers hold traffic short.
 - **Stand numbers for every gate**, and displaced thresholds and blast pads from the figures
   in the airport file.
+- **Every airport in your SimBrief plan is loaded as soon as the plan is**: the origin, the
+  destination, the alternates, and the takeoff and en-route alternates too — at launch, or
+  the moment a plan is fetched, whether the map is open or not, so their ground is ready
+  before you look for it.
 - **Fetch Layouts for Your Airports**, in the Layers panel and in the Airport Layouts window:
   every airport you have charts for, and your flight's, fetched in one go, a second or two
   each, so the ground is there before you are.

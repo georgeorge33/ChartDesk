@@ -154,6 +154,21 @@ enum RenderProbe {
             finished.wait()
             exit(0)
         }
+        // `CHARTDESK_PARSE_PLAN=ofp.json`: a SimBrief answer read the way a fetched one is, and
+        // the airports the app would load for it.
+        if let path = ProcessInfo.processInfo.environment["CHARTDESK_PARSE_PLAN"] {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+                print("cannot read \(path)"); exit(1)
+            }
+            switch SimBrief.parse(data) {
+            case .failure(let problem): print("did not parse: \(problem.message)")
+            case .success(let plan):
+                print("flight: " + plan.airfields.map { "\($0.role.badge) \($0.icao)" }.joined(separator: ", "))
+                print("other alternates: \((plan.otherAirports ?? []).joined(separator: " "))")
+                print("layouts loaded for: \(plan.allAirports.joined(separator: " "))")
+            }
+            exit(0)
+        }
         // Every cached layout parsed and counted, for checking a change to the parser
         // against all of them at once.
         if ProcessInfo.processInfo.environment["CHARTDESK_PARSE_ALL"] != nil {

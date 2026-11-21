@@ -69,9 +69,22 @@ struct FlightPlan: Codable, Equatable {
     /// Optional rather than defaulted so a flight.json written before this existed still
     /// decodes: a synthesised decoder demands every non-optional key, default or not.
     var navlog: [Waypoint]?
+    /// The takeoff and en-route alternates. Somewhere the flight goes only if something goes
+    /// wrong, so not listed with the flight's own airfields — but airports it uses all the
+    /// same, and their ground is worth having to hand. Optional for the same reason as the
+    /// navlog.
+    var otherAirports: [String]?
     var fetchedAt: Date
 
     var waypoints: [Waypoint] { navlog ?? [] }
+
+    /// Every airport the plan uses, each once: the flight's own, then the other alternates.
+    var allAirports: [String] {
+        var seen = Set<String>()
+        return (airfields.map(\.icao) + (otherAirports ?? [])).filter {
+            seen.insert($0.uppercased()).inserted
+        }
+    }
 
     /// "BAW117", else the city pair.
     var title: String {
@@ -167,6 +180,23 @@ enum SimBrief {
             if let field = airfield(entry, role: .alternate) { airfields.append(field) }
         }
 
+        // The takeoff and en-route alternates, the same shape as the alternate: one is an
+        // object and several an array, and a plan without one has neither.
+        var others: [String] = []
+        for key in ["takeoff_altn", "enroute_altn"] {
+            let entries: [Any]
+            if let many = root[key] as? [Any] {
+                entries = many
+            } else if let one = root[key] as? [String: Any] {
+                entries = [one]
+            } else {
+                entries = []
+            }
+            for entry in entries {
+                if let code = field(entry, "icao_code")?.uppercased() { others.append(code) }
+            }
+        }
+
         guard !airfields.isEmpty else {
             return .failure(Problem(message: "SimBrief answered, but there were no airports in the plan."))
         }
@@ -217,6 +247,7 @@ enum SimBrief {
                                    route: field(general, "route"),
                                    airfields: airfields,
                                    navlog: navlog.isEmpty ? nil : navlog,
+                                   otherAirports: others.isEmpty ? nil : others,
                                    fetchedAt: Date()))
     }
 }
@@ -249,7 +280,9 @@ final class FlightPlanStore: ObservableObject {
 
     static let defaultLookupTemplate = "https://planner.flightsimulator.com/airport/{icao}"
 
-    @Published private(set) var plan: FlightPlan?
+    @Published private(set) var plan: FlightPlan? {
+        didSet { keepLayouts() }
+    }
     @Published private(set) var isFetching = false
     @Published private(set) var problem: String?
 
@@ -263,6 +296,14 @@ final class FlightPlanStore: ObservableObject {
         lookupTemplate = defaults.string(forKey: DefaultsKey.airportLookup)
             ?? FlightPlanStore.defaultLookupTemplate
         plan = FlightPlanStore.load()
+        keepLayouts()
+    }
+
+    /// The ground layouts of every airport the plan uses, fetched as soon as there is a plan
+    /// and held whatever the map is showing — or whether it is open at all. You are going to
+    /// be on the ground at both ends of the flight, and perhaps at an alternate.
+    private func keepLayouts() {
+        AirportLayoutStore.shared.alwaysKeep(plan?.allAirports ?? [])
     }
 
     var hasAccount: Bool {

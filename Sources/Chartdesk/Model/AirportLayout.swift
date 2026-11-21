@@ -615,12 +615,15 @@ final class AirportLayoutStore: ObservableObject {
     }
 
     /// Asked about in this run and with nothing to draw: not on the Gateway, or not answered.
+    /// The second kind are tried again when the flight asks for them afresh.
     private var refused: Set<String> = []
-    /// Waiting their turn, in the order to ask. One thing at a time, always: the Gateway is
-    /// free and shared, and a dozen requests at once would be rude and no faster.
-    private var queued: [MapAirport] = []
-    /// The flight's own fields, wanted whatever the map is showing.
-    private var pinned: [MapAirport] = []
+    private var unanswered: Set<String> = []
+    /// Waiting their turn, in the order to ask, by ICAO code. One thing at a time, always:
+    /// the Gateway is free and shared, and a dozen requests at once would be rude and no
+    /// faster.
+    private var queued: [String] = []
+    /// Every airport the loaded flight uses, wanted whatever the map is showing.
+    private var pinned: [String] = []
     /// Drawn from a copy a month old, and worth asking the Gateway about once the queue is
     /// quiet. Once per airport per run.
     private var checks: [String] = []
@@ -731,6 +734,7 @@ final class AirportLayoutStore: ObservableObject {
         // as though it were still full.
         layouts.removeAll()
         refused.removeAll()
+        unanswered.removeAll()
         queued.removeAll()
         checks.removeAll()
         checked.removeAll()
@@ -744,16 +748,22 @@ final class AirportLayoutStore: ObservableObject {
     /// How many are still waiting their turn.
     var waiting: Int { queued.count }
 
-    /// The fields the loaded flight uses. Fetched whatever the map is showing, and first.
+    /// Every airport the loaded flight uses, by ICAO code: fetched first, whatever the map is
+    /// showing and whether or not it is open, and held.
     ///
     /// The one set of layouts you know you are going to want, because you are flying there.
     /// Asking for them when the plan loads means they are on the disk by the time you are on
-    /// the ground.
-    func alwaysKeep(_ airports: [MapAirport]) {
-        pinned = airports
-        for airport in airports.reversed() where !isHeld(airport.icao) {
-            queued.removeAll { $0.icao.uppercased() == airport.icao.uppercased() }
-            queued.insert(airport, at: 0)
+    /// the ground. One that went unanswered earlier is asked again: a plan loaded afresh is a
+    /// good moment to try.
+    func alwaysKeep(_ codes: [String]) {
+        var seen = Set<String>()
+        pinned = codes.map { $0.uppercased() }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        for code in pinned {
+            if unanswered.remove(code) != nil { refused.remove(code) }
+        }
+        for code in pinned.reversed() where !isHeld(code) {
+            queued.removeAll { $0 == code }
+            queued.insert(code, at: 0)
         }
         start()
     }
@@ -761,16 +771,13 @@ final class AirportLayoutStore: ObservableObject {
     /// The fields in view, biggest first.
     ///
     /// Replaces whatever was queued, because the view has moved and the old queue is
-    /// somewhere else — but the flight's own fields stay at the front of it.
+    /// somewhere else — but the flight's own airports stay at the front of it.
     func want(_ airports: [MapAirport]) {
-        let flight = Set(pinned.map { $0.icao.uppercased() })
-        queued = pinned.filter { !isHeld($0.icao) }
-            + airports.filter { !flight.contains($0.icao.uppercased()) && !isHeld($0.icao) }
+        let flight = Set(pinned)
+        queued = pinned.filter { !isHeld($0) }
+            + airports.map { $0.icao.uppercased() }.filter { !flight.contains($0) && !isHeld($0) }
         start()
     }
-
-    /// One airport, for when something asks about exactly one.
-    func request(_ airport: MapAirport) { want([airport]) }
 
     /// In hand already, or asked and had nothing: either way there is nothing to do.
     private func isHeld(_ icao: String) -> Bool {
@@ -791,8 +798,7 @@ final class AirportLayoutStore: ObservableObject {
     /// The next airport the map wants, from the disk if it is there and the Gateway if not.
     /// Read off the main thread either way: Logan's airport file is twenty-five thousand lines.
     private func next() {
-        let airport = queued.removeFirst()
-        let icao = airport.icao.uppercased()
+        let icao = queued.removeFirst()
         guard !isHeld(icao) else { return start() }
         working = true
         Task.detached(priority: .userInitiated) {
@@ -812,6 +818,7 @@ final class AirportLayoutStore: ObservableObject {
                 case .refused(let problem):
                     // Once per run per airport, rather than on every frame the map is near it.
                     self.refused.insert(icao)
+                    self.unanswered.insert(icao)
                     self.failure = problem
                 }
                 if found.recheck, !self.checked.contains(icao) { self.checks.append(icao) }
