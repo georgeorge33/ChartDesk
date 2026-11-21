@@ -236,22 +236,24 @@ struct ChartListColumn: View {
         // old, and this says it before anyone thinks to look there.
         let outOfDate = !isMap && !isPinnedList && (selectedAirport?.chartsAreOutOfDate ?? false)
         return VStack(spacing: 1) {
-            HStack(spacing: 6) {
-                if outOfDate, let airport = selectedAirport {
-                    OutOfDateClock(airport: airport)
-                        .font(.system(size: 15, weight: .medium))
+            Text(headerTitle)
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+                // Smaller rather than cut short, should the column ever be too narrow for it.
+                .minimumScaleFactor(0.6)
+                .truncationMode(.middle)
+                // Hung off the code's leading edge and outside the layout, so the code keeps the
+                // whole width of the line and stays centred over the name. Laid out beside it,
+                // the clock and the twin that kept the code centred took fifty points of a
+                // narrow column between them, and a code as wide as KMKE was cut to "K…E".
+                .overlay(alignment: .leading) {
+                    if outOfDate, let airport = selectedAirport {
+                        OutOfDateClock(airport: airport)
+                            .font(.system(size: 15, weight: .medium))
+                            .frame(width: 20)
+                            .offset(x: -26)
+                    }
                 }
-                Text(headerTitle)
-                    .font(.system(size: 18, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                // Its twin on the other side, unseen, so the code stays centred over the name.
-                if outOfDate, let airport = selectedAirport {
-                    OutOfDateClock(airport: airport)
-                        .font(.system(size: 15, weight: .medium))
-                        .hidden()
-                }
-            }
             // Only this line keeps clear of the clock, so it stays centred in the column
             // rather than in what is left of it. The lines below get the full width —
             // reserving it for them truncated the warning to "No plate for plann…".
