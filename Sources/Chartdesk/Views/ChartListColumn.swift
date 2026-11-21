@@ -242,11 +242,22 @@ struct ChartListColumn: View {
                 // reserving it for them truncated the warning to "No plate for plann…".
                 .padding(.horizontal, 64)
 
+            // With an orange clock beside it when the newest plate here is a cycle old: the
+            // Info tab says how old, and this says it before anyone thinks to look there.
+            let outOfDate = !isPinnedList && (selectedAirport?.chartsAreOutOfDate ?? false)
             if let name = headerName, !name.isEmpty {
-                Text(name)
+                HStack(spacing: 4) {
+                    Text(name)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if outOfDate, let airport = selectedAirport {
+                        OutOfDateClock(airport: airport)
+                    }
+                }
+                .font(.subheadline)
+            } else if outOfDate, let airport = selectedAirport {
+                OutOfDateClock(airport: airport)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
 
             // One line, not two: the warning replaces the plain "RWY 19R planned" rather than
@@ -761,7 +772,7 @@ private struct AirportInfoTab: View {
 
                         if let date = airport.newestChartDate {
                             detail("Newest chart", dateText(date),
-                                   tint: isStale(date) ? Color.orange : .secondary,
+                                   tint: airport.chartsAreOutOfDate ? Color.orange : .secondary,
                                    help: "When the newest plate here was last written. A LIDO "
                                        + "cycle is 28 days.")
                         }
@@ -786,11 +797,6 @@ private struct AirportInfoTab: View {
             ? String(Int(magnitude))
             : String(format: "%.1f", magnitude)
         return value + "°" + (rounded > 0 ? "W" : "E")
-    }
-
-    /// A LIDO cycle is 28 days, so that is where "old" starts.
-    private func isStale(_ date: Date) -> Bool {
-        (Calendar.current.dateComponents([.day], from: date, to: .now).day ?? 0) >= 28
     }
 
     private func dateText(_ date: Date) -> String {

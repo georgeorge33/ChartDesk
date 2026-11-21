@@ -322,6 +322,25 @@ struct SidebarView: View {
 
 // MARK: - Rows
 
+/// An orange clock for an airport whose newest plate is more than a cycle old, beside its name
+/// wherever the name is: the sidebar, and the chart list's header. Saying how old is the Info
+/// tab's job; this only says it is worth looking.
+struct OutOfDateClock: View {
+    let airport: Airport
+
+    var body: some View {
+        Image(systemName: "clock.badge.exclamationmark")
+            .foregroundStyle(Color.orange)
+            .help(help)
+    }
+
+    private var help: String {
+        let days = airport.chartAgeInDays ?? Airport.outOfDateAfterDays
+        return "The newest chart for \(airport.code) is \(days) days old. A LIDO cycle is "
+            + "\(Airport.outOfDateAfterDays) days, so these are probably out of date."
+    }
+}
+
 private struct AirportRow: View {
     let airport: Airport
     /// SimBrief's name for it, when it is in the loaded flight: the last place to look, for
@@ -336,14 +355,26 @@ private struct AirportRow: View {
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(airport.displayTitle)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
+                HStack(spacing: 4) {
+                    Text(airport.displayTitle)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.medium)
+                    // Beside the code when there is no name to put it beside.
+                    if airport.chartsAreOutOfDate, subtitle?.isEmpty ?? true {
+                        OutOfDateClock(airport: airport)
+                            .font(.ngSmall)
+                    }
+                }
                 if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.ngSmall)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(subtitle)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if airport.chartsAreOutOfDate {
+                            OutOfDateClock(airport: airport)
+                        }
+                    }
+                    .font(.ngSmall)
                 }
             }
             Spacer(minLength: 4)

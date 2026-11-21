@@ -219,6 +219,18 @@ struct Airport: Identifiable, Hashable {
         charts.compactMap(\.modified).max()
     }
 
+    /// Days since the newest plate here was written.
+    var chartAgeInDays: Int? {
+        guard let newest = newestChartDate else { return nil }
+        return Calendar.current.dateComponents([.day], from: newest, to: .now).day
+    }
+
+    /// A LIDO cycle is 28 days, so an airport whose newest plate is older than that is
+    /// probably on last cycle's charts. The one rule for it, wherever it is shown.
+    static let outOfDateAfterDays = 28
+
+    var chartsAreOutOfDate: Bool { (chartAgeInDays ?? 0) >= Airport.outOfDateAfterDays }
+
     func count(in category: ChartCategory) -> Int {
         charts.reduce(0) { $1.category == category ? $0 + 1 : $0 }
     }
