@@ -120,6 +120,54 @@ struct AirportLayout {
         let surface: AirportSurface
         let directions: [SIMD3<Double>]
         let cap: SphericalCap
+        /// Grass inside the concrete: X-Plane draws an apron round an island as one outline
+        /// with a hole in it.
+        var holes: [[SIMD3<Double>]] = []
+    }
+
+    /// A line painted on the ground: a centreline, an edge, a hold line, an apron's safety
+    /// line. X-Plane's airport file has every one of them; OpenStreetMap has none.
+    struct Marking {
+        struct Style: Equatable {
+            enum Colour { case yellow, white, red, orange }
+            enum Kind {
+                case centreline
+                case edge
+                /// A hold line for something other than a runway, or for an ILS's critical
+                /// area. The runway's own are holds, not markings.
+                case hold
+                case runwayHold
+                case broken
+                case other
+            }
+            let colour: Colour
+            let kind: Kind
+        }
+        let style: Style
+        let directions: [SIMD3<Double>]
+        let cap: SphericalCap
+    }
+
+    /// Where a layout came from, which is who it is credited to.
+    enum Source: Equatable {
+        case openStreetMap
+        /// From the X-Plane Scenery Gateway, with the number of the approved version it is.
+        case xPlane(scenery: Int)
+
+        /// For telling two copies of one airport apart, where the ICAO alone cannot.
+        var tag: String {
+            switch self {
+            case .openStreetMap: return "osm"
+            case .xPlane(let scenery): return "xp\(scenery)"
+            }
+        }
+
+        var isXPlane: Bool {
+            if case .xPlane = self { return true }
+            return false
+        }
+
+        var name: String { isXPlane ? "X-Plane" : "OpenStreetMap" }
     }
 
     /// Concrete you park on rather than drive along.
@@ -404,17 +452,40 @@ struct AirportLayout {
     let holds: [Hold]
     /// Displaced thresholds, stopways and blast pads.
     let ends: [RunwayEnd]
+    /// The paint on the ground, a line at a time. Only X-Plane's airport file has it.
+    let markings: [Marking]
+    /// Where it came from, and so who is credited for it.
+    let source: Source
     /// The field's own plane, kept so anything worked out later is worked out on it.
     let frame: AirportFrame
     /// When it was fetched, so the panel can say how old it is.
     let fetched: Date
+    /// Everything, for deciding whether any of it is on the sheet. Worked out once rather
+    /// than on every tile that asks, which is every tile.
+    let cap: SphericalCap
+
+    init(icao: String, runways: [Way], taxiways: [Way], aprons: [Area], pavement: [Pavement],
+         stands: [Stand], holds: [Hold], ends: [RunwayEnd], frame: AirportFrame, fetched: Date,
+         markings: [Marking] = [], source: Source = .openStreetMap) {
+        self.icao = icao
+        self.runways = runways
+        self.taxiways = taxiways
+        self.aprons = aprons
+        self.pavement = pavement
+        self.stands = stands
+        self.holds = holds
+        self.ends = ends
+        self.markings = markings
+        self.source = source
+        self.frame = frame
+        self.fetched = fetched
+        var everything = runways.flatMap(\.directions) + taxiways.flatMap(\.directions)
+        for piece in pavement { everything.append(contentsOf: piece.directions) }
+        for marking in markings { everything.append(contentsOf: marking.directions) }
+        cap = SphericalCap(everything.isEmpty ? [frame.centre] : everything)
+    }
 
     var isEmpty: Bool { runways.isEmpty && taxiways.isEmpty && aprons.isEmpty }
-
-    /// Everything, for deciding whether any of it is on the sheet.
-    var cap: SphericalCap {
-        SphericalCap(runways.flatMap(\.directions) + taxiways.flatMap(\.directions))
-    }
 }
 
 /// What a way is, when OpenStreetMap does not say how wide it is.
@@ -442,11 +513,16 @@ struct AirportLayoutSummary: Identifiable {
     let icao: String
     /// From the bundled table, when it knows the field. Blank for one it does not.
     let name: String
+    /// "X-Plane" or "OpenStreetMap". An airport can have one of each on disk, and the map
+    /// draws X-Plane's.
+    let source: String
     let runways: Int
     let taxiways: Int
     let aprons: Int
     /// How much of the pavement is a drawn outline rather than an inflated centreline.
     let outlines: Int
+    /// Painted lines, which only X-Plane's layouts have.
+    let markings: Int
     let stands: Int
     let holds: Int
     let bytes: Int
@@ -454,16 +530,18 @@ struct AirportLayoutSummary: Identifiable {
     /// True when the map has it in hand, rather than only on disk.
     let loaded: Bool
 
-    var id: String { icao }
+    var id: String { source + icao }
 }
 
 /// Fetches airport layouts and keeps them.
 ///
-/// Overpass is a free, shared, community-run service, so this asks it for one airport at a
-/// time, writes what comes back to disk, and never asks twice. The old taxi router had a
-/// command-line tool do this and kept the app off the network entirely; the app fetches its
-/// own map tiles now, and an airport you have zoomed into is a much better signal of what to
-/// fetch than a list you have to remember to run.
+/// From the X-Plane Scenery Gateway first, which has a whole airport's ground in one file and
+/// answers in a second or two, and from OpenStreetMap's Overpass API where the Gateway has
+/// nothing but runways. Both are free and shared, so one request goes at a time, what comes
+/// back is written to disk, and nothing is asked for twice that need not be. The old taxi
+/// router had a command-line tool do this and kept the app off the network entirely; an
+/// airport you have zoomed into is a much better signal of what to fetch than a list you have
+/// to remember to run — though the airports you have charts for can be fetched in one go.
 @MainActor
 final class AirportLayoutStore: ObservableObject {
 
@@ -473,19 +551,47 @@ final class AirportLayoutStore: ObservableObject {
     /// Set while one is on its way, so the map can say so rather than looking broken.
     @Published private(set) var fetching: String?
     @Published private(set) var failure: String?
+    /// A fetch of every airport you have charts for, while it runs and once it is done.
+    @Published private(set) var bulk: Bulk?
+
+    /// How far a fetch of many airports has got.
+    struct Bulk: Equatable {
+        let total: Int
+        var done = 0
+        /// Fetched this time.
+        var added = 0
+        /// On this Mac already.
+        var already = 0
+        /// Not on the Gateway, or there with nothing but its runways.
+        var missing = 0
+        var failed = 0
+        var current: String?
+        /// Why it stopped before the end, when it did.
+        var stopped: String?
+
+        var isRunning: Bool { done < total && stopped == nil }
+    }
 
     private var refused: Set<String> = []
-    /// Waiting their turn, in the order to ask. One request at a time, always: Overpass is
-    /// free, shared and slow, and a dozen at once would be both rude and no faster.
+    /// Waiting their turn, in the order to ask. One thing at a time, always: both sources are
+    /// free and shared, and a dozen requests at once would be rude and no faster.
     private var queued: [MapAirport] = []
     /// The flight's own fields, wanted whatever the map is showing.
     private var pinned: [MapAirport] = []
+    /// Drawn from OpenStreetMap's copy, or from an X-Plane copy a month old, and worth asking
+    /// the Gateway about once the queue is quiet. Once per airport per run.
+    private var checks: [String] = []
+    private var checked: Set<String> = []
+    /// What a fetch of many airports still has to do.
+    private var batch: [String] = []
+    private var batchFailures = 0
     /// Layouts on disk from before the query asked for stopways and blast pads, waiting
     /// for those two to be fetched on their own. After any whole airport, so a top-up
     /// never holds up a field that has nothing at all yet; once per airport per run.
     private var topping: [MapAirport] = []
     private var toppedUp: Set<String> = []
-    private var toppingUp = false
+    /// True while something is being read, fetched, checked or topped up.
+    private var working = false
 
     /// The mirrors, in order. The main instance is the busiest.
     private static let endpoints = [
@@ -494,10 +600,22 @@ final class AirportLayoutStore: ObservableObject {
         "https://overpass.osm.ch/api/interpreter",
     ]
 
-    nonisolated static var directory: URL {
+    /// Where every layout is kept, each source in a folder of its own.
+    nonisolated static var root: URL {
+        #if DEBUG
+        // A test copy of the app keeps its own, so that trying it out never touches yours.
+        if let elsewhere = ProcessInfo.processInfo.environment["CHARTDESK_LAYOUTS"] {
+            return URL(fileURLWithPath: elsewhere, isDirectory: true)
+        }
+        #endif
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                                in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
+        return support.appendingPathComponent("Chartdesk/layouts", isDirectory: true)
+    }
+
+    /// OpenStreetMap's.
+    nonisolated static var directory: URL {
         // Second version of the query — the first had no stands or holding positions in it,
         // and an answer from it is not missing them, it simply never asked.
         //
@@ -506,7 +624,7 @@ final class AirportLayoutStore: ObservableObject {
         // worldwide and on none at all at most large fields — Frankfurt has none, Heathrow
         // has one — so throwing away a cache that takes hours to rebuild would cost far
         // more than it returns. Delete the directory to refetch with the outlines.
-        return support.appendingPathComponent("Chartdesk/layouts/v2", isDirectory: true)
+        root.appendingPathComponent("v2", isDirectory: true)
     }
 
     nonisolated static func file(for icao: String) -> URL {
@@ -543,38 +661,51 @@ final class AirportLayoutStore: ObservableObject {
     /// somebody opened to look at the list, and not something to do on a frame. The set on
     /// disk is the honest answer to "what have I got": the map holds only what it has been
     /// close to since launch, and everything else is waiting in the cache.
-    nonisolated static func inventory(loaded: Set<String>) -> [AirportLayoutSummary] {
+    nonisolated static func inventory(loaded: [String: String]) -> [AirportLayoutSummary] {
         let manager = FileManager.default
-        let files = (try? manager.contentsOfDirectory(at: directory,
-                                                      includingPropertiesForKeys: [.fileSizeKey,
-                                                                                   .contentModificationDateKey]))
-            ?? []
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
         var found: [AirportLayoutSummary] = []
-        for file in files where file.pathExtension == "json" {
-            let icao = file.deletingPathExtension().lastPathComponent.uppercased()
-            guard let data = try? Data(contentsOf: file),
-                  let layout = parse(data, icao: icao)
-            else { continue }
-            let about = try? file.resourceValues(forKeys: [.fileSizeKey,
-                                                           .contentModificationDateKey])
+
+        func add(_ layout: AirportLayout, file: URL, bytes: Int) {
+            let about = try? file.resourceValues(forKeys: Set(keys))
             found.append(AirportLayoutSummary(
-                icao: icao,
-                name: WorldData.airport(icao)?.name ?? "",
+                icao: layout.icao,
+                name: WorldData.airport(layout.icao)?.name ?? "",
+                source: layout.source.name,
                 runways: layout.runways.count,
-                taxiways: layout.taxiways.count,
+                taxiways: layout.taxiways.filter(\.isMovementArea).count,
                 aprons: layout.aprons.count,
                 outlines: layout.pavement.count,
+                markings: layout.markings.count,
                 stands: layout.stands.count,
                 holds: layout.holds.count,
-                bytes: about?.fileSize ?? data.count,
-                fetched: about?.contentModificationDate ?? Date(),
-                loaded: loaded.contains(icao)))
+                bytes: about?.fileSize ?? bytes,
+                fetched: about?.contentModificationDate ?? layout.fetched,
+                loaded: loaded[layout.icao] == layout.source.name))
+        }
+
+        let osm = (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)) ?? []
+        for file in osm where file.pathExtension == "json" {
+            let icao = file.deletingPathExtension().lastPathComponent.uppercased()
+            guard let data = try? Data(contentsOf: file),
+                  let layout = parse(data, icao: icao) else { continue }
+            add(layout, file: file, bytes: data.count)
+        }
+        let xplane = (try? manager.contentsOfDirectory(at: XPlaneGateway.directory,
+                                                       includingPropertiesForKeys: keys)) ?? []
+        for file in xplane where file.pathExtension == "dat" {
+            let icao = file.deletingPathExtension().lastPathComponent.uppercased()
+            guard let data = try? Data(contentsOf: file),
+                  let layout = XPlaneGateway.drawn(from: data, icao: icao,
+                                                   scenery: XPlaneGateway.note(for: icao)?.scenery ?? 0,
+                                                   fetched: Date()) else { continue }
+            add(layout, file: file, bytes: data.count)
         }
         return found.sorted { $0.taxiways > $1.taxiways }
     }
 
-    /// The codes the map is holding, for the list to mark.
-    var held: Set<String> { Set(layouts.keys) }
+    /// The codes the map is holding, and whose copy of each, for the list to mark.
+    var held: [String: String] { layouts.mapValues { $0.source.name } }
 
     /// Throws away every layout, on disk and in hand.
     ///
@@ -587,11 +718,19 @@ final class AirportLayoutStore: ObservableObject {
     @discardableResult
     func deleteAll() -> Int {
         let manager = FileManager.default
-        let files = (try? manager.contentsOfDirectory(at: Self.directory,
-                                                      includingPropertiesForKeys: nil)) ?? []
         var gone = 0
-        for file in files where file.pathExtension == "json" {
+        let osm = (try? manager.contentsOfDirectory(at: Self.directory,
+                                                    includingPropertiesForKeys: nil)) ?? []
+        for file in osm where file.pathExtension == "json" {
             if (try? manager.removeItem(at: file)) != nil { gone += 1 }
+        }
+        // X-Plane's airport files, and the notes beside them of what was asked when — which
+        // go too, or an airport would be remembered as fetched with nothing on the disk.
+        let xplane = (try? manager.contentsOfDirectory(at: XPlaneGateway.directory,
+                                                       includingPropertiesForKeys: nil)) ?? []
+        for file in xplane where file.pathExtension == "dat" || file.pathExtension == "json" {
+            let removed = (try? manager.removeItem(at: file)) != nil
+            if removed, file.pathExtension == "dat" { gone += 1 }
         }
 
         // The map is holding some of them, and something refused earlier should be allowed
@@ -600,6 +739,8 @@ final class AirportLayoutStore: ObservableObject {
         layouts.removeAll()
         refused.removeAll()
         queued.removeAll()
+        checks.removeAll()
+        checked.removeAll()
         failure = nil
         return gone
     }
@@ -644,31 +785,33 @@ final class AirportLayoutStore: ObservableObject {
         return layouts[icao] != nil || refused.contains(icao)
     }
 
-    /// Takes the next one off the queue, unless one is already on its way.
+    /// The next thing to do, unless something is being done already: the airports the map
+    /// wants first; then asking the Gateway about the ones drawn from older copies; then a
+    /// fetch of many airports; and the stopways for old OpenStreetMap layouts last of all.
     private func start() {
-        guard fetching == nil, !toppingUp else { return }
-        guard !queued.isEmpty else { return topUp() }
+        guard !working else { return }
+        if !queued.isEmpty { return next() }
+        if !checks.isEmpty { return check() }
+        if !batch.isEmpty { return fetchNextOfBatch() }
+        topUp()
+    }
+
+    /// The next airport the map wants, from the disk if it is there and the network if not.
+    /// Read off the main thread either way: X-Plane's Logan is twenty-five thousand lines.
+    private func next() {
         let airport = queued.removeFirst()
         let icao = airport.icao.uppercased()
         guard !isHeld(icao) else { return start() }
-
-        // Disk first: an airport fetched last week costs a file read, not a minute.
-        if let onDisk = try? Data(contentsOf: Self.file(for: icao)),
-           let layout = Self.parse(onDisk, icao: icao) {
-            layouts[icao] = layout
-            // Drawn as it is straight away, and its stopways asked for when the queue
-            // is quiet.
-            if !Self.isComplete(onDisk), !toppedUp.contains(icao) { topping.append(airport) }
-            return start()
-        }
-
-        fetching = icao
+        working = true
         let where_ = airport.coordinate
         Task.detached(priority: .userInitiated) {
-            let answer = await Self.fetch(icao: icao, at: where_)
+            let found = await Self.obtain(icao: icao, at: where_) {
+                await MainActor.run { self.fetching = icao }
+            }
             await MainActor.run {
                 self.fetching = nil
-                switch answer {
+                self.working = false
+                switch found.answer {
                 case .arrived(let layout):
                     self.failure = nil
                     self.layouts[icao] = layout
@@ -678,9 +821,151 @@ final class AirportLayoutStore: ObservableObject {
                     self.refused.insert(icao)
                     self.failure = problem
                 }
+                if found.askGateway, !self.checked.contains(icao) { self.checks.append(icao) }
+                // Drawn as it is straight away, and its stopways asked for when the queue
+                // is quiet.
+                if found.topUp, !self.toppedUp.contains(icao) { self.topping.append(airport) }
                 self.start()
             }
         }
+    }
+
+    /// What `next` found for an airport, and what is worth doing about it later.
+    struct Obtained {
+        var answer: Answer
+        /// Drawn from a copy the Gateway may have something better than.
+        var askGateway = false
+        /// An OpenStreetMap layout from before the query asked for stopways.
+        var topUp = false
+    }
+
+    /// One airport, from wherever it is soonest had: X-Plane's copy on this Mac, then
+    /// OpenStreetMap's, then the Gateway, and Overpass when the Gateway has nothing.
+    ///
+    /// An OpenStreetMap copy is drawn straight away even where the Gateway might have
+    /// better, and the Gateway asked afterwards: something now beats something better in
+    /// two seconds, and an airport drawn the old way is still an airport.
+    nonisolated static func obtain(icao: String, at where_: Coordinate,
+                                   announce: @Sendable () async -> Void) async -> Obtained {
+        let note = XPlaneGateway.note(for: icao)
+        if note?.status == .layout, let layout = XPlaneGateway.cached(icao) {
+            return Obtained(answer: .arrived(layout), askGateway: note?.isStale ?? false)
+        }
+        // Asked lately and told there is nothing better: OpenStreetMap's it is.
+        let settled = note.map { $0.status != .layout && !$0.isStale } ?? false
+        if let onDisk = try? Data(contentsOf: file(for: icao)),
+           let layout = parse(onDisk, icao: icao) {
+            return Obtained(answer: .arrived(layout), askGateway: !settled,
+                            topUp: !isComplete(onDisk))
+        }
+        await announce()
+        if !settled, case .layout(let layout, _) = await XPlaneGateway.refresh(icao) {
+            return Obtained(answer: .arrived(layout))
+        }
+        return Obtained(answer: await fetch(icao: icao, at: where_))
+    }
+
+    /// Asks the Gateway about one airport drawn from an older copy, and draws its layout
+    /// instead if it has a better one.
+    private func check() {
+        let icao = checks.removeFirst()
+        guard checked.insert(icao).inserted else { return start() }
+        working = true
+        Task.detached(priority: .utility) {
+            let outcome = await XPlaneGateway.refresh(icao)
+            await MainActor.run {
+                self.working = false
+                if case .layout(let layout, let changed) = outcome, let drawn = self.layouts[icao],
+                   changed || !drawn.source.isXPlane {
+                    self.layouts[icao] = layout
+                }
+                self.start()
+            }
+        }
+    }
+
+    /// Every one of these airports from the Gateway, one after another, so they are on this
+    /// Mac before the map wants them.
+    ///
+    /// From the Gateway only. An airport it has nothing for is left to be asked of Overpass
+    /// when the map wants it, as before: a list of Overpass queries at a minute or two each
+    /// would be hours of a shared server's time, which is not a button's to spend.
+    func fetchLayouts(for codes: [String]) {
+        guard !(bulk?.isRunning ?? false) else { return }
+        var seen = Set<String>()
+        let wanted = codes.map { $0.uppercased() }.filter { code in
+            !code.isEmpty && code.count <= 8 && code != Airport.unsortedCode
+                && seen.insert(code).inserted
+        }
+        guard !wanted.isEmpty else { return }
+        batch = wanted
+        batchFailures = 0
+        bulk = Bulk(total: wanted.count)
+        start()
+    }
+
+    func stopFetchingLayouts() {
+        guard var progress = bulk, progress.isRunning else { return }
+        batch.removeAll()
+        progress.stopped = "Stopped"
+        progress.current = nil
+        bulk = progress
+    }
+
+    private func fetchNextOfBatch() {
+        let icao = batch.removeFirst()
+        bulk?.current = icao
+        working = true
+        Task.detached(priority: .utility) {
+            let note = XPlaneGateway.note(for: icao)
+            let answered = note.map {
+                !$0.isStale && ($0.status != .layout || XPlaneGateway.has(icao))
+            } ?? false
+            let outcome: XPlaneGateway.Outcome?
+            if answered {
+                outcome = nil
+            } else {
+                outcome = await XPlaneGateway.refresh(icao)
+                // A breath between airports: the Gateway is free, and asks to be treated
+                // considerately.
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            await MainActor.run {
+                self.working = false
+                self.count(icao, note: note, outcome: outcome)
+                self.start()
+            }
+        }
+    }
+
+    private func count(_ icao: String, note: XPlaneGateway.Note?, outcome: XPlaneGateway.Outcome?) {
+        guard var progress = bulk else { return }
+        progress.done += 1
+        progress.current = nil
+        switch outcome {
+        case nil:
+            if note?.status == .layout { progress.already += 1 } else { progress.missing += 1 }
+            batchFailures = 0
+        case .layout(let layout, let changed)?:
+            if changed { progress.added += 1 } else { progress.already += 1 }
+            // On the map already, from an older copy: drawn from this one now.
+            if let drawn = layouts[icao], changed || !drawn.source.isXPlane {
+                layouts[icao] = layout
+            }
+            batchFailures = 0
+        case .absent?:
+            progress.missing += 1
+            batchFailures = 0
+        case .failed(let problem)?:
+            progress.failed += 1
+            batchFailures += 1
+            // Three in a row is the network or the server, not the airports.
+            if batchFailures >= 3 {
+                batch.removeAll()
+                progress.stopped = problem
+            }
+        }
+        bulk = progress
     }
 
     /// The next layout that is missing its stopways and blast pads, if any.
@@ -688,14 +973,18 @@ final class AirportLayoutStore: ObservableObject {
         guard !topping.isEmpty else { return }
         let airport = topping.removeFirst()
         let icao = airport.icao.uppercased()
-        guard toppedUp.insert(icao).inserted else { return topUp() }
-        toppingUp = true
+        // Not for one drawn from X-Plane's copy by now: its pads came with it.
+        guard toppedUp.insert(icao).inserted, layouts[icao]?.source == .openStreetMap else {
+            return topUp()
+        }
+        working = true
         let where_ = airport.coordinate
         Task.detached(priority: .utility) {
             let merged = await Self.fetchEnds(icao: icao, at: where_)
             await MainActor.run {
-                self.toppingUp = false
-                if let merged, let layout = Self.parse(merged, icao: icao) {
+                self.working = false
+                if let merged, let layout = Self.parse(merged, icao: icao),
+                   self.layouts[icao]?.source == .openStreetMap {
                     self.layouts[icao] = layout
                 }
                 self.start()
@@ -1102,7 +1391,7 @@ final class AirportLayoutStore: ObservableObject {
     /// runway at the threshold, a row of arrowheads just before it, and arrows down the
     /// middle pointing at it where the centreline would be — a stretch you may roll on but
     /// not land on. `line` runs from the outer end to the threshold.
-    nonisolated private static func displacedEnd(_ line: [SIMD2<Double>], width: Double,
+    nonisolated static func displacedEnd(_ line: [SIMD2<Double>], width: Double,
                                      in frame: AirportFrame) -> AirportLayout.RunwayEnd {
         let ring = band(line, width: width).map(frame.globe)
         let threshold = line[line.count - 1]
@@ -1158,7 +1447,7 @@ final class AirportLayoutStore: ObservableObject {
     /// A stopway or a blast pad: the concrete, and yellow chevrons every thirty metres
     /// pointing back at the runway, their arms running out to the edges at forty-five
     /// degrees. `line` runs from the runway's end outwards.
-    nonisolated private static func padEnd(_ line: [SIMD2<Double>], width: Double,
+    nonisolated static func padEnd(_ line: [SIMD2<Double>], width: Double,
                                in frame: AirportFrame) -> AirportLayout.RunwayEnd {
         let ring = band(line, width: width).map(frame.globe)
         let half = width / 2

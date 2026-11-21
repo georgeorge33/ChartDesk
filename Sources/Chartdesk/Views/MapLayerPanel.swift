@@ -10,8 +10,63 @@ import SwiftUI
 struct MapLayerPanel: View {
 
     @EnvironmentObject private var browser: BrowserState
+    @EnvironmentObject private var library: ChartLibrary
+    @EnvironmentObject private var flights: FlightPlanStore
     @ObservedObject private var openAIP = OpenAIPStore.shared
     @ObservedObject private var ground = AirportLayoutStore.shared
+
+    /// Every airport there are charts for, and the flight's own.
+    private var yourAirports: [String] {
+        library.airports.map(\.code).filter { $0 != Airport.unsortedCode }
+            + (flights.plan?.airfields ?? []).map(\.icao)
+    }
+
+    /// The layouts for every one of your airports, fetched in one go rather than as you
+    /// arrive at each — so the ground is there the first time you look, even offline.
+    @ViewBuilder
+    private var layoutFetch: some View {
+        if let bulk = ground.bulk, bulk.isRunning {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Fetching layouts: \(bulk.done) of \(bulk.total)"
+                     + (bulk.current.map { ", \($0)" } ?? "") + "…")
+                    .font(.ngSmall)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer(minLength: 4)
+                Button("Stop") { ground.stopFetchingLayouts() }
+                    .controlSize(.small)
+            }
+        } else {
+            let codes = Set(yourAirports.map { $0.uppercased() })
+            VStack(alignment: .leading, spacing: 4) {
+                Button("Fetch Layouts for Your \(codes.count) Airports") {
+                    ground.fetchLayouts(for: yourAirports)
+                }
+                .controlSize(.small)
+                .disabled(codes.isEmpty)
+                Text(Self.fetchNote(ground.bulk))
+                    .font(.ngSmall)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private static func fetchNote(_ last: AirportLayoutStore.Bulk?) -> String {
+        guard let last else {
+            return "Every airport you have charts for, and your flight's, from the X-Plane "
+                + "Gateway: a second or two each, and kept once fetched."
+        }
+        var parts = ["\(last.added) fetched", "\(last.already) here already"]
+        if last.missing > 0 { parts.append("\(last.missing) not on the Gateway") }
+        if last.failed > 0 { parts.append("\(last.failed) failed") }
+        let said = parts.joined(separator: ", ")
+        if let stopped = last.stopped {
+            return "Stopped after \(last.done) of \(last.total) (\(said)): \(stopped)."
+        }
+        return "Done: \(said). The ones not on the Gateway come from OpenStreetMap when "
+            + "the map needs them."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -47,15 +102,17 @@ struct MapLayerPanel: View {
                     classes
                 }
                 noteRow("Airport layout",
-                        detail: "Runways, taxiways, stands and holding positions, from "
-                              + "OpenStreetMap. Fetched from about 60km across and drawn "
-                              + "below 20km. Your flight's own airfields are fetched "
-                              + "whatever the map is showing.")
+                        detail: "Runways, taxiways and the paint on them, stands and "
+                              + "holding positions, from the X-Plane Scenery Gateway — or "
+                              + "from OpenStreetMap, where the Gateway has nothing. Fetched "
+                              + "from about 60km across and drawn below 20km. Your flight's "
+                              + "own airfields are fetched whatever the map is showing.")
                 if let fetching = ground.fetching {
                     Text("Fetching \(fetching)'s layout"
                          + (ground.waiting > 0 ? ", \(ground.waiting) more to go" : "")
-                         + "… Overpass is a shared service and takes a minute or two an "
-                         + "airport, so they are asked for one at a time, biggest first.")
+                         + "… One airport at a time, biggest first: a second or two each "
+                         + "from the Gateway, and a minute or two from OpenStreetMap's "
+                         + "shared server where the Gateway has none.")
                         .font(.ngSmall)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -65,6 +122,7 @@ struct MapLayerPanel: View {
                         .foregroundStyle(Color.ngWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                layoutFetch
             }
 
             Divider().overlay(Color.ngSeparator)

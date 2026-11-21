@@ -10,6 +10,8 @@ import SwiftUI
 struct AirportLayoutsView: View {
 
     @ObservedObject private var ground = AirportLayoutStore.shared
+    @EnvironmentObject private var library: ChartLibrary
+    @EnvironmentObject private var flights: FlightPlanStore
 
     @State private var airports: [AirportLayoutSummary] = []
     @State private var reading = true
@@ -35,7 +37,7 @@ struct AirportLayoutsView: View {
             } else if airports.isEmpty {
                 centred {
                     Text("No layouts on this Mac yet. They arrive as you zoom in on a field, "
-                         + "or all at once from Tools/make_layouts.py.")
+                         + "or all at once with Fetch Your Airports.")
                         .font(.ngSmall)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -56,23 +58,18 @@ struct AirportLayoutsView: View {
                         .help(row.loaded ? "Held by the map" : "On disk")
                     }
                     .width(78)
-                    TableColumn("Airport") { row in
-                        Text(row.name.isEmpty ? "—" : row.name)
-                            .foregroundStyle(row.name.isEmpty ? .tertiary : .primary)
-                    }
+                    // Ten columns at most: that is all a table's builder takes, so where each
+                    // layout came from goes beside the airport's name rather than in a column.
+                    TableColumn("Airport") { row in airportName(row) }.width(min: 220)
                     TableColumn("Taxiways") { row in figure(row.taxiways) }.width(68)
                     TableColumn("Runways") { row in figure(row.runways) }.width(62)
                     TableColumn("Stands") { row in figure(row.stands) }.width(56)
                     TableColumn("Holds") { row in figure(row.holds) }.width(52)
-                    TableColumn("Outlines") { row in
-                        // Drawn pavement rather than a centreline with a width tag. Nearly
-                        // always nothing, which is worth being able to see.
-                        Text(row.outlines == 0 ? "—" : "\(row.outlines)")
-                            .monospacedDigit()
-                            .foregroundStyle(row.outlines == 0 ? .tertiary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .width(64)
+                    // Drawn pavement rather than a centreline with a width tag: nearly always
+                    // nothing from OpenStreetMap, which is worth being able to see.
+                    TableColumn("Outlines") { row in sparse(row.outlines) }.width(64)
+                    // Painted lines, which only X-Plane's airport files have.
+                    TableColumn("Paint") { row in sparse(row.markings) }.width(56)
                     TableColumn("Size") { row in
                         Text(Self.bytes(row.bytes))
                             .monospacedDigit()
@@ -90,11 +87,16 @@ struct AirportLayoutsView: View {
             }
         }
         .background(Color.ngWindow)
-        .frame(minWidth: 680, minHeight: 420)
+        .frame(minWidth: 820, minHeight: 420)
         .navigationTitle("Airport Layouts")
         .onAppear(perform: read)
         // A layout that arrives while the window is open belongs in the list.
         .onChange(of: ground.layouts.count) { read() }
+        // And everything a fetch of your airports brought, once it has finished: reading the
+        // list after every airport of it would be reading the whole cache a hundred times.
+        .onChange(of: ground.bulk?.isRunning ?? false) { _, running in
+            if !running { read() }
+        }
     }
 
     private var header: some View {
@@ -102,7 +104,8 @@ struct AirportLayoutsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary)
                     .font(.ngSmallMedium)
-                Text("From OpenStreetMap, one airport at a time, and kept once fetched.")
+                Text("From the X-Plane Scenery Gateway, or OpenStreetMap where the Gateway "
+                     + "has nothing; one airport at a time, and kept once fetched.")
                     .font(.ngSmall)
                     .foregroundStyle(.secondary)
             }
@@ -115,6 +118,16 @@ struct AirportLayoutsView: View {
             }
             .help("Show the cache folder in the Finder")
             Button("Reread", action: read)
+            if let bulk = ground.bulk, bulk.isRunning {
+                Button("Stop Fetching (\(bulk.done) of \(bulk.total))") {
+                    ground.stopFetchingLayouts()
+                }
+            } else {
+                Button("Fetch Your Airports") { ground.fetchLayouts(for: yourAirports) }
+                    .disabled(yourAirports.isEmpty)
+                    .help("Every airport you have charts for, and your flight's, from the "
+                          + "X-Plane Gateway")
+            }
             Button("Delete All…", role: .destructive) { confirmingDelete = true }
                 .disabled(airports.isEmpty)
                 .help("Throw away every layout on this Mac")
@@ -132,21 +145,50 @@ struct AirportLayoutsView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("\(airports.count) airports and \(Self.bytes(totalBytes)) go from this Mac, "
+            Text("\(airports.count) layouts and \(Self.bytes(totalBytes)) go from this Mac, "
                  + "and the map stops drawing their taxiways. They are fetched again one at "
-                 + "a time as you zoom in on a field, which takes a minute or two each — "
-                 + "these took hours to collect.")
+                 + "a time as you zoom in on a field: a second or two each from the X-Plane "
+                 + "Gateway, and a minute or two each from OpenStreetMap — those took hours "
+                 + "to collect.")
         }
     }
 
     private var totalBytes: Int { airports.reduce(0) { $0 + $1.bytes } }
 
+    /// Every airport there are charts for, and the flight's own.
+    private var yourAirports: [String] {
+        library.airports.map(\.code).filter { $0 != Airport.unsortedCode }
+            + (flights.plan?.airfields ?? []).map(\.icao)
+    }
+
     private var summary: String {
         guard !airports.isEmpty else { return "Airport layouts" }
         let taxiways = airports.reduce(0) { $0 + $1.taxiways }
         let held = airports.filter(\.loaded).count
-        return "\(airports.count) airports · \(taxiways) taxiways · \(Self.bytes(totalBytes))"
-            + " · \(held) held by the map"
+        let xplane = airports.filter { $0.source == "X-Plane" }.count
+        return "\(airports.count) layouts (\(xplane) from X-Plane) · \(taxiways) taxiways · "
+            + "\(Self.bytes(totalBytes)) · \(held) held by the map"
+    }
+
+    /// The airport's name, and whose copy of its layout this is.
+    private func airportName(_ row: AirportLayoutSummary) -> some View {
+        HStack(spacing: 6) {
+            Text(row.name.isEmpty ? "—" : row.name)
+                .foregroundStyle(row.name.isEmpty ? .tertiary : .primary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(row.source)
+                .font(.ngSmall)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// A count that is often nothing, shown as a dash when it is.
+    private func sparse(_ value: Int) -> some View {
+        Text(value == 0 ? "—" : "\(value)")
+            .monospacedDigit()
+            .foregroundStyle(value == 0 ? .tertiary : .primary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func figure(_ value: Int) -> some View {

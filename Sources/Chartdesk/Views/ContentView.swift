@@ -87,6 +87,9 @@ struct ContentView: View {
             // tier, which is a hundred kilobytes: the finer ones are read when a zoom asks
             // for them, and reading all three at launch would be reading two for nothing.
             MapGeography.shared.warmUp()
+            #if DEBUG
+            RenderProbe.appeared()
+            #endif
         }
         .onChange(of: library.scanID) { restoreSelection() }
         .alert("Update Available",

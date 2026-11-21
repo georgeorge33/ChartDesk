@@ -62,9 +62,10 @@ struct ChartFrame {
     var stamp: String {
         [
             "\(showsGroundLayout)\(showsStands)",
-            // With how many ends each has: a layout topped up with its stopways comes back
-            // under the same ICAO, and by the ICAO alone it would never be drawn again.
-            layouts.map { "\($0.icao):\($0.ends.count)" }.joined(separator: ","),
+            // With how many ends each has, and whose copy it is: a layout topped up with its
+            // stopways, or replaced by X-Plane's, comes back under the same ICAO, and by the
+            // ICAO alone it would never be drawn again.
+            layouts.map { "\($0.icao):\($0.ends.count):\($0.source.tag)" }.joined(separator: ","),
             "\(airspace.count):\(airspace.first?.name ?? ""):\(airspace.last?.name ?? "")",
             airspaceKinds.map(\.rawValue).sorted().joined(),
             "\(runways.count):\(cities.count)",
@@ -1079,10 +1080,20 @@ final class ChartRenderer: MKOverlayRenderer {
             }
         }
 
+        // The yellow: X-Plane's paint itself, a line at a time, once the view is close enough
+        // to tell the lines apart; further out, and for a layout with no paint, a line down
+        // each taxiway's middle — which is cleaner at a few kilometres across than every
+        // lead-in to every gate.
         let line = chart.screen(2.2)
-        for way in layout.taxiways where way.isMovementArea && sheet.mayShow(way.cap) {
-            chart.stroke(sheet.path(curve: way.directions), Theme.taxiLine,
-                         width: line, cap: .round, join: .round)
+        let metresPerPoint = chart.screen(1) / metre
+        if !layout.markings.isEmpty && metresPerPoint <= Self.paintWithin {
+            Self.paint(layout, in: chart, sheet: sheet, metresPerPoint: metresPerPoint,
+                       wide: wide)
+        } else {
+            for way in layout.taxiways where way.isMovementArea && sheet.mayShow(way.cap) {
+                chart.stroke(sheet.path(curve: way.directions), Theme.taxiLine,
+                             width: line, cap: .round, join: .round)
+            }
         }
         for way in layout.runways where sheet.mayShow(way.cap) {
             // Thirty-six metres of paint and twenty-four of gap, which is the FAA's 120ft
@@ -1101,9 +1112,62 @@ final class ChartRenderer: MKOverlayRenderer {
                             capHeight: height, colour: Theme.runwayMarking)
             }
         }
-        for hold in layout.holds where hold.across.count == 2 {
+        // Two points for a bar laid across a taxiway, more for a painted hold line followed
+        // across the pavement the way it was painted.
+        for hold in layout.holds where hold.across.count >= 2 {
             chart.stroke(sheet.path(line: hold.across), Theme.holdShort,
                          width: line * 1.6, cap: .butt)
+        }
+    }
+
+    /// How close in X-Plane's paint is drawn, in metres to a point on the screen: the whole
+    /// of a big field across a window, about. Further out, a line down each taxiway.
+    private static let paintWithin = 3.0
+    /// And the paint that is not yellow — the white of the service roads, the red round the
+    /// gates — only this close, where there is room to tell it from the yellow beside it.
+    private static let allPaintWithin = 1.2
+
+    /// X-Plane's paint: every yellow line as soon as any is drawn — centrelines, edges, the
+    /// hold lines for things other than runways — and the rest of the apron's markings once
+    /// the view is close enough to need them. At least a hairline on the screen, and the
+    /// paint's own width when that is wider, so a line grows with the ground at the end.
+    private static func paint(_ layout: AirportLayout, in chart: ChartContext, sheet: MapSheet,
+                              metresPerPoint: Double, wide: (Double) -> Double) {
+        let close = metresPerPoint <= allPaintWithin
+        for marking in layout.markings where sheet.mayShow(marking.cap) {
+            let style = marking.style
+            // Further out, only the lines that are the taxiways: hatching and queue lanes
+            // drawn there run together into blocks of yellow.
+            let major = style.colour == .yellow
+                && style.kind != .broken && style.kind != .other
+            guard major || close else { continue }
+            let colour: NSColor
+            switch style.colour {
+            case .yellow: colour = Theme.taxiLine
+            case .white: colour = Theme.runwayMarking.withAlphaComponent(0.55)
+            case .red: colour = Theme.holdShort.withAlphaComponent(0.7)
+            case .orange: colour = Theme.paintOrange
+            }
+            let points: Double
+            let metres: Double
+            switch style.kind {
+            case .centreline:
+                points = close ? 1.7 : 1.3
+                metres = 0.3
+            case .hold, .runwayHold:
+                points = 1.5
+                metres = 0.6
+            case .edge, .broken, .other:
+                points = close ? 1.0 : 0.8
+                metres = 0.15
+            }
+            let path = sheet.path(line: marking.directions)
+            let width = max(chart.screen(points), wide(metres))
+            if style.kind == .broken {
+                chart.stroke(path, colour, width: width, dash: [wide(3), wide(3)])
+            } else {
+                chart.stroke(path, colour, width: width, cap: .round, join: .round)
+            }
         }
     }
 }

@@ -106,14 +106,71 @@ enum RenderProbe {
         }
     }
 
+    /// `CHARTDESK_SHOW_LAYERS`: open the route map's Layers panel as the map appears.
+    static let showsLayers = ProcessInfo.processInfo.environment["CHARTDESK_SHOW_LAYERS"] != nil
+
+    /// Once the window is up: `CHARTDESK_FETCH_LAYOUTS="KBOS KBED"` fetches those airports'
+    /// layouts the way Fetch Layouts for Your Airports does, and `CHARTDESK_SHOW_LAYOUTS`
+    /// opens the Airport Layouts window — for watching both without a hand on the mouse.
+    @MainActor
+    static func appeared() {
+        let environment = ProcessInfo.processInfo.environment
+        if let codes = environment["CHARTDESK_FETCH_LAYOUTS"] {
+            AirportLayoutStore.shared.fetchLayouts(for: codes.split(separator: " ").map(String.init))
+        }
+        if environment["CHARTDESK_SHOW_LAYOUTS"] != nil {
+            NotificationCenter.default.post(name: .showAirportLayouts, object: nil)
+        }
+    }
+
     /// `CHARTDESK_LOG_TILES`: say, once for each zoom, what MapKit hands the renderer — the
     /// zoom scale, the true scale, and how many pixels of tile a screen point gets.
     static let logsTiles = ProcessInfo.processInfo.environment["CHARTDESK_LOG_TILES"] != nil
 
     static func runIfAsked() {
+        // `CHARTDESK_GATEWAY="KBOS KBUR"`: each airport asked of the X-Plane Gateway the way
+        // the map asks, timed, and written to the layout cache — so run it with
+        // CHARTDESK_LAYOUTS pointing somewhere of its own, as a test copy does.
+        if let codes = ProcessInfo.processInfo.environment["CHARTDESK_GATEWAY"] {
+            let finished = DispatchSemaphore(value: 0)
+            Task.detached {
+                for code in codes.split(separator: " ").map(String.init) {
+                    let started = Date()
+                    let outcome = await XPlaneGateway.refresh(code)
+                    let took = String(format: "%.2f s", -started.timeIntervalSinceNow)
+                    switch outcome {
+                    case .layout(let layout, let changed):
+                        print("\(code): \(changed ? "fetched" : "unchanged") in \(took) — "
+                              + describe(layout))
+                    case .absent:
+                        print("\(code): nothing worth drawing on the Gateway (\(took)), "
+                              + "noted as \(XPlaneGateway.note(for: code)?.status.rawValue ?? "?")")
+                    case .failed(let problem):
+                        print("\(code): failed in \(took): \(problem)")
+                    }
+                }
+                finished.signal()
+            }
+            finished.wait()
+            exit(0)
+        }
         // Every cached layout parsed and counted, for checking a change to the parser
         // against all of them at once.
         if ProcessInfo.processInfo.environment["CHARTDESK_PARSE_ALL"] != nil {
+            let airportFiles = (try? FileManager.default.contentsOfDirectory(
+                at: XPlaneGateway.directory, includingPropertiesForKeys: nil)) ?? []
+            for file in airportFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            where file.pathExtension == "dat" {
+                let icao = file.deletingPathExtension().lastPathComponent
+                let started = Date()
+                guard let data = try? Data(contentsOf: file),
+                      let layout = XPlaneGateway.drawn(from: data, icao: icao, scenery: 0,
+                                                       fetched: Date()) else {
+                    print("\(icao) (X-Plane): did not read"); continue
+                }
+                print("\(icao) (X-Plane, \(String(format: "%.0f ms", -started.timeIntervalSinceNow * 1000))): "
+                      + describe(layout))
+            }
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: AirportLayoutStore.directory, includingPropertiesForKeys: nil)) ?? []
             for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
@@ -159,13 +216,74 @@ enum RenderProbe {
         exit(done ? 0 : 1)
     }
 
+    /// Apple's map of a rectangle, dark, as the app shows it: its Map or its imagery.
+    ///
+    /// A map view only draws while its window can be seen, and a test copy should not put
+    /// one in front of whatever you are doing to find out what it looks like. A snapshot
+    /// needs no window at all.
+    @MainActor
+    private static func snapshot(_ rect: MKMapRect, size: CGSize, satellite: Bool) -> CGImage? {
+        let options = MKMapSnapshotter.Options()
+        options.mapRect = rect
+        options.size = size
+        options.appearance = NSAppearance(named: .darkAqua)
+        options.preferredConfiguration = satellite
+            ? MKImageryMapConfiguration(elevationStyle: .flat)
+            : MKStandardMapConfiguration(elevationStyle: .flat)
+        var picture: CGImage?
+        var finished = false
+        MKMapSnapshotter(options: options).start { result, error in
+            if let image = result?.image {
+                var frame = CGRect(origin: .zero, size: image.size)
+                picture = image.cgImage(forProposedRect: &frame, context: nil, hints: nil)
+            } else {
+                FileHandle.standardError.write("no snapshot: \(error?.localizedDescription ?? "?")\n"
+                    .data(using: .utf8)!)
+            }
+            finished = true
+        }
+        let deadline = Date(timeIntervalSinceNow: 30)
+        while !finished, Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+        }
+        return picture
+    }
+
+    /// A layout counted up, in a line.
+    private static func describe(_ layout: AirportLayout) -> String {
+        let yellow = layout.markings.filter { $0.style.colour == .yellow }.count
+        return "\(layout.source.name), \(layout.runways.count) runways, "
+            + "\(layout.ends.count) displaced or pads, "
+            + "\(layout.taxiways.filter(\.isMovementArea).count) named taxiway lines, "
+            + "\(layout.pavement.count) pavement, \(layout.markings.count) painted lines "
+            + "(\(yellow) yellow), \(layout.holds.count) holds, \(layout.stands.count) stands"
+    }
+
     /// The view is 1100 by 700 points, at two pixels to the point.
     @MainActor
     private static func draw(icao: String, metresAcross: Double, to out: URL,
                              light: Bool, at looking: Coordinate?) -> Bool {
         let environment = ProcessInfo.processInfo.environment
         var layout: AirportLayout?
-        if icao != "-" {
+        // X-Plane's copy, the way the map prefers it: CHARTDESK_RENDER_DAT names an airport
+        // file to read directly, without the cache, and CHARTDESK_RENDER_SOURCE=osm skips
+        // X-Plane's copy for OpenStreetMap's.
+        if icao != "-", let path = environment["CHARTDESK_RENDER_DAT"] {
+            let started = Date()
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let made = XPlaneGateway.drawn(from: data, icao: icao, scenery: 0,
+                                                 fetched: Date()) else {
+                FileHandle.standardError.write("\(path) has no layout for \(icao)\n".data(using: .utf8)!)
+                return false
+            }
+            print(String(format: "read %@ in %.0f ms: ", path, -started.timeIntervalSinceNow * 1000)
+                  + describe(made))
+            layout = made
+        } else if icao != "-", environment["CHARTDESK_RENDER_SOURCE"] != "osm",
+                  let made = XPlaneGateway.cached(icao) {
+            print("X-Plane's copy: " + describe(made))
+            layout = made
+        } else if icao != "-" {
             // CHARTDESK_RENDER_EXTRA is another Overpass answer to fold in, in memory
             // only — for trying out what a top-up would add without writing the cache.
             var cached = try? Data(contentsOf: AirportLayoutStore.file(for: icao))
@@ -266,10 +384,16 @@ enum RenderProbe {
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return false }
 
-        // Something like each of Apple's two maps underneath, so the contrast is honest.
+        // Something like each of Apple's two maps underneath, so the contrast is honest — or,
+        // with CHARTDESK_RENDER_BASE=map or satellite, Apple's own, from a snapshot of the
+        // same rectangle, which needs the network and no window.
         context.setFillColor(light ? CGColor(srgbRed: 0.62, green: 0.63, blue: 0.60, alpha: 1)
                                    : CGColor(srgbRed: 0.17, green: 0.20, blue: 0.24, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        if let base = environment["CHARTDESK_RENDER_BASE"],
+           let picture = snapshot(rect, size: view, satellite: base == "satellite") {
+            context.draw(picture, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
 
         // MapKit's convention: y runs down the page, in map points.
         context.translateBy(x: 0, y: CGFloat(height))
@@ -310,6 +434,7 @@ enum RenderProbe {
         if let placed = renderer.placedLabels(margin: 0) {
             let chart = ChartContext(cg: context, mapPointsPerScreenPoint: placed.scale)
             for label in placed.labels { chart.draw(label) }
+            print("labels placed: \(placed.labels.count)")
         }
 
         guard let image = context.makeImage(),

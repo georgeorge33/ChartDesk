@@ -71,6 +71,8 @@ enum Theme {
     /// holding position: it is the one line on the airport you must not cross without
     /// being told to, and red is the colour that says so.
     static let holdShort       = rgb(0xE5383B)
+    /// The orange some airports paint on their aprons, in X-Plane's paint.
+    static let paintOrange     = rgb(0xE8873A)
     static let stand           = rgb(0xBFD0E0)
 
     /// The colour a kind of airspace is drawn in, so the map and the Layers panel cannot

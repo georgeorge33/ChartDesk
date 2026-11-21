@@ -65,10 +65,13 @@ struct ChartdeskApp: App {
 
         Window("Airport Layouts", id: "airportLayouts") {
             AirportLayoutsView()
+                // For fetching the layouts of the airports there are charts for.
+                .environmentObject(library)
+                .environmentObject(flight)
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }
-        .defaultSize(width: 860, height: 560)
+        .defaultSize(width: 1080, height: 560)
         .commandsRemoved()
 
         Settings {

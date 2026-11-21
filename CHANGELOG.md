@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+**Airport layouts from the X-Plane Scenery Gateway**
+
+- **The ground comes from X-Plane's airport database first**, the one X-Plane itself ships:
+  41,000 airports drawn by its community and checked by Laminar's moderators, free and open
+  to anyone. An airport arrives in a second or two instead of the minute or two OpenStreetMap's
+  shared server takes, and with far more on it. OpenStreetMap is still asked wherever the
+  Gateway has nothing but runways, and an airport you already have from OpenStreetMap is
+  drawn from that copy at once and from the Gateway's as soon as it has arrived.
+- **The paint on the ground, line by line**: every centreline, lead-in to every gate, edge
+  line and hold line, the way it is painted, in yellow, from about three kilometres across;
+  closer in, the white of the service roads and the red safety lines round the gates too.
+  Further out, a single line down each taxiway, with its letter.
+- **Holding positions where they really are**: the painted or lit hold line itself where the
+  airport has one, and otherwise wherever a taxi route passes into a runway's protected area —
+  where X-Plane's own controllers hold traffic short.
+- **Stand numbers for every gate**, and displaced thresholds and blast pads from the figures
+  in the airport file.
+- **Fetch Layouts for Your Airports**, in the Layers panel and in the Airport Layouts window:
+  every airport you have charts for, and your flight's, fetched in one go, a second or two
+  each, so the ground is there before you are.
+- **The map credits whoever drew the airports in view**: the X-Plane Scenery Gateway, whose
+  data is under the GPL, or OpenStreetMap contributors, whose credit had gone missing from
+  the map in 1.2.0. LICENSES.md says what each requires and where it is done.
+
+**Charts**
+
+- **The up and down arrow keys step through the chart list**, opening each chart in turn and
+  keeping it in view, in the same order as Chart ▸ Previous and Next Chart.
+- **The open chart's row is green from end to end**, with white writing, whether or not the
+  window is in front.
+
 ## 1.2.0
 
 **Apple's map, and the chart drawn into it**

@@ -4,20 +4,51 @@ Chartdesk draws on several public datasets. Most are public domain; the airport 
 the airspace and Apple's maps are not, and those come with obligations rather than
 courtesies.
 
+## X-Plane Scenery Gateway — GPL v2 or later
+
+**What:** `~/Library/Application Support/Chartdesk/layouts/xplane/ICAO.dat`: each airport's
+runways, pavement, painted lines, taxi routes, holds and stands, as X-Plane's own airport file
+(`apt.dat`), fetched from the [X-Plane Scenery Gateway](https://gateway.x-plane.com/) the first
+time you zoom into that airport, or for every airport you have charts for with **Fetch Layouts
+for Your Airports** in the Layers panel. Beside each file is a note of which approved version it
+is and when it was last asked about. The Gateway is free and asks to be treated considerately,
+so the app asks for one airport at a time, keeps it for good, and asks about it again only a
+month later. Where the Gateway has nothing but runways for an airport, the app goes to
+OpenStreetMap instead (below).
+
+**Who:** drawn by the Gateway's volunteer artists in X-Plane's WorldEditor and checked by its
+moderators; the Gateway is run by Laminar Research, who make X-Plane.
+
+**Licence:** the [GNU General Public License, version 2 or later](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html),
+which the Gateway's data is released under. Its copyright notices stay with it.
+
+**What that requires of this app, and where it is done:**
+
+- **No redistribution, so the app's own licence is untouched.** Nothing from the Gateway is in
+  this repository or in the app. Each airport is fetched on your Mac, for you, the way the map
+  fetches Apple's imagery, and kept there exactly as it arrived — which is the form the GPL
+  calls the data's source. If a release ever bundled these files, they would ship under the
+  GPL with its text and their notices, apart from the app's own code.
+- **Attribution.** "X-Plane Scenery Gateway · airport layouts, GPL" is shown in the map's
+  credits whenever one of its airports is drawn, and the Layers panel names it beside the
+  airport layout.
+
 ## OpenStreetMap — ODbL 1.0
 
-**What:** `~/Library/Application Support/Chartdesk/layouts/ICAO.json`: each airport's runways,
+**What:** `~/Library/Application Support/Chartdesk/layouts/v2/ICAO.json`: each airport's runways,
 taxiways and aprons, fetched from the [Overpass API](https://overpass-api.de/) the first time
-you zoom into that airport, or ahead of time by `Tools/make_layouts.py`. Overpass is a free,
-shared, community-run service, so the app asks it for one airport at a time, writes the
-answer to disk, and never asks twice.
+you zoom into an airport the X-Plane Gateway has nothing for, or ahead of time by
+`Tools/make_layouts.py`. Overpass is a free, shared, community-run service, so the app asks it
+for one airport at a time, writes the answer to disk, and never asks twice. An airport already
+fetched from here is still drawn from here until the Gateway has been asked about it.
 
 **Licence:** [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
 
 **What that requires of this app, and where it is done:**
 
 - **Attribution.** "© OpenStreetMap contributors" has to be shown wherever the data is drawn.
-  The map's credits carry it, and the Layers panel says the same beside the airport layout.
+  The map's credits carry it whenever one of its airports is in view, and the Layers panel
+  says the same beside the airport layout.
 - **Share-alike.** Those files are a Derived Database, so they are offered under ODbL too —
   not under whatever terms the rest of this app carries. Take them and the same conditions
   follow you.

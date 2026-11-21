@@ -124,6 +124,9 @@ struct RouteMapView: View {
         // to be on the ground at both ends of it.
         .onChange(of: flight.plan?.airfields.map(\.icao) ?? []) { _, _ in keepFlightLayouts() }
         .onAppear {
+            #if DEBUG
+            if RenderProbe.showsLayers { showsLayers = true }
+            #endif
             // The coarsest tier as well as the wanted one, so there is always something to
             // fall back on while a finer one is read.
             geography.request(.coarse)
@@ -416,6 +419,22 @@ struct RouteMapView: View {
         if browser.showsAirspace, !geography.airspace.isEmpty,
            !browser.airspaceClasses.isEmpty, camera.worldWidth >= MapLayerRoom.airspaceFrom {
             found.append("\(OpenAIP.attribution) · \(OpenAIP.licence)")
+        }
+        // Whoever drew the airports actually in view: the Gateway's are GPL and want their
+        // source named, and OpenStreetMap's licence requires its credit wherever its data
+        // is drawn.
+        if drawsGroundLayout {
+            let looking = camera.centre.direction
+            let reach = metresAcross / AirportFrame.earthRadius
+            let near = ground.layouts.values.filter { layout in
+                simd_dot(layout.cap.centre, looking) >= cos(min(reach + layout.cap.radius, .pi))
+            }
+            if near.contains(where: { $0.source.isXPlane }) {
+                found.append("X-Plane Scenery Gateway · airport layouts, GPL")
+            }
+            if near.contains(where: { !$0.source.isXPlane }) {
+                found.append("© OpenStreetMap contributors · airport layouts, ODbL")
+            }
         }
         found.append("OurAirports · airports and runways")
         found.append(contentsOf: browser.baseMap.attribution)
