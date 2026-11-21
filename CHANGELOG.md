@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0-rc.3
 
 - **The SimBrief briefing, in the sidebar above the route map**: the OFP as SimBrief lays it
   out, in whichever of its layouts you plan with, light on the app's dark backdrop, without
@@ -10,6 +10,8 @@
 - **Press the version number to check for an update**, in the sidebar's corner or on the
   welcome screen: the same check as Chartdesk ▸ Check for Updates…, with a spinner beside it
   while it asks.
+- **The airport's code above the chart list is never cut short.** In rc.2 the out-of-date
+  clock and the space kept to centre the code squeezed a code as wide as KMKE to "K…E".
 
 ## 1.3.0-rc.2
 
