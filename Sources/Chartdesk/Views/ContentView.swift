@@ -244,10 +244,12 @@ struct WelcomeView: View {
                 if Bundle.main.isTestCopy {
                     TestCopyBadge()
                 } else {
-                    Text(Bundle.main.appVersion)
-                        .font(.ngSmall)
-                        .monospacedDigit()
-                        .foregroundStyle(Bundle.main.isCandidateBuild ? Color.orange : .secondary)
+                    ChecksForUpdates(tip: "Chartdesk \(Bundle.main.appVersion).") {
+                        Text(Bundle.main.appVersion)
+                            .font(.ngSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(Bundle.main.isCandidateBuild ? Color.orange : .secondary)
+                    }
                 }
             }
             .padding(.horizontal, 12)

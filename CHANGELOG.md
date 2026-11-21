@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Press the version number to check for an update**, in the sidebar's corner or on the
+  welcome screen: the same check as Chartdesk ▸ Check for Updates…, with a spinner beside it
+  while it asks.
+
 ## 1.3.0-rc.2
 
 - **Every airport has its name under its code**, in the sidebar and above the chart list:

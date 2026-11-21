@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -19,6 +20,48 @@ extension Bundle {
     /// a version would go: a test copy that looks like the real thing is how a test ends up
     /// mistaken for the app you fly with.
     var isTestCopy: Bool { bundleIdentifier == "local.chartdesk.testbed" }
+}
+
+/// The version where it is shown, pressed to check for an update: the same check as
+/// Chartdesk ▸ Check for Updates…, from where you are already looking at which version this
+/// is. It always says something back — that this is the newest, or what is newer and whether
+/// to install it — and a spinner beside it says it is asking.
+///
+/// Never round the test copy's badge: an update installs into Applications, so a test copy
+/// that updated itself would replace the app you fly with.
+struct ChecksForUpdates<Label: View>: View {
+    @EnvironmentObject private var updater: UpdateController
+    @State private var hovering = false
+    private let tip: String
+    private let label: Label
+
+    init(tip: String, @ViewBuilder label: () -> Label) {
+        self.tip = tip
+        self.label = label()
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Button {
+                // Not disabled while it works — the check ignores a second press itself — so
+                // the pointer is always handed back when it leaves.
+                updater.check(manual: true)
+            } label: {
+                label.brightness(hovering && !updater.isWorking ? 0.25 : 0)
+            }
+            .buttonStyle(.plain)
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .help(updater.isWorking ? "Checking for updates…" : tip + " Click to check for updates.")
+
+            if updater.isWorking {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        }
+    }
 }
 
 /// What the test copy shows in the corner where a version would go. Purple, so that at a

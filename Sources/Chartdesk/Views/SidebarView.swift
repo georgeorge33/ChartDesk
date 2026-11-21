@@ -217,26 +217,30 @@ struct SidebarView: View {
     ///
     /// A candidate is called out in orange, which is what this row was first for: a pre-release
     /// that looks exactly like the real thing is how you end up reporting a bug from the wrong
-    /// one. A final release says which one it is and otherwise keeps quiet.
+    /// one. A final release says which one it is and otherwise keeps quiet. Either is pressed
+    /// to check for an update.
     private var versionBar: some View {
         HStack(spacing: 8) {
             if Bundle.main.isTestCopy {
                 TestCopyBadge()
             } else if Bundle.main.isCandidateBuild {
-                Text(version)
-                    .font(.ngSmallBold)
-                    .monospacedDigit()
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.14), in: Capsule(style: .continuous))
-                    .help("This is a release candidate, not a final release")
+                ChecksForUpdates(tip: "Chartdesk \(version), a release candidate rather than a "
+                                      + "final release.") {
+                    Text(version)
+                        .font(.ngSmallBold)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.14), in: Capsule(style: .continuous))
+                }
             } else {
-                Text(version)
-                    .font(.ngSmall)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .help("Chartdesk \(version)")
+                ChecksForUpdates(tip: "Chartdesk \(version).") {
+                    Text(version)
+                        .font(.ngSmall)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }
