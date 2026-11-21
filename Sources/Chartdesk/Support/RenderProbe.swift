@@ -166,6 +166,16 @@ enum RenderProbe {
                 print("flight: " + plan.airfields.map { "\($0.role.badge) \($0.icao)" }.joined(separator: ", "))
                 print("other alternates: \((plan.otherAirports ?? []).joined(separator: " "))")
                 print("layouts loaded for: \(plan.allAirports.joined(separator: " "))")
+                print("briefing: \(plan.briefing.map { "\($0.count) characters" } ?? "none"), "
+                      + "PDF \(plan.briefingPDF ?? "none"), layout \(plan.layout ?? "?"), "
+                      + "made \(plan.generatedAt.map { "\($0)" } ?? "?")")
+                // With CHARTDESK_FLIGHT, saved there as the app saves a fetched plan, for a
+                // test copy to open.
+                if let out = ProcessInfo.processInfo.environment["CHARTDESK_FLIGHT"],
+                   let saved = try? JSONEncoder().encode(plan) {
+                    try? saved.write(to: URL(fileURLWithPath: out), options: .atomic)
+                    print("saved to \(out)")
+                }
             }
             exit(0)
         }

@@ -131,6 +131,10 @@ final class BrowserState: ObservableObject {
         #if DEBUG
         // Straight to the map, for looking at what MapKit draws without clicking through.
         if RenderProbe.openAt != nil { sidebarSelection = .map }
+        // And straight to the briefing, for the same reason.
+        if ProcessInfo.processInfo.environment["CHARTDESK_OPEN_BRIEFING"] != nil {
+            sidebarSelection = .briefing
+        }
         #endif
         // An absent preference means the default set; an empty one means none, which is a
         // thing you can ask for by turning all six off.

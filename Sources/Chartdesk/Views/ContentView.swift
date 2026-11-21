@@ -137,9 +137,9 @@ struct ContentView: View {
             return
         }
 
-        // Pinned and the map are selections in their own right; only an airport that has
-        // gone missing from the library should be cleared.
-        if browser.sidebarSelection == .map { return }
+        // Pinned, the map and the briefing are selections in their own right; only an
+        // airport that has gone missing from the library should be cleared.
+        if browser.sidebarSelection == .map || browser.sidebarSelection == .briefing { return }
         if let code = browser.sidebarSelection?.airportCode, library.airport(code: code) == nil {
             browser.sidebarSelection = nil
         }

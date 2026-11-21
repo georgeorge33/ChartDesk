@@ -91,6 +91,8 @@ struct ChartDetailView: View {
         // The map is a selection rather than a window, so this pane is where it draws.
         if browser.sidebarSelection == .map {
             RouteMapView()
+        } else if browser.sidebarSelection == .briefing {
+            BriefingView()
         } else {
             chartBody
         }

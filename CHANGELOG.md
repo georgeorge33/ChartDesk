@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The SimBrief briefing, in the sidebar above the route map**: the OFP as SimBrief lays it
+  out, in whichever of its layouts you plan with, light on the app's dark backdrop, without
+  leaving for a browser. Beside it, the flight, when SimBrief made the plan and when it was
+  fetched, a button to fetch it again, and SimBrief's PDF of the same briefing. A plan
+  fetched before this version has no briefing kept with it: fetch it again.
 - **Press the version number to check for an update**, in the sidebar's corner or on the
   welcome screen: the same check as Chartdesk ▸ Check for Updates…, with a spinner beside it
   while it asks.

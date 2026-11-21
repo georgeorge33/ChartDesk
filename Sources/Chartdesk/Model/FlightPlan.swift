@@ -74,6 +74,15 @@ struct FlightPlan: Codable, Equatable {
     /// same, and their ground is worth having to hand. Optional for the same reason as the
     /// navlog.
     var otherAirports: [String]?
+    /// SimBrief's briefing — the OFP, laid out as SimBrief lays it out — in the HTML it is
+    /// sent in, and the same briefing as SimBrief's PDF on its server. Optional for the same
+    /// reason as the navlog: a plan saved before these were kept has neither.
+    var briefing: String?
+    var briefingPDF: String?
+    /// When SimBrief made the plan, which is not when it was fetched, and in which of its
+    /// layouts — "LIDO", "AAL" and so on.
+    var generatedAt: Date?
+    var layout: String?
     var fetchedAt: Date
 
     var waypoints: [Waypoint] { navlog ?? [] }
@@ -240,6 +249,22 @@ enum SimBrief {
                 kind: field(fix, "type")))
         }
 
+        // The briefing, as SimBrief lays it out, and its PDF: a file name in a directory.
+        let briefing = (root["text"] as? [String: Any])?["plan_html"] as? String
+        var briefingPDF: String?
+        if let files = root["files"] as? [String: Any],
+           let directory = field(files, "directory"),
+           let link = field(files["pdf"], "link") {
+            briefingPDF = directory + link
+        }
+        let params = root["params"] as? [String: Any]
+        var generatedAt: Date?
+        if let stamp = params?["time_generated"] {
+            let seconds = (stamp as? Double) ?? (stamp as? Int).map(Double.init)
+                ?? (stamp as? String).flatMap(Double.init)
+            generatedAt = seconds.map { Date(timeIntervalSince1970: $0) }
+        }
+
         let general = root["general"]
         return .success(FlightPlan(airline: field(general, "icao_airline"),
                                    flightNumber: field(general, "flight_number"),
@@ -248,6 +273,10 @@ enum SimBrief {
                                    airfields: airfields,
                                    navlog: navlog.isEmpty ? nil : navlog,
                                    otherAirports: others.isEmpty ? nil : others,
+                                   briefing: (briefing?.isEmpty ?? true) ? nil : briefing,
+                                   briefingPDF: briefingPDF,
+                                   generatedAt: generatedAt,
+                                   layout: field(params, "ofp_layout"),
                                    fetchedAt: Date()))
     }
 }
@@ -395,6 +424,13 @@ final class FlightPlanStore: ObservableObject {
     // MARK: Disk
 
     private static var fileURL: URL? {
+        #if DEBUG
+        // A test copy can be given a flight of its own, so that trying it out never reads or
+        // replaces yours.
+        if let elsewhere = ProcessInfo.processInfo.environment["CHARTDESK_FLIGHT"] {
+            return URL(fileURLWithPath: elsewhere)
+        }
+        #endif
         let manager = FileManager.default
         guard let base = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         let folder = base.appendingPathComponent("Chartdesk", isDirectory: true)

@@ -147,6 +147,10 @@ struct SidebarView: View {
                         pinnedRow
                             .tag(SidebarItem.pinned)
                     }
+                    if flight.plan != nil {
+                        briefingRow
+                            .tag(SidebarItem.briefing)
+                    }
                     mapRow
                         .tag(SidebarItem.map)
                 }
@@ -186,6 +190,15 @@ struct SidebarView: View {
 
     /// The map is a place in the app rather than a window of its own: one selection, one
     /// window, and it keeps the flight's airports a click away in the same sidebar.
+    /// SimBrief's own briefing for the loaded flight, above the map of it: the OFP, read the
+    /// way it was written, without leaving for a browser.
+    private var briefingRow: some View {
+        Label("Briefing", systemImage: "doc.plaintext")
+            .help(flight.plan?.briefing == nil
+                  ? "Fetch the flight again to read its SimBrief briefing here"
+                  : "The loaded flight's SimBrief briefing")
+    }
+
     private var mapRow: some View {
         HStack(spacing: 8) {
             Label("Route Map", systemImage: "map")

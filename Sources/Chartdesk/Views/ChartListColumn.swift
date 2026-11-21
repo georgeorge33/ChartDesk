@@ -111,6 +111,8 @@ struct ChartListColumn: View {
     var body: some View {
         if isMap {
             RouteFixList()
+        } else if browser.sidebarSelection == .briefing {
+            BriefingColumn()
         } else {
             column
         }

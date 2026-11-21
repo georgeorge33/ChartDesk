@@ -301,6 +301,8 @@ enum SidebarItem: Hashable {
     case pinned
     /// The route map, which is not an airport and has no chart list of its own.
     case map
+    /// The loaded flight's SimBrief briefing, which is not an airport either.
+    case briefing
     case airport(String)
 
     var airportCode: String? {
