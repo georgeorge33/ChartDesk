@@ -102,7 +102,10 @@ enum LibraryScanner {
 
         var airports: [Airport] = []
         for (code, list) in grouped {
+            // The folder's own name first — it is what you called it — and the bundled list's
+            // for a folder named by its code alone, which is most of them.
             let name = list.compactMap { $0.airportName }.first
+                ?? (code == Airport.unsortedCode ? nil : WorldData.airportName(code))
             airports.append(Airport(code: code, name: name, charts: sortCharts(list)))
         }
 

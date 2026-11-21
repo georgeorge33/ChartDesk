@@ -693,7 +693,7 @@ final class AirportLayoutStore: ObservableObject {
             let about = try? file.resourceValues(forKeys: Set(keys))
             found.append(AirportLayoutSummary(
                 icao: icao,
-                name: WorldData.airport(icao)?.name ?? "",
+                name: WorldData.airportName(icao) ?? "",
                 runways: layout.runways.count,
                 taxiways: layout.taxiways.filter(\.isMovementArea).count,
                 outlines: layout.pavement.count,

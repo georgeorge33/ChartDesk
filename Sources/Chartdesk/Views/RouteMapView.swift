@@ -453,9 +453,9 @@ struct RouteMapView: View {
     ///
     /// This used to run on every camera change, which was fine when the camera only moved
     /// on a drag or a scroll notch. The map view moves it every frame now, and the work is
-    /// not frame work: `WorldData.airports` walks all seventy-odd thousand airports on
-    /// earth, which is about six milliseconds, and a frame at 120 Hz is eight. Asking on
-    /// every one of them is most of a frame spent deciding what to download.
+    /// not frame work: `WorldData.airports` walks every airport in the bundled table, six
+    /// thousand of them, and a frame at 120 Hz is eight milliseconds. Asking on every one of
+    /// them is frame time spent deciding what to download.
     ///
     /// Nothing is lost by waiting. These are all requests for things that take a second or
     /// a minute to arrive, and a fifth of a second after you stop moving is soon enough —

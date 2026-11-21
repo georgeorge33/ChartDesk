@@ -349,6 +349,61 @@ def build_airports(source, report):
     report("Resources/airports.txt", rows, rows, os.path.getsize("Resources/airports.txt"))
 
 
+def short_name(name):
+    """A name without the word every one of them ends in: "Boston Logan International"."""
+    for tail in (" Airport", " Airfield", " Aerodrome"):
+        if name.endswith(tail) and len(name) > len(tail) + 3:
+            return name[: -len(tail)]
+    return name
+
+
+def build_airport_names(source, report):
+    """Every other airfield's name, for a code the library or the flight names.
+
+    The table above holds the six thousand fields worth a marker on the map, and a chart can
+    be for any of the forty thousand others — a small field with an approach plate — where a
+    code with nothing under it says less than it should. Names only, a line each, and none
+    that the table above has already: about a megabyte. Seaplane bases are in; heliports and
+    closed fields are not.
+    """
+    have = set()
+    with open("Resources/airports.txt", encoding="utf-8") as table:
+        for line in table:
+            if line.strip() and not line.startswith("#"):
+                have.add(line.split("\t", 1)[0])
+    wanted = {"large_airport", "medium_airport", "small_airport", "seaplane_base"}
+    fields = [row for row in csv.DictReader(open(source("airports.csv"), newline="",
+                                                  encoding="utf-8"))
+              if row["type"] in wanted]
+    rows = 0
+    with open("Resources/airport-names.txt", "w", encoding="utf-8") as out:
+        out.write("# Every other airfield's name, from OurAirports (public domain): code, name.\n"
+                  "# The fields in airports.txt are not repeated here. "
+                  "Rebuild with Tools/make_mapdata.py\n")
+        for row in fields:
+            ident = (row["ident"] or "").strip().upper()
+            name = short_name((row["name"] or "").replace("\t", " ").strip())
+            if not ident or not name or ident in have:
+                continue
+            out.write(f"{ident}\t{name}\n")
+            have.add(ident)
+            rows += 1
+        # A field OurAirports files under a local code, like Tatitlek's 7KA, can still have
+        # an ICAO code of four letters — PAKA — which is the only kind a chart's file name is
+        # read for. Those go in under that code as well.
+        for row in fields:
+            name = short_name((row["name"] or "").replace("\t", " ").strip())
+            for key in ("icao_code", "gps_code"):
+                code = (row.get(key) or "").strip().upper()
+                if (len(code) == 4 and code.isascii() and code.isalpha() and name
+                        and code not in have):
+                    out.write(f"{code}\t{name}\n")
+                    have.add(code)
+                    rows += 1
+    report("Resources/airport-names.txt", rows, rows,
+           os.path.getsize("Resources/airport-names.txt"))
+
+
 def build_runways(source, report):
     """Runway ends, which is the last thing left to draw once the coast is a straight line.
 
@@ -463,6 +518,7 @@ def main():
     for tier in TIERS:
         build_tier(tier, source, report)
     build_airports(source, report)
+    build_airport_names(source, report)
     build_runways(source, report)
     build_states(source, report)
     build_cities(source, report)

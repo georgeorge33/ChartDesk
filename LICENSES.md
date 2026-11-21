@@ -90,7 +90,7 @@ ArcGIS licence.
 
 ## OurAirports — public domain
 
-`Resources/airports.txt`, `runways.txt` and `runway-ends.txt`, from
+`Resources/airports.txt`, `airport-names.txt`, `runways.txt` and `runway-ends.txt`, from
 [ourairports.com](https://ourairports.com/data/) by way of
 [davidmegginson/ourairports-data](https://github.com/davidmegginson/ourairports-data). Public
 domain. Comes with no guarantee of accuracy, which is why your own charts outrank it wherever

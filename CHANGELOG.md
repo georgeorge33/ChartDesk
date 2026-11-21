@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Every airport has its name under its code**, in the sidebar and above the chart list:
+  from the chart folder's own name if it has one, then from a list of every airfield and
+  seaplane base in the world — forty-five thousand of them, a megabyte, bundled from
+  OurAirports — and last from your SimBrief plan. Without the "Airport" on the end, so
+  Logan is "Boston Logan International". The names can be searched for, too.
+
 ## 1.3.0-rc.1
 
 **Airport layouts from the X-Plane Scenery Gateway**

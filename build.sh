@@ -278,7 +278,7 @@ fi
 # and draws its own coast, and a frontier is the one thing its imagery cannot show you.
 for TABLE in borders-110 borders-50 borders-10 \
              states cities \
-             airports runway-ends; do
+             airports airport-names runway-ends; do
 	if [ -f "Resources/${TABLE}.txt" ]; then
 		cp "Resources/${TABLE}.txt" "${CONTENTS}/Resources/${TABLE}.txt"
 	else

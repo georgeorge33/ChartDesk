@@ -149,6 +149,42 @@ enum WorldData {
             .map(\.airport)
     }
 
+    /// What an airport is called, for any code a chart or a flight names: from the map's own
+    /// table for the six thousand fields it marks, and from the names-only list for the forty
+    /// thousand other airfields — without the "Airport" every one of them ends in, which a
+    /// line under its code has no need to say.
+    static func airportName(_ icao: String) -> String? {
+        let code = icao.uppercased()
+        if let marked = airports[code]?.name, !marked.isEmpty { return shortName(marked) }
+        return otherNames[code]
+    }
+
+    /// "Boston Logan International Airport" as "Boston Logan International".
+    static func shortName(_ name: String) -> String {
+        for tail in [" Airport", " Airfield", " Aerodrome"]
+        where name.hasSuffix(tail) && name.count > tail.count + 3 {
+            return String(name.dropLast(tail.count))
+        }
+        return name
+    }
+
+    /// Every other airfield's name, read the first time one is wanted — which is the library
+    /// being read, off the main thread.
+    private static let otherNames: [String: String] = loadNames()
+
+    private static func loadNames() -> [String: String] {
+        guard let url = Bundle.main.url(forResource: "airport-names", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8)
+        else { return [:] }
+        var names: [String: String] = [:]
+        names.reserveCapacity(46_000)
+        for line in text.split(separator: "\n") where !line.hasPrefix("#") {
+            guard let tab = line.firstIndex(of: "\t") else { continue }
+            names[String(line[..<tab])] = String(line[line.index(after: tab)...])
+        }
+        return names
+    }
+
     static func airport(_ icao: String?) -> MapAirport? {
         guard let icao = icao else { return nil }
         return airports[icao.uppercased()]

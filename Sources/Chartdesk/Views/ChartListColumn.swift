@@ -213,8 +213,8 @@ struct ChartListColumn: View {
         return !library.hasChart(serving: planned, at: code)
     }
 
-    /// The airport's name: from its folder if it carries one, otherwise from the flight plan,
-    /// which is the only other place the app has been told what an ICAO is called.
+    /// The airport's name: from its folder if it carries one, then from the bundled list of
+    /// every airfield's name, and last from the flight plan.
     private var headerName: String? {
         guard !isPinnedList, let airport = selectedAirport else { return nil }
         if let name = airport.displaySubtitle, !name.isEmpty { return name }

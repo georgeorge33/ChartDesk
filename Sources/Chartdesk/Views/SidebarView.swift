@@ -153,7 +153,7 @@ struct SidebarView: View {
 
                 Section("Airports") {
                     ForEach(filteredAirports) { airport in
-                        AirportRow(airport: airport)
+                        AirportRow(airport: airport, planned: flight.name(at: airport.code))
                             .tag(SidebarItem.airport(airport.code))
                     }
                 }
@@ -324,6 +324,14 @@ struct SidebarView: View {
 
 private struct AirportRow: View {
     let airport: Airport
+    /// SimBrief's name for it, when it is in the loaded flight: the last place to look, for
+    /// a field neither its folder nor the bundled list names.
+    var planned: String? = nil
+
+    private var subtitle: String? {
+        if let named = airport.displaySubtitle, !named.isEmpty { return named }
+        return planned
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -331,7 +339,7 @@ private struct AirportRow: View {
                 Text(airport.displayTitle)
                     .font(.system(.body, design: .monospaced))
                     .fontWeight(.medium)
-                if let subtitle = airport.displaySubtitle, !subtitle.isEmpty {
+                if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.ngSmall)
                         .foregroundStyle(.secondary)
