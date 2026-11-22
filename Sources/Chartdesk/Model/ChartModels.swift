@@ -38,17 +38,6 @@ enum ChartCategory: String, CaseIterable, Identifiable, Codable, Hashable {
         }
     }
 
-    /// Lido chart types that usually land in this group. Shown as a hint in Settings.
-    var exampleTypes: String {
-        switch self {
-        case .airport: return "AFC, AGC, APC, ADC, LVC, AOI"
-        case .departure: return "SID, SIDPT, EOSID"
-        case .arrival: return "STAR, STARPT"
-        case .approach: return "IAC, VAC, MVC, ILS, RNP"
-        case .reference: return "Text pages, minima, enroute"
-        }
-    }
-
     var symbolName: String {
         switch self {
         case .airport: return "map"

@@ -298,17 +298,6 @@ final class FlightPlanStore: ObservableObject {
         didSet { UserDefaults.standard.set(fetchOnLaunch, forKey: DefaultsKey.simbriefOnLaunch) }
     }
 
-    /// Where clicking an airport you have no charts for takes you. `{icao}` is substituted.
-    ///
-    /// A template rather than a fixed address because the MSFS planner is behind a sign-in, so
-    /// its deep-link path cannot be checked from outside — and because somewhere else may suit
-    /// you better anyway. Clearing it turns the links off.
-    @Published var lookupTemplate: String {
-        didSet { UserDefaults.standard.set(lookupTemplate, forKey: DefaultsKey.airportLookup) }
-    }
-
-    static let defaultLookupTemplate = "https://planner.flightsimulator.com/airport/{icao}"
-
     @Published private(set) var plan: FlightPlan? {
         didSet { keepLayouts() }
     }
@@ -319,11 +308,8 @@ final class FlightPlanStore: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        defaults.register(defaults: [DefaultsKey.airportLookup: FlightPlanStore.defaultLookupTemplate])
         account = defaults.string(forKey: DefaultsKey.simbriefAccount) ?? ""
         fetchOnLaunch = defaults.bool(forKey: DefaultsKey.simbriefOnLaunch)
-        lookupTemplate = defaults.string(forKey: DefaultsKey.airportLookup)
-            ?? FlightPlanStore.defaultLookupTemplate
         plan = FlightPlanStore.load()
         keepLayouts()
     }
@@ -378,21 +364,6 @@ final class FlightPlanStore: ObservableObject {
                 self.problem = "Couldn't reach SimBrief. \(error.localizedDescription)"
             }
         }
-    }
-
-    /// The page to open for an airport that isn't in the library. nil when the template is
-    /// empty or doesn't produce a usable address, in which case the row simply isn't clickable.
-    func lookupURL(for icao: String) -> URL? {
-        let trimmed = lookupTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let code = icao.uppercased()
-        let escaped = code.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? code
-        let filled = trimmed.replacingOccurrences(of: "{icao}", with: escaped)
-        guard let url = URL(string: filled), url.scheme == "https" || url.scheme == "http" else {
-            return nil
-        }
-        return url
     }
 
     /// The airport's name as SimBrief gave it.

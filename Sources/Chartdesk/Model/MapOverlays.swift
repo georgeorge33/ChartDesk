@@ -86,10 +86,6 @@ enum AirspaceSwitch: String, CaseIterable, Identifiable {
     /// which is why it is a switch and not a deletion.
     static let byDefault: Set<AirspaceSwitch> = [.a, .b, .c, .d, .areas]
 
-    /// The switch a ring answers to.
-    static func holding(_ klass: AirspaceClass) -> AirspaceSwitch {
-        klass.isSpecialUse ? .areas : (AirspaceSwitch(rawValue: klass.rawValue) ?? .areas)
-    }
 }
 
 /// How high a shelf reaches, and what the figure is measured from.

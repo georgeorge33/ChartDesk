@@ -25,10 +25,6 @@ enum RunwayDatabase {
         return line.split(separator: " ").map(String.init)
     }
 
-    /// True when the table is missing from the bundle, which is worth telling apart from an
-    /// airport that simply is not in it.
-    static var isLoaded: Bool { !table.isEmpty }
-
     private static func load() -> [String: String] {
         guard let url = Bundle.main.url(forResource: "runways", withExtension: "txt"),
               let data = try? Data(contentsOf: url, options: [.mappedIfSafe])

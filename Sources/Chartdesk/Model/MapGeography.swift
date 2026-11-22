@@ -48,9 +48,6 @@ final class MapGeography: ObservableObject {
         return nil
     }
 
-    /// True while the map is showing something other than what the zoom calls for.
-    func isCatchingUp(to detail: MapDetail) -> Bool { tiers[detail] == nil }
-
     /// Reads a tier, unless it is already in hand or on its way.
     func request(_ detail: MapDetail) {
         guard tiers[detail] == nil, !loading.contains(detail) else { return }

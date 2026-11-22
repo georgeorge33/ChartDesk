@@ -24,17 +24,9 @@ struct RunwayWind: Identifiable, Equatable {
     let crosswind: Double
     let fromRight: Bool
     let gustCrosswind: Double?
-    /// Signed angle from the runway's heading to the wind, -180...180, positive off the right
-    /// side. Stored rather than recomputed so the diagram and these numbers cannot disagree.
-    let windOffset: Double
 
     var id: String { runway }
     var isTailwind: Bool { headwind < -0.5 }
-
-    var headwindLabel: String {
-        let value = Int(abs(headwind).rounded())
-        return isTailwind ? "\(value) kt tail" : "\(value) kt head"
-    }
 
     var crosswindLabel: String {
         "\(Int(crosswind.rounded())) kt from the \(fromRight ? "right" : "left")"
@@ -225,8 +217,7 @@ enum WindMath {
                               headwind: Double(wind.knots) * cos(radians),
                               crosswind: abs(Double(wind.knots) * sin(radians)),
                               fromRight: sin(radians) >= 0,
-                              gustCrosswind: wind.gustKnots.map { abs(Double($0) * sin(radians)) },
-                              windOffset: offset)
+                              gustCrosswind: wind.gustKnots.map { abs(Double($0) * sin(radians)) })
         }
     }
 

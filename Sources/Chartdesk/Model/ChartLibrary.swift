@@ -28,7 +28,6 @@ enum DefaultsKey {
     static let annotationWidth = "annotationWidth"
     static let simbriefAccount = "simbriefAccount"
     static let simbriefOnLaunch = "simbriefOnLaunch"
-    static let airportLookup = "airportLookup"
     static let weatherEnabled = "weatherEnabled"
     static let weatherExpanded = "weatherExpanded"
     static let weatherRunways = "weatherRunways"
@@ -75,9 +74,6 @@ enum BookmarkStore {
         return nil
     }
 
-    static func clear() {
-        UserDefaults.standard.removeObject(forKey: DefaultsKey.libraryBookmark)
-    }
 }
 
 // MARK: - Category overrides
@@ -196,15 +192,6 @@ final class ChartLibrary: ObservableObject {
         chartsByID = [:]
         fileCount = 0
         rescan()
-    }
-
-    func forgetLibrary() {
-        BookmarkStore.clear()
-        rootURL = nil
-        airports = []
-        chartsByID = [:]
-        fileCount = 0
-        scanID += 1
     }
 
     func rescan() {

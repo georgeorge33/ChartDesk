@@ -670,8 +670,6 @@ final class AirportLayoutStore: ObservableObject {
 
     nonisolated static let userAgent = "Chartdesk/1.1 (+https://github.com/georgeorge33/ChartDesk)"
 
-    func layout(for icao: String) -> AirportLayout? { layouts[icao.uppercased()] }
-
     /// Every layout on this Mac, counted.
     ///
     /// Reads and parses the lot, which is a few milliseconds an airport — fine for a window
@@ -741,9 +739,6 @@ final class AirportLayoutStore: ObservableObject {
         failure = nil
         return gone
     }
-
-    /// True when this one was asked for and had nothing, so nothing keeps promising it.
-    func hasRefused(_ icao: String) -> Bool { refused.contains(icao.uppercased()) }
 
     /// How many are still waiting their turn.
     var waiting: Int { queued.count }

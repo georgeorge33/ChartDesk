@@ -1,5 +1,4 @@
 import Combine
-import CoreGraphics
 import Foundation
 
 // MARK: - Reports
@@ -199,8 +198,6 @@ final class WeatherStore: ObservableObject {
 
     /// The airport the chart list is showing.
     @Published private(set) var icao: String?
-    /// The airport the Weather window is looking at, which need not be the same one.
-    @Published private(set) var lookupICAO: String?
     @Published private(set) var isFetching = false
     @Published private(set) var problem: String?
 
@@ -272,15 +269,6 @@ final class WeatherStore: ObservableObject {
         problem = nil
         guard isEnabled else { return }
         fetchIfStale(code)
-    }
-
-    /// Called by the Weather window, which is its own reason to fetch — the panel being
-    /// collapsed says nothing about whether the window wants data.
-    func lookUp(_ code: String?) {
-        let wanted = code?.uppercased()
-        lookupICAO = wanted
-        problem = nil
-        fetchIfStale(wanted)
     }
 
     func refresh(_ code: String? = nil) {

@@ -223,14 +223,6 @@ final class AnnotationOverlayView: NSView, NSTextFieldDelegate {
 
     private var minimumSampleGap: CGFloat { 1.2 / magnification }
 
-    /// Like `stored`, without the clamp. A drag near the edge of the plate must still report
-    /// its true delta, and a clamped one would quietly shrink it.
-    private func unclamped(_ point: NSPoint) -> CGPoint {
-        AnnotationGeometry.source(CGPoint(x: point.x / max(bounds.width, 1),
-                                          y: point.y / max(bounds.height, 1)),
-                                  rotation: rotation)
-    }
-
     private func stored(_ point: NSPoint) -> CGPoint {
         let shown = CGPoint(x: clamp(point.x / max(bounds.width, 1)),
                             y: clamp(point.y / max(bounds.height, 1)))

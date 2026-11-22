@@ -70,22 +70,4 @@ struct AirportFrame {
         return centre * cos(angle) + (east * unit.x + north * unit.y) * sin(angle)
     }
 
-    /// True when a ring drawn on this plane encloses a point on it.
-    ///
-    /// The ordinary ray cast. Used to ask whether a centreline has its pavement mapped as
-    /// an outline, which is a question about a few hundred points and a few dozen rings.
-    static func encloses(_ ring: [SIMD2<Double>], _ point: SIMD2<Double>) -> Bool {
-        guard ring.count >= 3 else { return false }
-        var inside = false
-        var previous = ring.count - 1
-        for current in ring.indices {
-            let a = ring[current], b = ring[previous]
-            if (a.y > point.y) != (b.y > point.y),
-               point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
-                inside.toggle()
-            }
-            previous = current
-        }
-        return inside
-    }
 }

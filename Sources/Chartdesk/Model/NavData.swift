@@ -344,8 +344,6 @@ final class NavDataStore: ObservableObject {
     /// True when the data on disk is the cycle in force.
     var isCurrent: Bool { installed == NavCycle.current() }
 
-    var restrictionCount: Int { table.values.reduce(0) { $0 + $1.count } }
-
     init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [DefaultsKey.navdataOnLaunch: true])

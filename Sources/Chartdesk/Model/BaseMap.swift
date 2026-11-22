@@ -65,16 +65,4 @@ enum BaseMap: String, CaseIterable, Identifiable {
         URL(string: "https://gspe21-ssl.ls.apple.com/html/attribution.html")
     }
 
-    /// How much to take off the base before the overlays go over it.
-    ///
-    /// Imagery is made to be looked at on its own, and airspace over a bright aerial photo
-    /// is two things competing; a third off puts it behind the chart without turning it
-    /// into a silhouette. Apple's own map needs far less: it is drawn dark to begin with,
-    /// and taking a third off that as well leaves a faint suggestion of roads.
-    var dimming: Double {
-        switch self {
-        case .appleMap: return 0.12
-        case .satellite: return 0.32
-        }
-    }
 }

@@ -14,7 +14,6 @@ struct MapAirport: Identifiable, Equatable {
     let coordinate: Coordinate
     let name: String
     let town: String
-    let country: String
     /// How big OurAirports reckons it is: 0 large, 1 medium, 2 a small field with a
     /// scheduled service. What decides the order ground layouts are fetched in.
     var size: Int = 2
@@ -63,16 +62,13 @@ struct MapShape {
 /// 1:110m, 1:50m and 1:10m, each generalised for the scale it is meant to be seen at, and the
 /// map picks between them by zoom: at a whole-world view the 1:50m rings carry ten times the
 /// points the screen has pixels, and zoomed in on the Aegean they carry too few.
-enum MapDetail: Int, CaseIterable, Comparable, CustomStringConvertible {
+enum MapDetail: Int, CaseIterable, Comparable {
     case coarse = 0
     case medium = 1
     case fine = 2
 
     /// The Natural Earth scale this tier comes from, which is also its file suffix.
     var scale: String { ["110", "50", "10"][rawValue] }
-
-    /// "1:50m", for the readout — so which tier you are on is something you can see.
-    var description: String { "1:\(scale)m" }
 
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 
@@ -408,7 +404,6 @@ enum WorldData {
                                                             longitude: longitude),
                                      name: String(fields[3]),
                                      town: String(fields[4]),
-                                     country: String(fields[5]),
                                      size: fields.count > 6 ? (Int(fields[6]) ?? 2) : 2)
         }
         return table
