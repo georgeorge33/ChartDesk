@@ -32,9 +32,9 @@ enum Leftovers {
     /// coastline alone is a four-gigabyte file.
     static func remove() {
         let manager = FileManager.default
-        let folder = folder
+        let root = folder
         for name in names {
-            let item = folder.appendingPathComponent(name)
+            let item = root.appendingPathComponent(name)
             guard manager.fileExists(atPath: item.path) else { continue }
             try? manager.removeItem(at: item)
         }

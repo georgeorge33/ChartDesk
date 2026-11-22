@@ -708,7 +708,7 @@ enum XPlaneGateway {
 
         let lookup: (status: Int, data: Data)
         switch await get("\(api)/airport/\(code)", timeout: 30,
-                         progress: progress.map { report in { @Sendable in report(0.1 * $0) } }) {
+                         progress: progress.map { report in { @Sendable step in report(0.1 * step) } }) {
         case .failure(let error): return .failed(error.localizedDescription)
         case .success(let answer): lookup = answer
         }
@@ -739,7 +739,7 @@ enum XPlaneGateway {
 
         let pack: (status: Int, data: Data)
         switch await get("\(api)/scenery/\(scenery)", timeout: 60,
-                         progress: progress.map { report in { @Sendable in report(0.1 + 0.85 * $0) } }) {
+                         progress: progress.map { report in { @Sendable step in report(0.1 + 0.85 * step) } }) {
         case .failure(let error): return .failed(error.localizedDescription)
         case .success(let answer): pack = answer
         }
