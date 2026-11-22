@@ -23,6 +23,9 @@
 - **A progress bar while an airport's layout loads**: the map's card shows which airport is
   coming from the X-Plane Scenery Gateway, how many are waiting after it, and how much of it
   has arrived — or, during Fetch Your Airports, how far through them it is.
+- **Nearly 4 GB back**: the app clears what earlier versions kept for features since taken
+  out — the drawn base map's coastline and tiles, the taxi planner's routes and the chart
+  georeferencing file — the first time it opens. Nothing else in its folder is touched.
 
 ## 1.3.0-rc.3
 

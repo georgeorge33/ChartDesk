@@ -104,6 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         fitWindowsToScreen()
+        // What earlier versions kept for features that have since gone.
+        Task.detached(priority: .utility) { Leftovers.remove() }
     }
 
     /// Pulls any window that has been restored bigger than the screen back onto it.
