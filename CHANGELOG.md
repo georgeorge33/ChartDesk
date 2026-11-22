@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0-rc.4
 
 - **The briefing's sections, in the room to its right**: SimBrief's own outline of it — the
   OFP with its summary and fuel, routing, times and weights, flight log and winds, then the
