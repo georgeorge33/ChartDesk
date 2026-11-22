@@ -239,7 +239,7 @@ struct ChartListColumn: View {
         let outOfDate = !isMap && !isPinnedList && (selectedAirport?.chartsAreOutOfDate ?? false)
         return VStack(spacing: 1) {
             Text(headerTitle)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.ng(size: 18, weight: .semibold))
                 .lineLimit(1)
                 // Smaller rather than cut short, should the column ever be too narrow for it.
                 .minimumScaleFactor(0.6)
@@ -263,7 +263,7 @@ struct ChartListColumn: View {
 
             if let name = headerName, !name.isEmpty {
                 Text(name)
-                    .font(.subheadline)
+                    .font(.ng(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -307,10 +307,13 @@ struct ChartListColumn: View {
             List(selection: $browser.selectedChartID) {
                 if isPinnedList {
                     ForEach(pinnedGroups) { group in
-                        Section(group.id) {
+                        Section {
                             ForEach(group.charts) { chart in
                                 row(for: chart, showsAirport: false)
                             }
+                        } header: {
+                            Text(group.id)
+                                .ngTypeface(.subheadline, weight: .semibold)
                         }
                     }
                 } else {
@@ -385,7 +388,7 @@ struct ChartListColumn: View {
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
             Text(emptyStateTitle)
-                .font(.callout)
+                .font(.ng(.callout))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Spacer()
@@ -454,13 +457,14 @@ private struct ChartRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(chart.title)
+                    .ngTypeface()
                     .foregroundStyle(isSelected ? Color.white : Color.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 HStack(spacing: 6) {
                     if showsAirport {
                         Text(chart.airportCode)
-                            .fontWeight(.medium)
+                            .ngWeight(.medium)
                     }
                     // Same tint as the tab it lives under, so a glance down the list reads
                     // as the same colour coding rather than two unrelated schemes.
@@ -649,7 +653,7 @@ private struct CategoryStrip: View {
             selection = category
         } label: {
             Text(category.shortName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ng(size: 11, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .frame(height: 21)
                 // Dark text on the filled pill: the tints are bright, so the window colour is
@@ -705,7 +709,7 @@ private struct ColumnTabStrip: View {
                     Text(tab.title)
                         // Four equal cells in a 250-point column: at 12 point "Runways" left
                         // no air either side of itself.
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.ng(size: 11, weight: .semibold))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .frame(height: 23)

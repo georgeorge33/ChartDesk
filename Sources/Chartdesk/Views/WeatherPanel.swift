@@ -215,7 +215,7 @@ struct WeatherPanel: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(resolved.wind?.summary ?? "No wind reported")
-                    .font(.callout.weight(.medium))
+                    .font(.ng(.callout, weight: .medium))
                 Spacer(minLength: 0)
                 Text("var")
                     .font(.ngSmall)

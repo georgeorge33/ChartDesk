@@ -22,7 +22,8 @@ struct BriefingView: View {
             let outline = reader.outline(of: html)
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    BriefingPage(html: outline.html, reader: reader)
+                    BriefingPage(html: outline.html, b612: Typeface.shared.isB612Mono,
+                                 reader: reader)
                     if geometry.size.width >= Self.roomForSections, !outline.sections.isEmpty {
                         Divider()
                             .overlay(Color.ngSeparator)
@@ -43,7 +44,7 @@ struct BriefingView: View {
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.tertiary)
             Text(flight.plan == nil ? "No flight loaded" : "No briefing with this flight")
-                .font(.headline)
+                .font(.ng(.headline))
             Text(flight.plan == nil
                  ? "Fetch your latest SimBrief flight and its briefing is shown here."
                  : "It was fetched before Chartdesk kept the briefing. Fetch it again "
@@ -116,10 +117,10 @@ struct BriefingColumn: View {
     private var header: some View {
         VStack(spacing: 1) {
             Text("Briefing")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.ng(size: 18, weight: .semibold))
             if let plan = flight.plan {
                 Text(plan.pair)
-                    .font(.subheadline)
+                    .font(.ng(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("SimBrief" + (plan.layout.map { " · \($0) layout" } ?? ""))
@@ -127,7 +128,7 @@ struct BriefingColumn: View {
                     .foregroundStyle(.tertiary)
             } else {
                 Text("No flight loaded")
-                    .font(.subheadline)
+                    .font(.ng(.subheadline))
                     .foregroundStyle(.secondary)
             }
         }
@@ -187,6 +188,8 @@ private struct FetchAgainButton: View {
 private struct BriefingPage: NSViewRepresentable {
 
     let html: String
+    /// Set in B612 Mono, as the rest of the app is, rather than the system's monospaced face.
+    let b612: Bool
     let reader: BriefingReader
 
     func makeCoordinator() -> Coordinator { Coordinator(reader: reader) }
@@ -209,12 +212,19 @@ private struct BriefingPage: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        // Loaded again only when the briefing itself changes, so the place you had scrolled
-        // to survives everything else redrawing round it.
-        guard context.coordinator.shown != html else { return }
-        context.coordinator.shown = html
-        view.loadHTMLString(Self.page(html), baseURL: URL(string: "https://www.simbrief.com/"))
-        DispatchQueue.main.async { reader.current = 0 }
+        // Loaded again only when the briefing itself changes, or the face it is set in, so the
+        // place you had scrolled to survives everything else redrawing round it.
+        let coordinator = context.coordinator
+        guard coordinator.shown != html || coordinator.shownInB612 != b612 else { return }
+        // A new face for the same briefing keeps your place: it goes back to the section you
+        // were reading once the page has loaded again.
+        let section = coordinator.shown == html ? reader.current : 0
+        coordinator.returnTo = section > 0 ? section : nil
+        coordinator.shown = html
+        coordinator.shownInB612 = b612
+        view.loadHTMLString(Self.page(html, b612: b612),
+                            baseURL: URL(string: "https://www.simbrief.com/"))
+        DispatchQueue.main.async { reader.current = section }
     }
 
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
@@ -251,17 +261,23 @@ private struct BriefingPage: NSViewRepresentable {
         """
 
     /// SimBrief's OFP is preformatted text in a few divs, written for black on white: here it
-    /// is light on the chart backdrop, in the system's monospaced face, with the images it
-    /// links to — wind charts, in some layouts — on a white card of their own.
-    static func page(_ body: String) -> String {
-        """
+    /// is light on the chart backdrop, in the system's monospaced face or B612 Mono, with the
+    /// images it links to — wind charts, in some layouts — on a white card of their own.
+    static func page(_ body: String, b612: Bool) -> String {
+        // B612 Mono a little smaller, as everywhere else, so its capitals stand as tall as the
+        // system face's.
+        let font = b612
+            ? String(format: "%.2fpx/1.45 \"B612 Mono\", ", 12.5 * Typeface.scale)
+            : "12.5px/1.45 "
+        return """
         <!doctype html>
         <html><head><meta charset="utf-8">
         <style>
+          \(b612 ? Typeface.briefingFaces : "")
           :root { color-scheme: dark; }
           html, body { background: #000810; margin: 0; }
           body { color: #DCE4EC; padding: 22px 28px 48px;
-                 font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace; }
+                 font: \(font)ui-monospace, "SF Mono", Menlo, monospace; }
           pre { font: inherit !important; white-space: pre; margin: 0 0 1em; }
           div { line-height: 1.45 !important; }
           b, strong { color: #FFFFFF; }
@@ -278,6 +294,9 @@ private struct BriefingPage: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var shown: String?
+        var shownInB612: Bool?
+        /// The section to go back to once the page now loading has loaded.
+        var returnTo: Int?
         private let reader: BriefingReader
 
         init(reader: BriefingReader) {
@@ -289,6 +308,12 @@ private struct BriefingPage: NSViewRepresentable {
                                    didReceive message: WKScriptMessage) {
             guard let index = message.body as? Int, index != reader.current else { return }
             reader.current = index
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let section = returnTo else { return }
+            returnTo = nil
+            reader.show(section: section)
         }
 
         /// The page itself loads; a link clicked in it opens in the browser instead.
@@ -388,8 +413,12 @@ final class BriefingReader: ObservableObject {
     /// Straight to a section, its heading at the top. Run in the app's own script world,
     /// which the page's scripts being off does not touch.
     func show(_ section: BriefingOutline.Section) {
-        current = section.id
-        let script = "document.getElementById('ofp-section-\(section.id)')"
+        show(section: section.id)
+    }
+
+    func show(section index: Int) {
+        current = index
+        let script = "document.getElementById('ofp-section-\(index)')"
             + "?.scrollIntoView({ block: 'start' })"
         webView?.evaluateJavaScript(script, in: nil, in: .defaultClient) { _ in }
     }

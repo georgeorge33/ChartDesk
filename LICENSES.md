@@ -2,7 +2,7 @@
 
 Chartdesk draws on several public datasets. Most are public domain; the airport layouts,
 the airspace and Apple's maps are not, and those come with obligations rather than
-courtesies.
+courtesies. It also carries one typeface, B612 Mono, under a licence of its own.
 
 ## X-Plane Scenery Gateway — GPL v2 or later
 
@@ -105,3 +105,22 @@ and so not subject to copyright. United States only.
 ---
 
 None of this is for real-world navigation. Chartdesk is for flight simulation.
+
+## B612 Mono — SIL Open Font License 1.1
+
+**What:** `Resources/Fonts/B612Mono-Regular.ttf` and `B612Mono-Bold.ttf`, version 1.008, inside
+the app for **Use B612 Mono** in Settings › Viewing. Taken unchanged from
+[Google Fonts' copy](https://github.com/google/fonts/tree/main/ofl/b612mono) of the
+[B612 project's](https://github.com/polarsys/b612) fonts.
+
+**Who:** the typeface made for Airbus's cockpit displays, designed by Nicolas Chauveau, Thomas
+Paillot, Jonathan Favre-Lamarine and Jean-Luc Vinot. Copyright 2012 The B612 Project Authors.
+
+**Licence:** the [SIL Open Font License, version 1.1](Resources/Fonts/B612-OFL.txt), which lets
+the fonts ship inside any software, free or sold, so long as they are never sold on their own
+and their copyright notice and licence go wherever they do.
+
+**What that requires of this app, and where it is done:** the licence goes with the fonts, as
+`Resources/Fonts/B612-OFL.txt` in this repository and `Contents/Resources/Fonts/B612-OFL.txt` in
+the app, where `build.sh` copies it beside them. The fonts are unmodified and keep their names,
+and they are registered for Chartdesk alone while it runs — never installed on the Mac.

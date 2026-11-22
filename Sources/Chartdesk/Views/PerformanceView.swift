@@ -89,7 +89,7 @@ struct PerformanceView: View {
                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.headline)
+                .font(.ng(.headline))
             VStack(alignment: .leading, spacing: 7) {
                 content()
             }
@@ -108,7 +108,7 @@ struct PerformanceView: View {
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
         }
-        .font(.callout)
+        .font(.ng(.callout))
     }
 
     private func meter(_ label: String, value: Double, of total: Double, text: String) -> some View {

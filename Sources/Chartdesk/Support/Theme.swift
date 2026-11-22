@@ -152,13 +152,54 @@ extension Font {
     /// here until a set of hand-picked 9-point labels made it smaller still. Named rather than
     /// written out at each site so the floor is one number to change and nothing can quietly
     /// slip under it.
-    static let ngSmall = Font.system(size: 10.5)
+    ///
+    /// These are worked out each time they are asked for, not kept, because the face is a
+    /// setting: see `Typeface`.
+    static var ngSmall: Font { .ng(size: 10.5) }
     /// The credits in the corner of the map, and nothing else. Its own size so that making
     /// it smaller does not shrink every caption in the app with it.
-    static let ngCredit = Font.system(size: 5)
-    static let ngSmallMedium = Font.system(size: 10.5, weight: .medium)
-    static let ngSmallBold = Font.system(size: 10.5, weight: .semibold)
-    static let ngSmallMono = Font.system(size: 10.5, design: .monospaced)
+    static var ngCredit: Font { .ng(size: 5) }
+    static var ngSmallMedium: Font { .ng(size: 10.5, weight: .medium) }
+    static var ngSmallBold: Font { .ng(size: 10.5, weight: .semibold) }
+    static var ngSmallMono: Font { .ng(size: 10.5, design: .monospaced) }
+
+    /// Writing at a size, in whichever face the app is set in. In B612 Mono the design asked
+    /// for makes no difference: it is monospaced already.
+    static func ng(size: CGFloat, weight: Weight = .regular, design: Design = .default) -> Font {
+        guard Typeface.shared.isB612Mono else {
+            return .system(size: size, weight: weight, design: design)
+        }
+        return .custom(Typeface.face(for: weight), fixedSize: size * Typeface.scale)
+    }
+
+    /// One of the system's text styles, in whichever face the app is set in: in B612 Mono at
+    /// the size macOS gives the style, and bold for a headline, as macOS sets it.
+    static func ng(_ style: TextStyle, weight: Weight? = nil, design: Design? = nil) -> Font {
+        guard Typeface.shared.isB612Mono else {
+            return .system(style, design: design, weight: weight)
+        }
+        let size = NSFont.preferredFont(forTextStyle: style.appKit).pointSize
+        return .custom(Typeface.face(for: weight ?? (style == .headline ? .bold : .regular)),
+                       fixedSize: size * Typeface.scale)
+    }
+}
+
+private extension Font.TextStyle {
+    var appKit: NSFont.TextStyle {
+        switch self {
+        case .largeTitle: return .largeTitle
+        case .title: return .title1
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .subheadline: return .subheadline
+        case .callout: return .callout
+        case .footnote: return .footnote
+        case .caption: return .caption1
+        case .caption2: return .caption2
+        default: return .body
+        }
+    }
 }
 
 extension Color {

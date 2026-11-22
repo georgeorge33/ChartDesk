@@ -76,11 +76,11 @@ struct RouteFixList: View {
     private var header: some View {
         VStack(spacing: 1) {
             Text("Route Map")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.ng(size: 18, weight: .semibold))
 
             if let plan = flight.plan {
                 Text(plan.pair)
-                    .font(.subheadline)
+                    .font(.ng(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text("\(waypoints.count) fixes"
@@ -89,7 +89,7 @@ struct RouteFixList: View {
                     .foregroundStyle(.tertiary)
             } else {
                 Text("No flight loaded")
-                    .font(.subheadline)
+                    .font(.ng(.subheadline))
                     .foregroundStyle(.secondary)
             }
         }

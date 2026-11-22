@@ -57,6 +57,9 @@ struct ChartFrame {
     var airports: [MapAirport] = []
     var onRoute: Set<String> = []
 
+    /// Whether the app is set in B612 Mono, which every label is written in when it is.
+    var b612 = false
+
     /// What would make the drawing different. Compared instead of the things themselves,
     /// which are thousands of points each and are only ever swapped whole.
     var stamp: String {
@@ -71,6 +74,7 @@ struct ChartFrame {
             waypoints.map(\.ident).joined(separator: " "),
             airports.map(\.icao).joined(separator: ","),
             onRoute.sorted().joined(separator: ","),
+            "\(b612)",
         ].joined(separator: "|")
     }
 }

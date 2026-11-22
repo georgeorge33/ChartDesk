@@ -351,7 +351,7 @@ struct RouteMapView: View {
             if let plan = plan {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plan.title)
-                        .font(.headline)
+                        .font(.ng(.headline))
                     Text(plan.pair + (plan.aircraft.map { " · \($0)" } ?? ""))
                         .font(.ngSmall)
                         .foregroundStyle(.secondary)
@@ -440,7 +440,8 @@ struct RouteMapView: View {
                    cities: browser.showsCityNames && !appleDrawsPlaces ? geography.cities : [],
                    waypoints: waypoints,
                    airports: pinned,
-                   onRoute: Set((plan?.airfields ?? []).map { $0.icao.uppercased() }))
+                   onRoute: Set((plan?.airfields ?? []).map { $0.icao.uppercased() }),
+                   b612: Typeface.shared.isB612Mono)
     }
 
     /// Every layout in hand. The renderer culls them itself against whatever rectangle

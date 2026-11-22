@@ -91,6 +91,10 @@ struct ChartContext {
         var weight: NSFont.Weight = .bold
         /// Figures in the monospaced face, so that a ceiling sits square over its floor.
         var mono = false
+        /// Set in B612 Mono: whichever face the app was set in when the label was made. Part
+        /// of what the label is, so that one made after the switch is never taken for the
+        /// same label already on the map and left there in the old face.
+        var b612 = Typeface.labelsInB612Mono
         var colour: NSColor
         /// Filled behind it, the way a ground chart writes a taxiway's letter.
         var box: NSColor? = nil
@@ -179,11 +183,16 @@ struct ChartContext {
     private static let shapedLines = NSCache<NSString, Shaped>()
 
     private static func shaped(_ text: String, size: Double, weight: NSFont.Weight,
-                               mono: Bool) -> Shaped {
-        let key = "\(text)|\(size)|\(weight.rawValue)|\(mono)" as NSString
+                               mono: Bool, b612: Bool) -> Shaped {
+        let key = "\(text)|\(size)|\(weight.rawValue)|\(mono)|\(b612)" as NSString
         if let held = shapedLines.object(forKey: key) { return held }
-        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        let font: NSFont
+        if b612, let face = NSFont(name: Typeface.face(for: weight), size: size * Typeface.scale) {
+            font = face
+        } else {
+            font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
                         : NSFont.systemFont(ofSize: size, weight: weight)
+        }
         let attributed = NSAttributedString(string: text, attributes: [
             .font: font,
             NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
@@ -204,9 +213,10 @@ struct ChartContext {
     /// The writing's own rectangle — the letters, not the chip round them — and its lines.
     private func layout(_ label: Label) -> (rect: CGRect, top: Shaped, bottom: Shaped?) {
         let top = Self.shaped(label.text, size: label.size, weight: label.weight,
-                              mono: label.mono)
+                              mono: label.mono, b612: label.b612)
         let bottom = label.under.map {
-            Self.shaped($0, size: label.size, weight: label.weight, mono: label.mono)
+            Self.shaped($0, size: label.size, weight: label.weight, mono: label.mono,
+                        b612: label.b612)
         }
         var width = top.size.width, height = top.size.height
         if let bottom {
@@ -266,7 +276,7 @@ struct ChartContext {
     /// room above and below it.
     func band(of label: Label) -> Double {
         let top = Self.shaped(label.text, size: label.size, weight: label.weight,
-                              mono: label.mono)
+                              mono: label.mono, b612: label.b612)
         return screen(top.size.height + 7)
     }
 
@@ -437,7 +447,7 @@ struct ChartContext {
     /// turned to the line where its middle falls and centred on it top to bottom.
     private func drawAlong(_ path: [CGPoint], _ label: Label) {
         let shaped = Self.shaped(label.text, size: label.size, weight: label.weight,
-                                 mono: label.mono)
+                                 mono: label.mono, b612: label.b612)
         var line = Path()
         line.move(to: path[0])
         for point in path.dropFirst() { line.addLine(to: point) }

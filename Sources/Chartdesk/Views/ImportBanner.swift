@@ -35,8 +35,7 @@ struct ImportBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary)
-                    .font(.callout)
-                    .fontWeight(.medium)
+                    .font(.ng(.callout, weight: .medium))
                 Text("Waiting in \(ChartImporter.downloadsFolder.lastPathComponent) · filing in "
                      + "\(importer.secondsLeft)s")
                     .font(.ngSmall)

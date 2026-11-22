@@ -17,6 +17,9 @@ struct MacSearchField: NSViewRepresentable {
     var placeholder: String
     var focusNotification: Notification.Name?
     var onSubmit: (() -> Void)?
+    /// In B612 Mono, as the rest of the window is. Read as the view round it is built, which is
+    /// what has this field told again when the setting changes.
+    var b612 = Typeface.shared.isB612Mono
 
     /// A search field that will not take the caret unless something asked for it.
     ///
@@ -55,6 +58,7 @@ struct MacSearchField: NSViewRepresentable {
         field.action = #selector(Coordinator.searchFieldChanged(_:))
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         context.coordinator.startObserving(name: focusNotification, field: field)
+        context.coordinator.systemFont = field.font
         return field
     }
 
@@ -67,6 +71,14 @@ struct MacSearchField: NSViewRepresentable {
         if nsView.placeholderString != placeholder {
             nsView.placeholderString = placeholder
         }
+        // B612 Mono at the size the field's own face is, or the field's own face back again.
+        let own = context.coordinator.systemFont
+        let font = b612
+            ? NSFont(name: Typeface.regular, size: (own?.pointSize ?? 13) * Typeface.scale) ?? own
+            : own
+        if let font, nsView.font != font {
+            nsView.font = font
+        }
     }
 
     static func dismantleNSView(_ nsView: Field, coordinator: Coordinator) {
@@ -76,6 +88,8 @@ struct MacSearchField: NSViewRepresentable {
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
         var onSubmit: (() -> Void)?
+        /// The face the field came with, for going back to from B612 Mono.
+        var systemFont: NSFont?
 
         private weak var field: Field?
         private var focusObserver: NSObjectProtocol?

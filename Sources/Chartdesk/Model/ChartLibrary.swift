@@ -33,6 +33,7 @@ enum DefaultsKey {
     static let weatherExpanded = "weatherExpanded"
     static let weatherRunways = "weatherRunways"
     static let weatherVariation = "weatherVariation"
+    static let useB612Mono = "useB612Mono"
 }
 
 // MARK: - Folder bookmark

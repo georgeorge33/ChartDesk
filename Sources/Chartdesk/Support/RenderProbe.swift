@@ -121,6 +121,13 @@ enum RenderProbe {
         if environment["CHARTDESK_SHOW_LAYOUTS"] != nil {
             NotificationCenter.default.post(name: .showAirportLayouts, object: nil)
         }
+        // `CHARTDESK_FLIP_TYPEFACE=8`: the B612 Mono switch thrown after so many seconds, as
+        // the Settings window throws it, to see every view follow it without a click.
+        if let seconds = environment["CHARTDESK_FLIP_TYPEFACE"].flatMap(Double.init) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                Typeface.shared.usesB612Mono.toggle()
+            }
+        }
     }
 
     /// `CHARTDESK_LOG_TILES`: say, once for each zoom, what MapKit hands the renderer — the

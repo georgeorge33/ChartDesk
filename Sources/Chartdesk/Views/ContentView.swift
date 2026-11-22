@@ -111,6 +111,10 @@ struct ContentView: View {
         } message: {
             Text(updater.message ?? "")
         }
+        // Here rather than on the window group, whose saved size and place are filed under
+        // the type of the view it was given: a modifier added there would have every window
+        // open at the default size once.
+        .ngTypeface()
     }
 
     private func finishStartingIfReady() {
@@ -175,9 +179,9 @@ struct WelcomeView: View {
 
                 VStack(spacing: 6) {
                     Text("Welcome to Chartdesk")
-                        .font(.largeTitle)
+                        .font(.ng(.largeTitle))
                     Text("A browser for the chart images you already have on disk.")
-                        .font(.title3)
+                        .font(.ng(.title3))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -195,7 +199,7 @@ struct WelcomeView: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Chartdesk reads the folder without changing anything in it. Both of these layouts work:")
-                            .font(.callout)
+                            .font(.ng(.callout))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
 
@@ -260,8 +264,7 @@ struct WelcomeView: View {
     private func layoutExample(title: String, lines: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.ngSmall)
-                .fontWeight(.semibold)
+                .font(.ngSmallBold)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { item in
                     Text(item.element)

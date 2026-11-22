@@ -39,13 +39,16 @@ struct SidebarView: View {
             }
         } header: {
             HStack(spacing: 6) {
-                Text(flight.plan?.title ?? "Flight")
-                    .lineLimit(1)
-                if let subtitle = flight.plan?.subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .foregroundStyle(.tertiary)
+                Group {
+                    Text(flight.plan?.title ?? "Flight")
                         .lineLimit(1)
+                    if let subtitle = flight.plan?.subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
+                .ngTypeface(.subheadline, weight: .semibold)
                 Spacer(minLength: 0)
 
                 // Next to the section it removes, rather than only in Settings: this is where
@@ -91,6 +94,7 @@ struct SidebarView: View {
                     Image(systemName: "airplane.departure")
                         .foregroundStyle(Color.ngAccentText)
                     Text(flight.isFetching ? "Loading Flight…" : "Load SimBrief Flight")
+                        .ngTypeface()
                     Spacer(minLength: 0)
                     if flight.isFetching {
                         ProgressView().progressViewStyle(.circular).controlSize(.mini)
@@ -155,11 +159,14 @@ struct SidebarView: View {
                         .tag(SidebarItem.map)
                 }
 
-                Section("Airports") {
+                Section {
                     ForEach(filteredAirports) { airport in
                         AirportRow(airport: airport, planned: flight.name(at: airport.code))
                             .tag(SidebarItem.airport(airport.code))
                     }
+                } header: {
+                    Text("Airports")
+                        .ngTypeface(.subheadline, weight: .semibold)
                 }
             }
             .listStyle(.sidebar)
@@ -169,7 +176,7 @@ struct SidebarView: View {
                     EmptyLibraryNotice()
                 } else if filteredAirports.isEmpty && !trimmedQuery.isEmpty {
                     Text("No matching airports")
-                        .font(.callout)
+                        .font(.ng(.callout))
                         .foregroundStyle(.secondary)
                         .padding()
                 }
@@ -194,6 +201,7 @@ struct SidebarView: View {
     /// way it was written, without leaving for a browser.
     private var briefingRow: some View {
         Label("Briefing", systemImage: "doc.plaintext")
+            .ngTypeface()
             .help(flight.plan?.briefing == nil
                   ? "Fetch the flight again to read its SimBrief briefing here"
                   : "The loaded flight's SimBrief briefing")
@@ -202,6 +210,7 @@ struct SidebarView: View {
     private var mapRow: some View {
         HStack(spacing: 8) {
             Label("Route Map", systemImage: "map")
+                .ngTypeface()
             Spacer(minLength: 4)
             if let count = flight.plan?.waypoints.count, count > 0 {
                 Text("\(count)")
@@ -218,6 +227,7 @@ struct SidebarView: View {
     private var pinnedRow: some View {
         HStack(spacing: 8) {
             Label("Pinned Charts", systemImage: "star.fill")
+                .ngTypeface()
             Spacer(minLength: 4)
             Text("\(library.pinnedCharts.count)")
                 .font(.ngSmall)
@@ -373,8 +383,7 @@ private struct AirportRow: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(airport.displayTitle)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
+                    .font(.ng(.body, weight: .medium, design: .monospaced))
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.ngSmall)
@@ -408,7 +417,7 @@ private struct EmptyLibraryNotice: View {
                 .font(.title2)
                 .foregroundStyle(.tertiary)
             Text("No charts found")
-                .font(.callout)
+                .font(.ng(.callout))
             Text("Pick a folder that contains chart images.")
                 .font(.ngSmall)
                 .foregroundStyle(.secondary)
@@ -470,7 +479,7 @@ private struct FlightAirportRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(field.icao)
-                    .font(.callout)
+                    .font(.ng(.callout))
                     .foregroundStyle(chartCount == nil ? Color.secondary : Color.primary)
                 if let detail = detail {
                     Text(detail)

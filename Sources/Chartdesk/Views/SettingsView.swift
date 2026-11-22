@@ -1,16 +1,31 @@
 import SwiftUI
 
 struct SettingsView: View {
+
+    @State private var tab = SettingsView.firstTab
+
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag("general")
             ViewingSettingsView()
                 .tabItem { Label("Viewing", systemImage: "eye") }
+                .tag("viewing")
             MarkupSettingsView()
                 .tabItem { Label("Markup", systemImage: "pencil.tip.crop.circle") }
+                .tag("markup")
         }
         .frame(width: 540, height: 400)
+    }
+
+    /// General — or in a debug build the tab `CHARTDESK_SETTINGS_TAB` names, so that a test
+    /// copy's Settings can be looked at on any tab without a click.
+    private static var firstTab: String {
+        #if DEBUG
+        if let tab = ProcessInfo.processInfo.environment["CHARTDESK_SETTINGS_TAB"] { return tab }
+        #endif
+        return "general"
     }
 }
 
@@ -29,7 +44,7 @@ private struct GeneralSettingsView: View {
             Section("Chart Library") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(library.hasLibrary ? library.folderPath : "No folder chosen yet")
-                        .font(.callout)
+                        .font(.ng(.callout))
                         .lineLimit(2)
                         .truncationMode(.middle)
                         .foregroundStyle(library.hasLibrary ? Color.primary : Color.secondary)
@@ -56,7 +71,7 @@ private struct GeneralSettingsView: View {
                     if let cycle = navdata.installed {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("Cycle \(cycle.stamp)")
-                                .font(.callout)
+                                .font(.ng(.callout))
                             Text(cycle.span
                                  + (navdata.isCurrent ? " · current" : " · out of date"))
                                 .font(.ngSmall)
@@ -64,7 +79,7 @@ private struct GeneralSettingsView: View {
                         }
                     } else {
                         Text("Not installed")
-                            .font(.callout)
+                            .font(.ng(.callout))
                             .foregroundStyle(.secondary)
                     }
 
@@ -162,7 +177,7 @@ private struct GeneralSettingsView: View {
             Section("Toolbar") {
                 HStack {
                     Text("Add, remove or rearrange the buttons above the chart.")
-                        .font(.callout)
+                        .font(.ng(.callout))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -173,7 +188,7 @@ private struct GeneralSettingsView: View {
             Section("Stored Corrections") {
                 HStack {
                     Text("\(library.categoryOverrides.count) charts moved by hand · \(library.pinnedIDs.count) pinned")
-                        .font(.callout)
+                        .font(.ng(.callout))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -192,6 +207,7 @@ private struct GeneralSettingsView: View {
 private struct ViewingSettingsView: View {
 
     @EnvironmentObject private var browser: BrowserState
+    @Bindable private var typeface = Typeface.shared
 
     var body: some View {
         Form {
@@ -212,6 +228,24 @@ private struct ViewingSettingsView: View {
                 Text("Chart Navy matches the rest of the app.")
                     .font(.ngSmall)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Typeface") {
+                Toggle("Use B612 Mono", isOn: $typeface.usesB612Mono)
+                    .disabled(!Typeface.isInstalled)
+                // In B612 Mono whichever is on, so it can be seen before it is chosen.
+                Text("KBOS  ILS RWY 22L  110.30  FL370  M0.78")
+                    .font(.custom(Typeface.regular, fixedSize: 13 * Typeface.scale))
+                    .foregroundStyle(Color.ngAccentText)
+                Text(Typeface.isInstalled
+                     ? "The typeface Airbus drew for its cockpit displays, in its monospaced "
+                       + "cut, so a briefing or a METAR keeps its columns. The map's labels "
+                       + "and the briefing follow it too; menus and window titles stay in the "
+                       + "system font."
+                     : "B612 Mono is missing from this copy of Chartdesk.")
+                    .font(.ngSmall)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -257,7 +291,7 @@ private struct MarkupSettingsView: View {
             Section("Stored Marks") {
                 HStack {
                     Text(summary)
-                        .font(.callout)
+                        .font(.ng(.callout))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }

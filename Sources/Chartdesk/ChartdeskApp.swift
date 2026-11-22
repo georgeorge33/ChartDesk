@@ -17,6 +17,9 @@ struct ChartdeskApp: App {
     @StateObject private var navdata = NavDataStore()
 
     init() {
+        // Registers B612 Mono and reads whether the app is set in it, before anything is
+        // drawn — the probe's map labels included.
+        _ = Typeface.shared
         // Before anything is made: the probe draws a picture and quits, and none of the
         // app's state should exist long enough to do anything.
         #if DEBUG
@@ -57,6 +60,7 @@ struct ChartdeskApp: App {
         Window("Performance", id: "performance") {
             PerformanceView()
                 .environmentObject(library)
+                .ngTypeface()
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }
@@ -68,6 +72,7 @@ struct ChartdeskApp: App {
                 // For fetching the layouts of the airports there are charts for.
                 .environmentObject(library)
                 .environmentObject(flight)
+                .ngTypeface()
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }
@@ -84,6 +89,7 @@ struct ChartdeskApp: App {
                 .environmentObject(weather)
                 .environmentObject(importer)
                 .environmentObject(navdata)
+                .ngTypeface()
                 .preferredColorScheme(.dark)
                 .tint(.ngAccent)
         }

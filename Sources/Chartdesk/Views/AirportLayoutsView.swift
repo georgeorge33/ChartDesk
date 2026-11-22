@@ -55,11 +55,13 @@ struct AirportLayoutsView: View {
                                                             : AnyShapeStyle(.tertiary))
                             Text(row.icao).monospaced()
                         }
+                        .ngTypeface()
                         .help(row.loaded ? "Held by the map" : "On disk")
                     }
                     .width(78)
                     TableColumn("Airport") { row in
                         Text(row.name.isEmpty ? "—" : row.name)
+                            .ngTypeface()
                             .foregroundStyle(row.name.isEmpty ? .tertiary : .primary)
                     }
                     .width(min: 160)
@@ -71,6 +73,7 @@ struct AirportLayoutsView: View {
                     TableColumn("Paint") { row in sparse(row.markings) }.width(56)
                     TableColumn("Size") { row in
                         Text(Self.bytes(row.bytes))
+                            .ngTypeface()
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -78,6 +81,7 @@ struct AirportLayoutsView: View {
                     .width(66)
                     TableColumn("Fetched") { row in
                         Text(row.fetched, format: .dateTime.year().month(.abbreviated).day())
+                            .ngTypeface()
                             .foregroundStyle(.secondary)
                     }
                     .width(88)
@@ -169,6 +173,7 @@ struct AirportLayoutsView: View {
     /// A count that is often nothing, shown as a dash when it is.
     private func sparse(_ value: Int) -> some View {
         Text(value == 0 ? "—" : "\(value)")
+            .ngTypeface()
             .monospacedDigit()
             .foregroundStyle(value == 0 ? .tertiary : .primary)
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -176,6 +181,7 @@ struct AirportLayoutsView: View {
 
     private func figure(_ value: Int) -> some View {
         Text("\(value)")
+            .ngTypeface()
             .monospacedDigit()
             .frame(maxWidth: .infinity, alignment: .trailing)
     }

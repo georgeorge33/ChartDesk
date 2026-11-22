@@ -70,7 +70,7 @@ struct MapLayerPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Layers")
-                .font(.headline)
+                .font(.ng(.headline))
 
             section("Base map") {
                 ForEach(BaseMap.allCases) { layer in

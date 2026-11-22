@@ -291,7 +291,7 @@ struct ChartDetailView: View {
 
         ToolbarItem(id: "zoom.level", placement: .primaryAction) {
             Text(viewer.zoomPercentText)
-                .font(.body.monospacedDigit())
+                .font(.ng(.body).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 48)
                 .help("Current zoom level")
@@ -416,9 +416,9 @@ private struct NoChartSelectedView: View {
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("No Chart Selected")
-                .font(.title3)
+                .font(.ng(.title3))
             Text("Pick an airport, then choose a chart from the list.")
-                .font(.callout)
+                .font(.ng(.callout))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

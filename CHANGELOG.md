@@ -7,6 +7,12 @@
   ATC flight plan, runway analysis, weather, NOTAMs and the rest, in whichever layout you plan
   with. Press one to go straight to it; the one you are reading is picked out as you scroll.
   The list stands aside when the window is too narrow for both.
+- **B612 Mono, as a setting**: Settings › Viewing › Use B612 Mono sets the app in the typeface
+  Airbus drew for its cockpit displays — the sidebar, the chart list, the weather, the map's
+  labels and the SimBrief briefing, whose columns still line up because this is the monospaced
+  cut. It changes the moment it is switched, without a relaunch, and the briefing keeps your
+  place. Menus and window titles stay in the system font. B612 Mono comes inside the app, under
+  the SIL Open Font License.
 
 ## 1.3.0-rc.3
 

@@ -286,6 +286,17 @@ for TABLE in borders-110 borders-50 borders-10 \
 	fi
 done
 
+# B612 Mono, for the setting that sets the app in it, with its licence: the SIL Open Font
+# License asks that the licence go wherever the font does.
+mkdir -p "${CONTENTS}/Resources/Fonts"
+for FONT in B612Mono-Regular.ttf B612Mono-Bold.ttf B612-OFL.txt; do
+	if [ -f "Resources/Fonts/${FONT}" ]; then
+		cp "Resources/Fonts/${FONT}" "${CONTENTS}/Resources/Fonts/${FONT}"
+	else
+		warn "Resources/Fonts/${FONT} missing — the B612 Mono setting will do nothing"
+	fi
+done
+
 if ! plutil -lint "${CONTENTS}/Info.plist" >/dev/null 2>&1; then
 	warn "Info.plist failed plutil -lint"
 fi
