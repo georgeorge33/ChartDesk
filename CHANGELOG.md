@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0-rc.5
 
 - **Weather is always on.** The switch for it has gone from Settings, so the Weather and
   Runways tabs are always there for an airport, and Show Weather (⇧⌘W) has gone from the View
