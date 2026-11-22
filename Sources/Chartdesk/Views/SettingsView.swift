@@ -147,7 +147,8 @@ private struct GeneralSettingsView: View {
                 Toggle("Install updates on launch", isOn: $updater.checkOnLaunch)
                 Toggle("File charts waiting in Downloads", isOn: $importer.importOnLaunch)
                 Text("Charts saved as KMKE/AGC.png, or KMKE AGC.png, are moved into the "
-                     + "matching airport folder. A chart you already have is never replaced.")
+                     + "matching airport folder. One you already have is replaced by the new "
+                     + "download, and the old one goes to the Trash.")
                     .font(.ngSmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

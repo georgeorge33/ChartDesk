@@ -7,6 +7,9 @@
   menu — it had stopped doing anything when the weather became tabs.
 - **How big your chart folder is**, beside it in Settings › General: everything in the
   folder, as Finder counts it, worked out when Settings opens and again after each rescan.
+- **A chart downloaded again replaces the one you have.** Filing charts from Downloads used to
+  leave any you already had where they were; now the download takes its place, and the old
+  one goes to the Trash, where it can be got back.
 
 ## 1.3.0-rc.4
 

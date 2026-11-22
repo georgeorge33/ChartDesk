@@ -102,7 +102,7 @@ final class ImportController: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.report = self.describe(outcome)
-                if !outcome.imported.isEmpty { self.onFinish?() }
+                if !outcome.imported.isEmpty || !outcome.replaced.isEmpty { self.onFinish?() }
             }
         }
     }
@@ -126,18 +126,25 @@ final class ImportController: ObservableObject {
 
     private func describe(_ outcome: ChartImporter.Outcome) -> String {
         var parts: [String] = []
-        if !outcome.imported.isEmpty {
+        let filed = outcome.imported.count + outcome.replaced.count
+        if filed > 0 {
             let where_ = outcome.airports.joined(separator: ", ")
-            parts.append("Imported \(outcome.imported.count) "
-                         + (outcome.imported.count == 1 ? "chart" : "charts")
-                         + " into \(where_)")
+            parts.append("Imported \(filed) " + (filed == 1 ? "chart" : "charts") + " into \(where_)")
+        }
+        if !outcome.replaced.isEmpty {
+            parts.append("replacing \(outcome.replaced.count) you already had")
         }
         if !outcome.kept.isEmpty {
-            parts.append("left \(outcome.kept.count) you already had")
+            parts.append("left \(outcome.kept.count) downloaded twice")
         }
         if !outcome.failed.isEmpty {
             parts.append("could not move \(outcome.failed.count)")
         }
-        return parts.isEmpty ? "Nothing to import." : parts.joined(separator: ", ") + "."
+        var text = parts.isEmpty ? "Nothing to import." : parts.joined(separator: ", ") + "."
+        if !outcome.replaced.isEmpty {
+            text += outcome.replaced.count == 1 ? " The one it replaced is in the Trash."
+                                                : " The ones it replaced are in the Trash."
+        }
+        return text
     }
 }

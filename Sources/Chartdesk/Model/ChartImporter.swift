@@ -27,9 +27,9 @@ struct WaitingChart: Identifiable, Equatable {
 /// describes `Scan 1.png`, and a folder called `Docs` is four letters too. Anything else in
 /// the download folder is left exactly where it is.
 ///
-/// Nothing in the library is ever replaced. A chart already there is reported back and its
-/// download left alone, because this is the first thing in Chartdesk that writes to the chart
-/// folder at all, and adding files is a very different promise from changing them.
+/// A chart already in the library is replaced by the one downloaded, which is the newer of the
+/// two — that is what downloading it again is for. The one replaced goes to the Trash rather
+/// than away for good, so a download that turns out to be the wrong chart can be put back.
 enum ChartImporter {
 
     /// The folder downloads arrive in. Overridable so the tests never go near a real one.
@@ -42,14 +42,16 @@ enum ChartImporter {
     }
 
     struct Outcome: Equatable {
-        /// Destination paths, as `KMKE/AGC.png`.
+        /// Destination paths, as `KMKE/AGC.png`: charts the library did not have.
         var imported: [String] = []
-        /// Already in the library, or named the same as something else in the same batch.
+        /// Charts it did have, replaced by the download; the old ones are in the Trash.
+        var replaced: [String] = []
+        /// Named the same as another chart in the same batch, and left in the download folder.
         var kept: [String] = []
         var failed: [String] = []
         var airports: [String] = []
 
-        var isEmpty: Bool { imported.isEmpty && kept.isEmpty && failed.isEmpty }
+        var isEmpty: Bool { imported.isEmpty && replaced.isEmpty && kept.isEmpty && failed.isEmpty }
     }
 
     enum Trouble: Equatable {
@@ -148,20 +150,39 @@ enum ChartImporter {
             // Two downloads can name the same chart — a flat one and a foldered one beside it.
             // The first wins and the second is left where it is, rather than one silently
             // overwriting the other.
-            if claimed.contains(chart.destination) || manager.fileExists(atPath: destination.path) {
+            if claimed.contains(chart.destination) {
                 outcome.kept.append(chart.destination)
                 continue
+            }
+
+            // The library's own copy, out of the way: to the Trash, where it can be got back.
+            var trashed: URL?
+            if manager.fileExists(atPath: destination.path) {
+                var landed: NSURL?
+                do {
+                    try manager.trashItem(at: destination, resultingItemURL: &landed)
+                    trashed = landed as URL?
+                } catch {
+                    outcome.failed.append(chart.destination)
+                    continue
+                }
             }
 
             do {
                 try manager.createDirectory(at: folder, withIntermediateDirectories: true)
                 try manager.moveItem(at: chart.source, to: destination)
                 claimed.insert(chart.destination)
-                outcome.imported.append(chart.destination)
+                if trashed == nil {
+                    outcome.imported.append(chart.destination)
+                } else {
+                    outcome.replaced.append(chart.destination)
+                }
                 if !outcome.airports.contains(chart.airport) {
                     outcome.airports.append(chart.airport)
                 }
             } catch {
+                // Never a library without the chart: the old one comes back out of the Trash.
+                if let trashed { try? manager.moveItem(at: trashed, to: destination) }
                 outcome.failed.append(chart.destination)
             }
         }
