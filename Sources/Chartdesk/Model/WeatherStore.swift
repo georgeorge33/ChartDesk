@@ -176,23 +176,17 @@ enum WeatherSource {
 
 /// Fetches and caches weather for whichever airport is on screen.
 ///
-/// Turning the weather off stops the traffic; collapsing the panel only hides it. An
-/// airport that has been picked is fetched either way, so opening the panel shows what is
-/// already in hand rather than starting the wait.
+/// Always on. An airport is fetched the moment it is picked, so turning to its Weather or
+/// Runways tab shows what is already in hand rather than starting the wait.
 @MainActor
 final class WeatherStore: ObservableObject {
 
-    @Published var isEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(isEnabled, forKey: DefaultsKey.weatherEnabled)
-            if isEnabled { fetchIfStale(icao) }
-        }
-    }
-
+    /// Whether the Weather or Runways tab is the one on top, which is a reason to fetch again
+    /// if what is in hand has gone stale.
     @Published var isExpanded: Bool {
         didSet {
             UserDefaults.standard.set(isExpanded, forKey: DefaultsKey.weatherExpanded)
-            if isExpanded, isEnabled { fetchIfStale(icao) }
+            if isExpanded { fetchIfStale(icao) }
         }
     }
 
@@ -218,10 +212,10 @@ final class WeatherStore: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        defaults.register(defaults: [DefaultsKey.weatherEnabled: true,
-                                     DefaultsKey.weatherExpanded: true])
-        isEnabled = defaults.bool(forKey: DefaultsKey.weatherEnabled)
+        defaults.register(defaults: [DefaultsKey.weatherExpanded: true])
         isExpanded = defaults.bool(forKey: DefaultsKey.weatherExpanded)
+        // Whether the weather was switched off, from when it could be. It is always on now.
+        defaults.removeObject(forKey: DefaultsKey.weatherEnabled)
         runwayLists = defaults.dictionary(forKey: DefaultsKey.weatherRunways) as? [String: String] ?? [:]
         // Variations typed in by hand, from before they were worked out from the World
         // Magnetic Model. Nothing reads them any more.
@@ -260,14 +254,11 @@ final class WeatherStore: ObservableObject {
     /// asked to read it and you watched it arrive — for a request that takes a second or
     /// two and is then good for minutes. Choosing the airport is the honest signal that you
     /// are interested in it.
-    ///
-    /// Switching the weather off still stops it: that is what the switch is for.
     func show(icao newICAO: String?) {
         let code = newICAO?.uppercased()
         guard code != icao else { return }
         icao = code
         problem = nil
-        guard isEnabled else { return }
         fetchIfStale(code)
     }
 

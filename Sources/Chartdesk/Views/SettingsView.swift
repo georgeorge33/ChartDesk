@@ -37,20 +37,49 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var importer: ImportController
     @EnvironmentObject private var navdata: NavDataStore
     @EnvironmentObject private var flight: FlightPlanStore
-    @EnvironmentObject private var weather: WeatherStore
+
+    /// The whole folder's size, as Finder would put it: nil while it is being counted.
+    @State private var folderSize: String?
 
     var body: some View {
         Form {
             Section("Chart Library") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(library.hasLibrary ? library.folderPath : "No folder chosen yet")
-                        .font(.ng(.callout))
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .foregroundStyle(library.hasLibrary ? Color.primary : Color.secondary)
-                    Text("\(library.chartCount) charts · \(library.airports.count) airports")
-                        .font(.ngSmall)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(library.hasLibrary ? library.folderPath : "No folder chosen yet")
+                            .font(.ng(.callout))
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .foregroundStyle(library.hasLibrary ? Color.primary : Color.secondary)
+                        Text("\(library.chartCount) charts · \(library.airports.count) airports")
+                            .font(.ngSmall)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    if library.hasLibrary {
+                        Group {
+                            if let folderSize {
+                                Text(folderSize)
+                                    .font(.ng(.callout))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
+                        .help("Everything in the folder, as Finder counts it")
+                    }
+                }
+                // Counted when Settings opens and again after every rescan, off the main
+                // thread: a big library is tens of thousands of files.
+                .task(id: library.scanID) {
+                    guard let root = library.rootURL else { return }
+                    folderSize = nil
+                    let bytes = await Task.detached(priority: .utility) {
+                        ChartLibrary.size(of: root)
+                    }.value
+                    folderSize = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
                 }
 
                 HStack {
@@ -162,16 +191,6 @@ private struct GeneralSettingsView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-
-            Section("Weather") {
-                Toggle("Show the Weather and Runways tabs", isOn: $weather.isEnabled)
-                Text("METAR and TAF come from the Aviation Weather Center, real ATIS from FAA "
-                     + "D-ATIS (US fields only), and VATSIM ATIS from the VATSIM data feed. "
-                     + "Collapsing the panel stops the requests.")
-                    .font(.ngSmall)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Toolbar") {

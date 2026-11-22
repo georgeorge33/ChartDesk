@@ -28,6 +28,7 @@ enum DefaultsKey {
     static let annotationWidth = "annotationWidth"
     static let simbriefAccount = "simbriefAccount"
     static let simbriefOnLaunch = "simbriefOnLaunch"
+    /// Only to remove: the weather could be switched off once, and is always on now.
     static let weatherEnabled = "weatherEnabled"
     static let weatherExpanded = "weatherExpanded"
     static let weatherRunways = "weatherRunways"
@@ -146,6 +147,22 @@ final class ChartLibrary: ObservableObject {
     var chartCount: Int { chartsByID.count }
     var folderName: String { rootURL?.lastPathComponent ?? "No folder" }
     var folderPath: String { rootURL?.path ?? "" }
+
+    /// Everything in a folder, in bytes, the way Finder counts it: every file, hidden ones and
+    /// the insides of packages included, which the scan itself skips. Slow for a big folder,
+    /// so never on the main thread.
+    nonisolated static func size(of folder: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .totalFileSizeKey, .fileSizeKey]
+        guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys)
+        else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in walk {
+            guard let about = try? file.resourceValues(forKeys: Set(keys)),
+                  about.isRegularFile == true else { continue }
+            total += Int64(about.totalFileSize ?? about.fileSize ?? 0)
+        }
+        return total
+    }
 
     func chart(id: String?) -> Chart? {
         guard let id = id else { return nil }

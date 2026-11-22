@@ -176,9 +176,7 @@ struct ChartListColumn: View {
         return .charts
     }
 
-    private var availableTabs: [ColumnTab] {
-        weather.isEnabled ? ColumnTab.allCases : ColumnTab.allCases.filter { !$0.needsWeather }
-    }
+    private var availableTabs: [ColumnTab] { ColumnTab.allCases }
 
     /// The category strip, the filter and the list — what the column used to be on its own.
     private var chartsTab: some View {

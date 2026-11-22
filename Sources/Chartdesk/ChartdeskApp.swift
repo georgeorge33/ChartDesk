@@ -53,7 +53,6 @@ struct ChartdeskApp: App {
                               updater: updater,
                               marks: annotations,
                               flight: flight,
-                              weather: weather,
                               importer: importer)
         }
 
@@ -86,7 +85,6 @@ struct ChartdeskApp: App {
                 .environmentObject(updater)
                 .environmentObject(annotations)
                 .environmentObject(flight)
-                .environmentObject(weather)
                 .environmentObject(importer)
                 .environmentObject(navdata)
                 .ngTypeface()

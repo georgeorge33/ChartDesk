@@ -25,7 +25,6 @@ struct ChartdeskCommands: Commands {
     @ObservedObject var updater: UpdateController
     @ObservedObject var marks: AnnotationStore
     @ObservedObject var flight: FlightPlanStore
-    @ObservedObject var weather: WeatherStore
     @ObservedObject var importer: ImportController
 
     private var chart: Chart? {
@@ -168,14 +167,6 @@ struct ChartdeskCommands: Commands {
 
             Button("Reset Rotation") { browser.resetRotation() }
                 .disabled(chart == nil || browser.rotation == 0)
-
-            Divider()
-
-            Button(weather.isExpanded ? "Hide Weather" : "Show Weather") {
-                weather.isEnabled = true
-                weather.isExpanded.toggle()
-            }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
         }
 
         WindowCommands()

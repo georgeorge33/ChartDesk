@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Weather is always on.** The switch for it has gone from Settings, so the Weather and
+  Runways tabs are always there for an airport, and Show Weather (⇧⌘W) has gone from the View
+  menu — it had stopped doing anything when the weather became tabs.
+- **How big your chart folder is**, beside it in Settings › General: everything in the
+  folder, as Finder counts it, worked out when Settings opens and again after each rescan.
+
 ## 1.3.0-rc.4
 
 - **The briefing's sections, in the room to its right**: SimBrief's own outline of it — the
