@@ -13,6 +13,9 @@
   cut. It changes the moment it is switched, without a relaunch, and the briefing keeps your
   place. Menus and window titles stay in the system font. B612 Mono comes inside the app, under
   the SIL Open Font License.
+- **The METAR above the Runways tab**: the report the wind is read from, with its flight
+  category, now sits above the runway picker, so the gusts, visibility and cloud are in view
+  while you choose a runway.
 
 ## 1.3.0-rc.3
 

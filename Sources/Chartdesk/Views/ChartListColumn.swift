@@ -74,7 +74,7 @@ struct ChartListColumn: View {
     @EnvironmentObject private var flight: FlightPlanStore
     @EnvironmentObject private var weather: WeatherStore
 
-    @State private var tab: ColumnTab = .charts
+    @State private var tab = ChartListColumn.firstTab
 
     private var selectedAirport: Airport? {
         library.airport(code: browser.sidebarSelection?.airportCode)
@@ -165,6 +165,16 @@ struct ChartListColumn: View {
 
     /// The pinned list is not an airport: it has no runways to describe and no weather.
     private var showsTabs: Bool { !isPinnedList && selectedAirport != nil }
+
+    /// Charts — or in a debug build the tab `CHARTDESK_COLUMN_TAB` names, so that a test copy
+    /// can be looked at on any tab without a click.
+    private static var firstTab: ColumnTab {
+        #if DEBUG
+        if let name = ProcessInfo.processInfo.environment["CHARTDESK_COLUMN_TAB"],
+           let tab = ColumnTab(rawValue: name) { return tab }
+        #endif
+        return .charts
+    }
 
     private var availableTabs: [ColumnTab] {
         weather.isEnabled ? ColumnTab.allCases : ColumnTab.allCases.filter { !$0.needsWeather }

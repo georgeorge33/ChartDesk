@@ -21,7 +21,7 @@ struct WeatherPanel: View {
     enum Face {
         /// METAR, TAF and ATIS as issued.
         case reports
-        /// The wind resolved against each runway.
+        /// The wind resolved against each runway, under the METAR it was read from.
         case runways
     }
 
@@ -174,6 +174,13 @@ struct WeatherPanel: View {
                 }
 
                 if face == .runways {
+                    // The report the wind below is read from, above it: the wind is one group
+                    // of it, and the rest — gusts, visibility, cloud — is what says whether the
+                    // runway being picked is any use.
+                    if let metar = resolved.report?.metar {
+                        reportBlock("METAR", metar, mono: true,
+                                    category: FlightCategory.read(metar))
+                    }
                     // Not gated on there being a report: with no weather at all the picker is
                     // still the list of this airport's runways, and the section says why
                     // nothing resolved.
