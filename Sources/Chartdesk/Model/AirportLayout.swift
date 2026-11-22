@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import simd
 
 /// An airport's runways, taxiways, paint, holds and stands, as X-Plane's airport file has them.
@@ -592,6 +593,9 @@ final class AirportLayoutStore: ObservableObject {
     @Published private(set) var layouts: [String: AirportLayout] = [:]
     /// Set while one is on its way, so the map can say so rather than looking broken.
     @Published private(set) var fetching: String?
+    /// How much of the airport on its way from the Gateway has come — the one being fetched,
+    /// or the one a fetch of many is on.
+    let download = LayoutDownload()
     @Published private(set) var failure: String?
     /// A fetch of every airport you have charts for, while it runs and once it is done.
     @Published private(set) var bulk: Bulk?
@@ -743,6 +747,13 @@ final class AirportLayoutStore: ObservableObject {
     /// How many are still waiting their turn.
     var waiting: Int { queued.count }
 
+    /// A step of an airport's download, if that airport is still the one on its way: a step
+    /// can arrive after the airport has, and must not wind the bar back.
+    private func advance(_ fraction: Double, for icao: String) {
+        guard fetching == icao || bulk?.current == icao else { return }
+        download.fraction = max(download.fraction, fraction)
+    }
+
     /// Every airport the loaded flight uses, by ICAO code: fetched first, whatever the map is
     /// showing and whether or not it is open, and held.
     ///
@@ -798,9 +809,15 @@ final class AirportLayoutStore: ObservableObject {
         working = true
         Task.detached(priority: .userInitiated) {
             let found = await Self.obtain(icao: icao) {
-                await MainActor.run { self.fetching = icao }
+                await MainActor.run {
+                    self.download.fraction = 0
+                    self.fetching = icao
+                }
+            } progress: { fraction in
+                Task { @MainActor in self.advance(fraction, for: icao) }
             }
             await MainActor.run {
+                self.download.fraction = 1
                 self.fetching = nil
                 self.working = false
                 switch found.answer {
@@ -839,7 +856,8 @@ final class AirportLayoutStore: ObservableObject {
 
     /// One airport: the copy on this Mac if it is here, and the Gateway if it is not.
     nonisolated static func obtain(icao: String,
-                                   announce: @Sendable () async -> Void) async -> Obtained {
+                                   announce: @Sendable () async -> Void,
+                                   progress: @escaping @Sendable (Double) -> Void) async -> Obtained {
         let note = XPlaneGateway.note(for: icao)
         if note?.status == .layout, let layout = XPlaneGateway.cached(icao) {
             return Obtained(answer: .arrived(layout), recheck: note?.isStale ?? false)
@@ -849,7 +867,7 @@ final class AirportLayoutStore: ObservableObject {
             return Obtained(answer: .nothing)
         }
         await announce()
-        switch await XPlaneGateway.refresh(icao) {
+        switch await XPlaneGateway.refresh(icao, progress: progress) {
         case .layout(let layout, _): return Obtained(answer: .arrived(layout))
         case .absent: return Obtained(answer: .nothing)
         case .failed(let problem): return Obtained(answer: .refused(problem))
@@ -903,6 +921,7 @@ final class AirportLayoutStore: ObservableObject {
     private func fetchNextOfBatch() {
         let icao = batch.removeFirst()
         bulk?.current = icao
+        download.fraction = 0
         working = true
         Task.detached(priority: .utility) {
             let note = XPlaneGateway.note(for: icao)
@@ -913,7 +932,9 @@ final class AirportLayoutStore: ObservableObject {
             if answered {
                 outcome = nil
             } else {
-                outcome = await XPlaneGateway.refresh(icao)
+                outcome = await XPlaneGateway.refresh(icao) { fraction in
+                    Task { @MainActor in self.advance(fraction, for: icao) }
+                }
                 // A breath between airports: the Gateway is free, and asks to be treated
                 // considerately.
                 try? await Task.sleep(nanoseconds: 250_000_000)
@@ -954,4 +975,13 @@ final class AirportLayoutStore: ObservableObject {
         }
         bulk = progress
     }
+}
+
+/// How much of the airport on its way from the Gateway has come, from nothing to all of it.
+///
+/// Apart from the store, which the map watches: this moves a few dozen times an airport, and
+/// only the bar that shows it needs drawing again each time.
+@Observable @MainActor
+final class LayoutDownload {
+    fileprivate(set) var fraction = 0.0
 }

@@ -20,6 +20,9 @@
   magnetic with each airport's variation from NOAA's World Magnetic Model, for today, and says
   which variation it used. The field to type it in has gone, and so has the wind readout beside
   it, which the METAR above already gives. The Info tab shows the same variation.
+- **A progress bar while an airport's layout loads**: the map's card shows which airport is
+  coming from the X-Plane Scenery Gateway, how many are waiting after it, and how much of it
+  has arrived — or, during Fetch Your Airports, how far through them it is.
 
 ## 1.3.0-rc.3
 

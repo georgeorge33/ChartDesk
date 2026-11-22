@@ -386,7 +386,12 @@ struct RouteMapView: View {
                 .font(.ngSmallMono)
                 .foregroundStyle(.tertiary)
 
+            // As wide as the rest of the card and no wider: the bar would take the whole map.
+            LayoutLoading(fetching: ground.fetching, bulk: ground.bulk,
+                          waiting: ground.waiting, download: ground.download)
+                .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
@@ -537,5 +542,79 @@ struct RouteMapView: View {
         return String(format: "%.1f°%@ %.1f°%@",
                       abs(lat), lat >= 0 ? "N" : "S",
                       abs(lon), lon >= 0 ? "E" : "W")
+    }
+}
+
+/// An airport's layout on its way from the X-Plane Scenery Gateway: which one, and how much of
+/// it has come — or, while all your airports are being fetched, how far through them it is.
+///
+/// Its own view so that it alone reads the download's progress, which moves a few dozen times
+/// an airport; the map around it is drawn again only as an airport starts and finishes.
+private struct LayoutLoading: View {
+
+    let fetching: String?
+    let bulk: AirportLayoutStore.Bulk?
+    let waiting: Int
+    let download: LayoutDownload
+
+    /// Still shown for a moment after an airport has come, so that one airport after another
+    /// reads as one bar rather than one that blinks between them.
+    @State private var lingering = false
+    @State private var last: String?
+
+    private var running: Bool { fetching != nil || bulk?.isRunning == true }
+
+    var body: some View {
+        Group {
+            if running || lingering {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.ngSmallMedium)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(detail)
+                            .font(.ngSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .tint(Color.ngAccentText)
+                        .animation(.easeOut(duration: 0.2), value: fraction)
+                }
+                .help("Airport layouts come from the X-Plane Scenery Gateway, one airport at a "
+                      + "time, and are kept on this Mac once they have.")
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: running || lingering)
+        .onChange(of: fetching ?? bulk?.current, initial: true) { _, code in
+            if let code { last = code }
+        }
+        .task(id: running) {
+            guard !running else { lingering = true; return }
+            try? await Task.sleep(for: .milliseconds(350))
+            if !Task.isCancelled { lingering = false }
+        }
+    }
+
+    private var fraction: Double {
+        if let bulk, bulk.total > 0, bulk.isRunning {
+            let current = bulk.current == nil ? 0 : download.fraction
+            return min(1, (Double(bulk.done) + current) / Double(bulk.total))
+        }
+        return running ? download.fraction : 1
+    }
+
+    private var title: String {
+        if let bulk, bulk.isRunning { return "Fetching your airports" }
+        return "Loading \(fetching ?? last ?? "")"
+    }
+
+    private var detail: String {
+        if let bulk, bulk.isRunning { return "\(min(bulk.done + 1, bulk.total)) of \(bulk.total)" }
+        return waiting > 0 ? "\(waiting) more" : "X-Plane Gateway"
     }
 }

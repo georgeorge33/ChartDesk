@@ -1,4 +1,5 @@
 import Foundation
+import os
 import simd
 
 /// One airport as X-Plane's airport file has it.
@@ -693,7 +694,12 @@ enum XPlaneGateway {
 
     /// Asks which version of an airport is the approved one, and fetches it unless it is the
     /// one already here.
-    static func refresh(_ icao: String) async -> Outcome {
+    ///
+    /// `progress`, when given, hears how much of the airport has come, from nothing to all of
+    /// it: the small lookup is the first tenth, the airport's pack — a megabyte or so, most of
+    /// the wait — the next eighty-five hundredths, and reading it the rest.
+    static func refresh(_ icao: String,
+                        progress: (@Sendable (Double) -> Void)? = nil) async -> Outcome {
         let code = icao.uppercased()
         guard !code.isEmpty, code.count <= 8,
               code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) })
@@ -701,7 +707,8 @@ enum XPlaneGateway {
         let before = note(for: code)
 
         let lookup: (status: Int, data: Data)
-        switch await get("\(api)/airport/\(code)", timeout: 30) {
+        switch await get("\(api)/airport/\(code)", timeout: 30,
+                         progress: progress.map { report in { @Sendable in report(0.1 * $0) } }) {
         case .failure(let error): return .failed(error.localizedDescription)
         case .success(let answer): lookup = answer
         }
@@ -731,7 +738,8 @@ enum XPlaneGateway {
         }
 
         let pack: (status: Int, data: Data)
-        switch await get("\(api)/scenery/\(scenery)", timeout: 60) {
+        switch await get("\(api)/scenery/\(scenery)", timeout: 60,
+                         progress: progress.map { report in { @Sendable in report(0.1 + 0.85 * $0) } }) {
         case .failure(let error): return .failed(error.localizedDescription)
         case .success(let answer): pack = answer
         }
@@ -764,17 +772,51 @@ enum XPlaneGateway {
         return .layout(made, changed: true)
     }
 
-    private static func get(_ address: String, timeout: TimeInterval) async
+    private static func get(_ address: String, timeout: TimeInterval,
+                            progress: (@Sendable (Double) -> Void)? = nil) async
     -> Result<(status: Int, data: Data), Error> {
         guard let url = URL(string: address) else { return .failure(URLError(.badURL)) }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(AirportLayoutStore.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(
+                for: request, delegate: progress.map(DownloadProgress.init))
             return .success(((response as? HTTPURLResponse)?.statusCode ?? 0, data))
         } catch {
             return .failure(error)
         }
+    }
+}
+
+/// A request's own progress as its answer arrives, passed on a step at a time.
+///
+/// The Gateway sends the size of each answer before the answer, which is what lets the
+/// request's progress be a fraction rather than a count of bytes.
+private final class DownloadProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+
+    private let report: @Sendable (Double) -> Void
+    private let reported = OSAllocatedUnfairLock(initialState: -1.0)
+    private var watching: NSKeyValueObservation?
+
+    init(_ report: @escaping @Sendable (Double) -> Void) {
+        self.report = report
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        watching = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            self?.moved(to: progress.fractionCompleted)
+        }
+    }
+
+    /// Every couple of per cent rather than every packet: a bar shows no finer, and each step
+    /// is a trip to the main thread.
+    private func moved(to fraction: Double) {
+        let due = reported.withLock { last -> Bool in
+            guard fraction >= 1 || fraction - last >= 0.02 else { return false }
+            last = fraction
+            return true
+        }
+        if due { report(fraction) }
     }
 }
