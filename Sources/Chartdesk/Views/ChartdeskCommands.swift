@@ -239,11 +239,8 @@ struct ChartdeskCommands: Commands {
 
             Divider()
 
-            Button(marks.showMarks ? "Hide Marks" : "Show Marks") {
-                marks.showMarks.toggle()
-            }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-
+            // No Hide Marks here: it shared ⇧⌘M with Route Map, which comes first in the menu
+            // bar and so always took the key. Settings and the toolbar's eye still hide them.
             Button("Clear Marks on This Chart") {
                 marks.clear(browser.selectedChartID)
             }

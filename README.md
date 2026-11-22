@@ -283,8 +283,9 @@ Marks belong to the chart, not the window. They save as you draw and follow the 
 rotate it, so a note beside runway 27 stays beside runway 27. Labels stay horizontal, since a
 sideways note is no use to anybody.
 
-Copies, exports and printouts burn the marks in at full chart resolution. **Markup ▸ Hide
-Marks** hides them everywhere at once without deleting anything.
+Copies, exports and printouts burn the marks in at full chart resolution. Settings ▸ Markup ▸
+**Draw marks over charts** hides them everywhere at once without deleting anything, and so does
+the eye button you can add to the toolbar.
 
 Weights are a share of the chart's width rather than a pixel count, so *Medium* looks the same
 on a small plate and a large one.

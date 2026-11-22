@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Hide Marks has gone from the Markup menu.** It shared ⇧⌘M with Route Map, which comes
+  first in the menu bar and so took the key, leaving ⇧⌘M to open the map alone. Settings ›
+  Markup › Draw marks over charts still hides every mark without deleting any, and so does
+  the eye button you can add to the toolbar.
+
 ## 1.3.0-rc.5
 
 - **Weather is always on.** The switch for it has gone from Settings, so the Weather and
