@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **The briefing's sections, in the room to its right**: SimBrief's own outline of it — the
+  OFP with its summary and fuel, routing, times and weights, flight log and winds, then the
+  ATC flight plan, runway analysis, weather, NOTAMs and the rest, in whichever layout you plan
+  with. Press one to go straight to it; the one you are reading is picked out as you scroll.
+  The list stands aside when the window is too narrow for both.
+
 ## 1.3.0-rc.3
 
 - **The SimBrief briefing, in the sidebar above the route map**: the OFP as SimBrief lays it

@@ -169,6 +169,12 @@ enum RenderProbe {
                 print("briefing: \(plan.briefing.map { "\($0.count) characters" } ?? "none"), "
                       + "PDF \(plan.briefingPDF ?? "none"), layout \(plan.layout ?? "?"), "
                       + "made \(plan.generatedAt.map { "\($0)" } ?? "?")")
+                if let briefing = plan.briefing {
+                    let outline = BriefingOutline(briefing)
+                    print("sections: " + outline.sections.map {
+                        ($0.level > 0 ? "  · " : "") + $0.title
+                    }.joined(separator: " | "))
+                }
                 // With CHARTDESK_FLIGHT, saved there as the app saves a fetched plan, for a
                 // test copy to open.
                 if let out = ProcessInfo.processInfo.environment["CHARTDESK_FLIGHT"],
