@@ -50,6 +50,9 @@ struct WeatherPanel: View {
         let winds: [RunwayWind]
         let selected: RunwayWind?
         let best: String?
+        /// What the wind was turned by, west positive: the airport's variation from the World
+        /// Magnetic Model, or nil where the airport cannot be placed.
+        let variation: Double?
 
         /// What the menu offers: every designator only when nothing knows anything about the
         /// airport — not in the runway table, no plate naming a runway, nothing remembered.
@@ -78,17 +81,19 @@ struct WeatherPanel: View {
                                   database: published,
                                   including: picked)
 
+        let variation = MagneticVariation.west(at: code)
         var winds: [RunwayWind] = []
         if let wind = wind {
             winds = WindMath.components(wind: wind,
-                                        variationWest: weather.variation(for: code),
+                                        variationWest: variation ?? 0,
                                         runways: runways)
         }
         let best = WindMath.best(winds)
         let selected = winds.first { $0.runway == picked } ?? best
 
         return Resolved(report: report, wind: wind, known: known, runways: runways,
-                        winds: winds, selected: selected, best: best?.runway)
+                        winds: winds, selected: selected, best: best?.runway,
+                        variation: variation)
     }
 
     /// Optional, so an airport we know no runways for shows a placeholder rather than
@@ -219,23 +224,9 @@ struct WeatherPanel: View {
 
     @ViewBuilder
     private func windSection(_ resolved: Resolved) -> some View {
+        // No wind of its own above the picker: the METAR above this says it, and the variation
+        // is worked out rather than typed, so the line that held both has gone.
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(resolved.wind?.summary ?? "No wind reported")
-                    .font(.ng(.callout, weight: .medium))
-                Spacer(minLength: 0)
-                Text("var")
-                    .font(.ngSmall)
-                    .foregroundStyle(.tertiary)
-                TextField("", value: variationBinding, format: .number)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.ngSmall)
-                    .frame(width: 40)
-                Text("°W")
-                    .font(.ngSmall)
-                    .foregroundStyle(.tertiary)
-            }
-
             HStack(spacing: 6) {
                 Text("RWY")
                     .font(.ngSmall)
@@ -279,9 +270,9 @@ struct WeatherPanel: View {
                         selected: resolved.selected?.runway)
                 }
                 // METAR wind is true north, runway numbers are magnetic. Without the variation
-                // the components are quietly wrong by exactly that much.
-                Text("METAR wind is true, runway numbers are magnetic — set the variation from "
-                     + "the chart. The star is the most headwind of these, not what ATC will give you.")
+                // the components are quietly wrong by exactly that much, so say which was used.
+                Text(variationNote(resolved.variation)
+                     + " The star is the most headwind of these, not what ATC will give you.")
                     .font(.ngSmall)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -324,9 +315,13 @@ struct WeatherPanel: View {
               ?? entry.crosswindLabel)
     }
 
-    private var variationBinding: Binding<Double> {
-        Binding(get: { weather.variation(for: code) },
-                set: { weather.setVariation($0, for: code) })
+    private func variationNote(_ variation: Double?) -> String {
+        guard let variation else {
+            return "This airport's variation is not known here, so the METAR's wind is used as "
+                + "reported, from true north rather than magnetic."
+        }
+        return "METAR wind is from true north, so it is turned by the variation here, "
+            + "\(MagneticVariation.text(variation)), from NOAA's World Magnetic Model."
     }
 
     /// A report with its key values coloured. `showsAge` puts the "+n mins" beside the title,

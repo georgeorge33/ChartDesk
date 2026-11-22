@@ -286,6 +286,13 @@ for TABLE in borders-110 borders-50 borders-10 \
 	fi
 done
 
+# The World Magnetic Model's coefficients, as NOAA issues them, for each airport's variation.
+if [ -f Resources/WMM.COF ]; then
+	cp Resources/WMM.COF "${CONTENTS}/Resources/WMM.COF"
+else
+	warn "Resources/WMM.COF missing — the Runways tab will have no magnetic variation"
+fi
+
 # B612 Mono, for the setting that sets the app in it, with its licence: the SIL Open Font
 # License asks that the licence go wherever the font does.
 mkdir -p "${CONTENTS}/Resources/Fonts"

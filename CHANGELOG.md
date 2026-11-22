@@ -16,6 +16,10 @@
 - **The METAR above the Runways tab**: the report the wind is read from, with its flight
   category, now sits above the runway picker, so the gusts, visibility and cloud are in view
   while you choose a runway.
+- **Magnetic variation, worked out for you**: the Runways tab turns the METAR's true wind to
+  magnetic with each airport's variation from NOAA's World Magnetic Model, for today, and says
+  which variation it used. The field to type it in has gone, and so has the wind readout beside
+  it, which the METAR above already gives. The Info tab shows the same variation.
 
 ## 1.3.0-rc.3
 

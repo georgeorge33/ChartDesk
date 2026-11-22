@@ -32,6 +32,7 @@ enum DefaultsKey {
     static let weatherEnabled = "weatherEnabled"
     static let weatherExpanded = "weatherExpanded"
     static let weatherRunways = "weatherRunways"
+    /// Only to remove: variations used to be typed in, and are worked out now.
     static let weatherVariation = "weatherVariation"
     static let useB612Mono = "useB612Mono"
 }

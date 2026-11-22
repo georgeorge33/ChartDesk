@@ -96,6 +96,17 @@ ArcGIS licence.
 domain. Comes with no guarantee of accuracy, which is why your own charts outrank it wherever
 the two disagree.
 
+## World Magnetic Model — public domain
+
+`Resources/WMM.COF`: the coefficients of WMM2025, NOAA's and the British Geological Survey's
+model of the earth's magnetic field for 2025 to 2030, bundled unchanged from
+[NOAA's National Centers for Environmental Information](https://www.ncei.noaa.gov/products/world-magnetic-model).
+The app works out each airport's magnetic variation from it, for the date, to turn a METAR's
+true wind into the magnetic one a runway's number is measured against. NOAA publishes it as
+not licensed or under copyright, free for anyone to use; as 17 U.S.C. 403 asks of works that
+draw on it, this is United States Government material and not subject to copyright protection.
+A new model follows every five years, the next at the end of 2029.
+
 ## FAA CIFP — public domain
 
 The SID and STAR altitude restrictions, from the FAA's Coded Instrument Flight Procedures,

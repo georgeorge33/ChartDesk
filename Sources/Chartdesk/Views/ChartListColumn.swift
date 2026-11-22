@@ -133,7 +133,7 @@ struct ChartListColumn: View {
             case .info:
                 if let airport = selectedAirport {
                     AirportInfoTab(airport: airport,
-                                   variation: weather.variation(for: airport.code))
+                                   variation: MagneticVariation.west(at: airport.code))
                 }
             case .charts:
                 chartsTab
@@ -754,9 +754,9 @@ private struct ColumnTabStrip: View {
 private struct AirportInfoTab: View {
 
     let airport: Airport
-    /// Magnetic variation as set in the Runways tab, shown here because the wind components
-    /// are quietly wrong by exactly this much when it is left at zero.
-    let variation: Double
+    /// The magnetic variation here today, from the World Magnetic Model — what the Runways
+    /// tab turns the METAR's wind by. Nil for an airport the bundled tables cannot place.
+    let variation: Double?
 
     private var categories: [ChartCategory] {
         ChartCategory.displayOrder.filter { airport.count(in: $0) > 0 }
@@ -788,9 +788,10 @@ private struct AirportInfoTab: View {
 
                 section("Details") {
                     VStack(alignment: .leading, spacing: 3) {
-                        detail("Variation", variationText,
-                               help: "Set it from the chart in the Runways tab. METAR wind is "
-                                   + "true north, runway numbers are magnetic.")
+                        detail("Variation", variation.map(MagneticVariation.text) ?? "Not known",
+                               help: "From NOAA's World Magnetic Model, for today. METAR wind "
+                                   + "is true north and runway numbers magnetic; the Runways "
+                                   + "tab turns one into the other by this much.")
 
                         if let date = airport.newestChartDate {
                             detail("Newest chart", dateText(date),
@@ -809,16 +810,6 @@ private struct AirportInfoTab: View {
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private var variationText: String {
-        let rounded = (variation * 10).rounded() / 10
-        guard rounded != 0 else { return "0°" }
-        let magnitude = abs(rounded)
-        let value = magnitude == magnitude.rounded()
-            ? String(Int(magnitude))
-            : String(format: "%.1f", magnitude)
-        return value + "°" + (rounded > 0 ? "W" : "E")
     }
 
     private func dateText(_ date: Date) -> String {

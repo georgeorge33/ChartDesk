@@ -209,11 +209,6 @@ final class WeatherStore: ObservableObject {
     /// before the change keeps its list.
     @Published private(set) var runwayLists: [String: String]
 
-    @Published var variations: [String: Double] {
-        didSet { UserDefaults.standard.set(variations, forKey: DefaultsKey.weatherVariation) }
-    }
-
-
     private var cache: [String: AirportWeather] = [:]
     /// The VATSIM feed covers every airport at once, so it is fetched *and parsed* once and
     /// shared. Keeping the raw bytes meant re-parsing a megabyte for every airport looked at.
@@ -231,7 +226,9 @@ final class WeatherStore: ObservableObject {
         isEnabled = defaults.bool(forKey: DefaultsKey.weatherEnabled)
         isExpanded = defaults.bool(forKey: DefaultsKey.weatherExpanded)
         runwayLists = defaults.dictionary(forKey: DefaultsKey.weatherRunways) as? [String: String] ?? [:]
-        variations = defaults.dictionary(forKey: DefaultsKey.weatherVariation) as? [String: Double] ?? [:]
+        // Variations typed in by hand, from before they were worked out from the World
+        // Magnetic Model. Nothing reads them any more.
+        defaults.removeObject(forKey: DefaultsKey.weatherVariation)
     }
 
     func weather(for code: String?) -> AirportWeather? {
@@ -249,22 +246,13 @@ final class WeatherStore: ObservableObject {
 
     var age: String? { age(for: icao) }
 
-    // MARK: Runways and variation
+    // MARK: Runways
 
     func runwayList(for code: String?) -> String {
         guard let code = code?.uppercased() else { return "" }
         return runwayLists[code] ?? ""
     }
 
-    func variation(for code: String?) -> Double {
-        guard let code = code?.uppercased() else { return 0 }
-        return variations[code] ?? 0
-    }
-
-    func setVariation(_ degrees: Double, for code: String?) {
-        guard let code = code?.uppercased() else { return }
-        variations[code] = degrees
-    }
 
     // MARK: Fetching
 

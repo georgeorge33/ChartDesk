@@ -10,13 +10,6 @@ struct WindObservation: Equatable {
     var isVariable = false
 
     var isCalm: Bool { knots == 0 && direction == nil }
-
-    var summary: String {
-        if isCalm { return "Calm" }
-        let gust = gustKnots.map { " gusting \($0)" } ?? ""
-        guard let direction = direction else { return "Variable \(knots) kt\(gust)" }
-        return String(format: "%03d° at %d kt%@", direction, knots, gust)
-    }
 }
 
 // MARK: - Per-runway components
